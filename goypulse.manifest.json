@@ -1,0 +1,10 @@
+{
+  "module": "goypulse.py",
+  "version": "9.0.0",
+  "module_url": "https://raw.githubusercontent.com/<GITHUB_NICKNAME>/<REPO_NAME>/main/goypulse.py",
+  "sha256": "fba281adbb671b8b58af3468562fbdf49f6a6221da4df610af0d0eb47d837038",
+  "mandatory": false,
+  "min_version": "9.0.0",
+  "ts": 1741123200,
+  "signature": "fHHRSlT6+0VggHGKEQcBMsk+DaJVCg6wOCEtFL18ytybGOVIv+Dw9c+pzob7MzZuid7Onm/6kIAJ58kC6nqUDA=="
+}
