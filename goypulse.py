@@ -118,16 +118,31 @@ class GoyPulseMod(loader.Module):
         "bp_trust_missing": "❌ Нет доверенного ключа для пользователя <code>{}</code>.",
         "react_ok": "✨ <b>[Реакция]</b> Бот отреагировал на сообщение.",
         "h_pulse": "🔌 <b>[Usage] .gpulse [on|off]</b>\n\nВключает или полностью отключает обработку сообщений ботом в текущем чате.\n\n<b>Инструкция:</b>\n├ <code>.gpulse on</code> — Бот начинает слушать чат, обучаться и отвечать согласно настройкам.\n└ <code>.gpulse off</code> — Бот полностью игнорирует всё происходящее в этом чате.\n\n<i>Примечание: Если база пуста, бот напомнит о необходимости обучения (.gpref).</i>\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
-        "h_set": "⚙️ <b>Usage: .gpset &lt;параметр&gt; &lt;значение&gt; [target_group]</b>\n\n"
-                 "<b>Глобальные параметры (работают в любом чате):</b>\n"
-                 "<code>bpon</code> <code>bpint</code> <code>react</code> <code>updint</code> <code>logerr</code> <code>logstl</code> <code>logbkp</code> <code>loglrn</code> <code>logans</code>\n\n"
-                 "<b>Параметры группы (только в группе или с явным target_group):</b>\n"
-                 "<code>lim</code> <code>min</code> <code>ch</code> <code>mch</code> <code>mych</code> <code>cdm</code> <code>cdx</code>\n\n"
-                 "<b>Примеры:</b>\n"
-                 "<code>.gpset updint 1</code> (раз в час)\n"
-                 "<code>.gpset updint 0</code> (выкл автопроверку)\n"
-                 "<code>.gpset ch 45</code>\n\n"
-                 "<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
+        "h_set": "⚙️ <b>Настройки GoyPulse V9</b> | <code>by goy(@samsepi0l_ovf)</code>\n\n"
+                 "Использование: <code>.gpset &lt;ключ&gt; &lt;значение&gt; [target_group]</code>\n\n"
+                 "🌐 <b>Глобальные параметры:</b>\n"
+                 "├ <code>bpon [1/0]</code> — Автоматический бэкап базы.\n"
+                 "├ <code>bpint [5-1440]</code> — Интервал бэкапа в минутах.\n"
+                 "├ <code>react [0-100]</code> — Шанс реакции (эмодзи) на сообщение.\n"
+                 "├ <code>updint [0-720]</code> — Интервал проверки обновлений (ч, 0=выкл).\n"
+                 "└ <b>Логирование (1=вкл, 0=выкл):</b>\n"
+                 "  ├ <code>logerr</code> — Ошибки модуля.\n"
+                 "  ├ <code>logstl</code> — Скрытые команды (.gph).\n"
+                 "  ├ <code>logbkp</code> — События бэкапа.\n"
+                 "  ├ <code>loglrn</code> — Процесс обучения.\n"
+                 "  └ <code>logans</code> — Ответы бота (в лог-канал).\n\n"
+                 "🏘️ <b>Параметры группы:</b>\n"
+                 "├ <code>lim [0-5M]</code> — Лимит сообщений для обучения.\n"
+                 "├ <code>min [0-500]</code> — Минимум сообщений для активации.\n"
+                 "├ <code>ch [0-100]</code> — Шанс ответа на обычное сообщение.\n"
+                 "├ <code>mch [0-100]</code> — Шанс ответа медиа-контентом.\n"
+                 "├ <code>mych [0-100]</code> — Шанс ответа на реплы/меншены.\n"
+                 "├ <code>cdm [0-120]</code> — Минимальная пауза между ответами (сек).\n"
+                 "└ <code>cdx [0-240]</code> — Максимальная пауза (сек).\n\n"
+                 "📝 <b>Примеры:</b>\n"
+                 "├ <code>.gpset ch 50</code> — 50% шанс в текущем чате.\n"
+                 "└ <code>.gpset react 20</code> — Глобальный шанс реакции 20%.\n\n"
+                 "<i>GoyPulse V9 by goy(@samsepi0l_ovf)</i>",
         "h_mute": "🔇 <b>[Usage] .gpmute <минуты></b>\n\nВременно отключает ответы бота, сохраняя процесс обучения и сбора статистики.\n\n<b>Примеры:</b>\n├ <code>.gpmute 30</code> — Замолчать на полчаса.\n├ <code>.gpmute 1440</code> — Замолчать на сутки.\n└ <code>.gpmute 0</code> — Снять ограничение немедленно.\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
         "h_ign": "🚷 <b>[Usage] .gpignore</b>\n\nДобавляет или удаляет пользователя из черного списка бота.\n\n<b>Как использовать:</b>\n1. Найдите сообщение пользователя.\n2. Ответьте на него (Reply) командой <code>.gpignore</code>.\n\n<i>Результат: Бот не будет обучаться на нем и не будет ему отвечать.</i>\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
         "h_gph": "🕵️ <b>[Usage] .gph <цель> <команда></b>\n\nВыполнение команд GoyPulse в любом чате анонимно.\n\n<b>Параметры:</b>\n├ <code>цель</code> — ID чата, юзернейм или слово <code>here</code>\n└ <code>команда</code> — Любая команда без точки (напр. <code>gpstat</code>)\n\n<b>Примеры:</b>\n├ <code>.gph -100... gpstat</code> — Статус чужого чата.\n├ <code>.gph @username gpinfo</code> — Вайб в личке.\n└ <code>.gph here gpclear</code> — Скрытая очистка.\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
