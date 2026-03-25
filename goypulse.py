@@ -188,7 +188,7 @@ class GoyPulseMod(loader.Module):
         self._max_backup_chats = 500
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.0.6"
+        self._module_version = "9.0.7"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -697,26 +697,14 @@ class GoyPulseMod(loader.Module):
             self._upd_last_state = state
             return state
 
-    async def _apply_update(self, manifest: Optional[dict] = None) -> Tuple[bool, str]:
+    async def _apply_update(self, manifest: Optional[dict] = None) -> Tuple[bool, str, str]:
         target = manifest or self._upd_pending_manifest
         valid, err, normalized = self._validate_update_manifest(target)
         if not valid:
-            return False, self.strings("upd_fail").format(utils.escape_html(err))
+            return False, self.strings("upd_fail").format(utils.escape_html(err)), ""
         try:
-            raw = await self._fetch_remote_bytes(normalized["module_url"], max_len=512 * 1024)
-            got_hash = self._sha256_bytes(raw)
-            if not hmac.compare_digest(got_hash, normalized["sha256"]):
-                return False, self.strings("upd_fail").format("hash mismatch")
-            source = raw.decode("utf-8")
-            compile(source, self._module_file_path(), "exec")
-            target_path = self._module_file_path()
-            tmp_path = target_path + ".tmp_v9"
-            def _write():
-                with open(tmp_path, "wb") as f:
-                    f.write(raw)
-                os.replace(tmp_path, target_path)
-            await asyncio.get_event_loop().run_in_executor(None, _write)
-            self._sync_verified_hash(got_hash)
+            # We skip manual download/write as requested by the user.
+            # But we still return success if the manifest validation passed.
             self.set("gpupd_verified_ver", normalized["version"])
             self.set("gpupd_skip_ver", "")
             self.set("gpupd_postpone_until", 0)
@@ -724,31 +712,9 @@ class GoyPulseMod(loader.Module):
             self._upd_pending_manifest = {}
             self._upd_mandatory_active = False
             self._tamper_mode = False
-            return True, self.strings("upd_ok").format(normalized["version"])
+            return True, "verified", normalized["module_url"]
         except Exception as e:
-            return False, self.strings("upd_fail").format(utils.escape_html(str(e)))
-
-    async def _finish_update(self, chat_id: int, version: str):
-        """🚀 Finalize update by sending the file and replying with .lm"""
-        try:
-            path = self._module_file_path()
-            if not os.path.isfile(path):
-                return await self._log(f"<b>[FINISH UPDATE ERR]</b> File not found: <code>{path}</code>", cat="err")
-            
-            caption = (
-                f"✅ <b>GoyPulse Update applied!</b>\n"
-                f"├ Версия: <code>{version}</code>\n"
-                f"└ Статус: <code>перезагрузка модуля...</code>\n\n"
-                f"<i>GoyPulse V9 by goy(@samsepi0l_ovf)</i>"
-            )
-            # Send the file to the chat
-            sent = await self._c.send_file(chat_id, path, caption=caption)
-            # Reply to it with .lm to trigger the loader's reload mechanism
-            await self._c.send_message(chat_id, ".lm", reply_to=sent.id)
-            
-            # Since .lm causes a reload, this module instance will be destroyed shortly.
-        except Exception as e:
-            await self._log(f"<b>[FINISH UPDATE ERR]</b> <code>{e}</code>", cat="err")
+            return False, self.strings("upd_fail").format(utils.escape_html(str(e))), ""
 
     async def _format_update_status(self) -> str:
         st = self._upd_last_state or {}
@@ -772,13 +738,12 @@ class GoyPulseMod(loader.Module):
         )
 
     async def _cb_update_apply(self, call: Any):
-        ver = self._upd_pending_manifest.get("version", "9.0.4")
-        ok, msg = await self._apply_update()
-        await self._respond(call, msg)
+        ok, msg, url = await self._apply_update()
         if ok:
-            # We use the chat_id from the original message or the user's ID
             target_chat = getattr(call, "chat_id", self._my_id)
-            await self._finish_update(target_chat, ver)
+            await self._c.send_message(target_chat, f".dlm {url}")
+        else:
+            await self._respond(call, msg)
 
     async def _cb_update_postpone(self, call: Any, version: str):
         until = int(time.time()) + 6 * 3600
@@ -2238,11 +2203,11 @@ class GoyPulseMod(loader.Module):
                     if not st.get("available"):
                         return await self._ans(m, self.strings("upd_none"))
                 
-                ver = self._upd_pending_manifest.get("version", "9.0.4")
-                ok, msg = await self._apply_update()
-                await self._ans(m, msg)
+                ok, msg, url = await self._apply_update()
                 if ok:
-                    await self._finish_update(m.chat_id, ver)
+                    await self._c.send_message(m.chat_id, f".dlm {url}")
+                else:
+                    await self._ans(m, msg)
                 return
             return await self._ans(m, "❌ Использование: <code>.gpupdate [check|apply|status]</code>")
         except Exception as e:
