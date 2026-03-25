@@ -2212,6 +2212,10 @@ class GoyPulseMod(loader.Module):
         except Exception as e:
             await self._ans(m, f"❌ Ошибка: {e}")
 
+    @loader.command(ru_doc="| Диагностика пути модуля")
+    async def gppathcmd(self, m: Message):
+        await self._ans(m, f"📂 Путь модуля: <code>{__file__}</code>\nВерсия: <code>{self._module_version}</code>")
+
     @loader.command(ru_doc="| Собрать сообщения и обновить память бота")
     async def gprefcmd(self, m: Message):
         try:
