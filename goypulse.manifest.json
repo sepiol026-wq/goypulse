@@ -3,8 +3,8 @@
   "min_version": "9.0.0",
   "module": "goypulse.py",
   "module_url": "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.py",
-  "sha256": "aa0da623062b2c7c21d190f9dd4a3c6911b7a8800f5ba567b37072896e1c8695",
-  "ts": 1774453673,
-  "version": "9.0.4",
-  "signature": "dI4qeEVVfVmIIjNsf/6S82wzSEOK65wu1xy92SEoYN6YpWCciF84hWn+60XA8gRdx+BtSK/KE7luTKOu5DhDCg=="
+  "sha256": "38ba71d3ab31e47c983287cfba933b1d1ab62679ba889c1094955c9e9b038a15",
+  "ts": 1774465895,
+  "version": "9.0.5",
+  "signature": "5nirYgfarSMicmmT/unVZeqKadhruM6LByvWjNtTEA2JqN6jawFq2haeSqOvfubR7goDvnEyAtjHHncwFffDCQ=="
 }

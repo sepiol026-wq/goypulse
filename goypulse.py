@@ -188,7 +188,7 @@ class GoyPulseMod(loader.Module):
         self._max_backup_chats = 500
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.0.4"
+        self._module_version = "9.0.5"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -635,6 +635,16 @@ class GoyPulseMod(loader.Module):
             await self._c.send_message(self._my_id, fallback)
         else:
             await self._ans(ctx, fallback)
+
+    async def _upd_loop(self):
+        try:
+            while True:
+                await self._check_updates(manual=False, ctx=None, offer=True)
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     async def _check_updates(self, manual: bool = False, ctx: Any = None, offer: bool = True) -> dict:
         state = {
@@ -1155,9 +1165,9 @@ class GoyPulseMod(loader.Module):
 
     def _sv_br(self):
         try:
+            self._sql("BEGIN")
             for cid, st in self._chs.items():
                 if not st.on and not st.msgs and not st.parsed_cnt: continue
-                self._sql("BEGIN")
                 self._sql("INSERT OR REPLACE INTO chats (cid, on_off, lim, min_m, r_ch, m_ch, my_ch, cd_m, cd_x, bp_on, bp_int, react_ch, last_mid, parsed_cnt, w_cnt, cd_u, mute_u, last_usr, last_tone, last_t) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
                           (cid, int(st.on), st.lim, st.min_m, st.r_ch, st.m_ch, st.my_ch, st.cd_m, st.cd_x, int(self.config["bp_on"]), int(self.config["bp_int"]), int(self.config["react_ch"]), st.last_mid, st.parsed_cnt, st.w_cnt, st.cd_u, st.mute_u, st.last_usr, st.last_tone, st.last_t), commit=False)
                 self._sql("DELETE FROM mem_msgs WHERE cid=?", (cid,), commit=False)
@@ -1174,9 +1184,10 @@ class GoyPulseMod(loader.Module):
                 for mk, cnt in st.md_cnt.items(): self._sql("INSERT INTO md_cnt (cid, mk, cnt) VALUES (?,?,?)", (cid, mk, cnt), commit=False)
                 self._sql("DELETE FROM ign WHERE cid=?", (cid,), commit=False)
                 for uid in st.ign: self._sql("INSERT INTO ign (cid, uid) VALUES (?,?)", (cid, uid), commit=False)
-                self._sql("COMMIT")
-
+            self._sql("COMMIT")
         except Exception as e:
+            try: self._sql("ROLLBACK")
+            except Exception: pass
             if self._c: self._c.loop.create_task(self._log(f"<b>[SAVE ERR]</b> {e}", cat="err"))
 
 
@@ -1598,10 +1609,10 @@ class GoyPulseMod(loader.Module):
                     spd, 
                                 eta
                             ))
-                                                          
                             log_msg = f"📊 <b>Training Progress</b> [Chat: <code>{cid}</code>]\n├ Parsed: <code>{cnt}</code>\n├ Vocabulary: <code>{vocab}</code>\n└ ETA: <code>{eta}</code>"
                             self._c.loop.create_task(self._log(log_msg, cat="lrn"))
                         except Exception as e:
+                            rmsg = None
                             if self._c: self._c.loop.create_task(self._log(f"<b>[REF UPD ERR]</b> <code>{e}</code>", cat="lrn"))
 
 
@@ -2644,7 +2655,7 @@ class GoyPulseMod(loader.Module):
             self._upd_mandatory_active = bool(mandatory_ver and self._cmp_ver(mandatory_ver, self._module_version) > 0)
             await self._startup_self_check()
             await self._start_bg_tasks()
-            self._upd_task = self._c.loop.create_task(self._check_updates(manual=False, ctx=None, offer=True))
+            self._upd_task = self._c.loop.create_task(self._upd_loop())
             await self._log("GoyPulse V9 by goy(@samsepi0l_ovf) запущен", cat="lrn")
         except Exception as e:
             if self._c:
