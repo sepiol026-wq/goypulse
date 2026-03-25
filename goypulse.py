@@ -469,7 +469,7 @@ class GoyPulseMod(loader.Module):
             "min_version": str(manifest.get("min_version", "")),
             "ts": int(manifest.get("ts", 0) or 0),
         }
-        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
     def _verify_update_manifest_signature(self, manifest: dict) -> Tuple[bool, str]:
         if not isinstance(manifest, dict):
