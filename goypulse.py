@@ -188,7 +188,7 @@ class GoyPulseMod(loader.Module):
         self._max_backup_chats = 500
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.0.1"
+        self._module_version = "9.0.2"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -742,6 +742,9 @@ class GoyPulseMod(loader.Module):
     async def _cb_update_apply(self, call: Any):
         ok, msg = await self._apply_update()
         await self._respond(call, msg)
+        if ok:
+            await self._c.send_message(self._my_id, "Перезагружаем Heroku для применения обновлений...")
+            await self._c.send_message(self._my_id, ".restart -f")
 
     async def _cb_update_postpone(self, call: Any, version: str):
         until = int(time.time()) + 6 * 3600
@@ -2200,7 +2203,11 @@ class GoyPulseMod(loader.Module):
                     if not st.get("available"):
                         return await self._ans(m, self.strings("upd_none"))
                 ok, msg = await self._apply_update()
-                return await self._ans(m, msg)
+                await self._ans(m, msg)
+                if ok:
+                    await self._c.send_message(m.chat_id, "Перезагружаем Heroku для применения обновлений...")
+                    await self._c.send_message(m.chat_id, ".restart -f")
+                return
             return await self._ans(m, "❌ Использование: <code>.gpupdate [check|apply|status]</code>")
         except Exception as e:
             await self._ans(m, f"❌ Ошибка: {e}")
