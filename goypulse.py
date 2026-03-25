@@ -188,7 +188,7 @@ class GoyPulseMod(loader.Module):
         self._max_backup_chats = 500
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.0.5"
+        self._module_version = "9.0.6"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -2092,8 +2092,8 @@ class GoyPulseMod(loader.Module):
                         if rep and getattr(rep, 'sender_id', None) == self._my_id:
                             tme = True
                             st.my_msgs.append(e.reply_to_msg_id)
-                    except Exception as e:
-                        if self._c: self._c.loop.create_task(self._log(f"<b>[WATCHER REP ERR]</b> <code>{e}</code>"))
+                    except Exception as ex:
+                        if self._c: self._c.loop.create_task(self._log(f"<b>[WATCHER REP ERR]</b> <code>{ex}</code>"))
 
             tone = self._emo_cat(tk[0]) if tk else "нейтрал"
             if sid == st.last_usr and time.time() - st.last_t < 180: tone = st.last_tone
@@ -2107,11 +2107,11 @@ class GoyPulseMod(loader.Module):
 
             if random.randint(1, 100) <= self.config["react_ch"]:
                 try:
-                    emo = random.choice(["👍", "😂", "🤡", "❤️", "🔥", "🤔", "👀", "🌚"])
+                    emo = random.choice(["👍", "😂", "❤️", "🔥", "🤔", "👀", "🌚", "🤡"])
                     await e.react(emo)
                     if random.random() < 0.7: return 
-                except Exception as e:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[REACT ERR]</b> <code>{e}</code>"))
+                except Exception as ex:
+                    if self._c: self._c.loop.create_task(self._log(f"<b>[REACT ERR]</b> <code>{ex}</code>"))
 
             ctx_msgs = [m.tks for m in list(st.rec)[-4:] if m.tks]
             ctx_tks = tuple(w for msg in ctx_msgs for w in msg) + tk
@@ -2121,8 +2121,8 @@ class GoyPulseMod(loader.Module):
             r_del = len(t) * 0.03 if t else 0.5
             await asyncio.sleep(min(max(r_del, 0.5), 3.0))
             try: await e.client.send_read_acknowledge(e.chat_id, e)
-            except Exception as e:
-                if self._c: self._c.loop.create_task(self._log(f"<b>[ACK ERR]</b> <code>{e}</code>"))
+            except Exception as ex:
+                if self._c: self._c.loop.create_task(self._log(f"<b>[ACK ERR]</b> <code>{ex}</code>"))
 
             if mid and (random.random() < 0.45 or not ans):
                 try:
@@ -2137,37 +2137,37 @@ class GoyPulseMod(loader.Module):
                             except: pass
                         try:
                             async with e.client.action(e.chat_id, act): await asyncio.sleep(min(max(dur, 1.5), 10.0))
-                        except Exception as e:
-                            if self._c: self._c.loop.create_task(self._log(f"<b>[ACTION ERR]</b> <code>{e}</code>"))
+                        except Exception as ex:
+                            if self._c: self._c.loop.create_task(self._log(f"<b>[ACTION ERR]</b> <code>{ex}</code>"))
                         msg = await e.client.send_file(e.chat_id, mm, reply_to=e.id)
                         st.my_msgs.append(msg.id)
                         st.cd_u = time.time() + random.uniform(st.cd_m, st.cd_x)
                         if sid: st.usr_cd[sid] = time.time() + random.uniform(st.cd_m, st.cd_x) * 2.0
                         if random.random() < 0.8: return 
-                except Exception as e:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[MEDIA ANS ERR]</b> <code>{e}</code>", cat="err"))
+                except Exception as ex:
+                    if self._c: self._c.loop.create_task(self._log(f"<b>[MEDIA ANS ERR]</b> <code>{ex}</code>", cat="err"))
 
 
             if ans and len(ans) > 0:
                 tdl = min(max(len(ans) * random.uniform(0.12, 0.22), 1.5), 15.0)
                 try:
                     async with e.client.action(e.chat_id, 'typing'): await asyncio.sleep(tdl)
-                except Exception as e:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[TYPING ERR]</b> <code>{e}</code>"))
+                except Exception as ex:
+                    if self._c: self._c.loop.create_task(self._log(f"<b>[TYPING ERR]</b> <code>{ex}</code>"))
                 try:
                     if random.random() < 0.03 and len(ans) > 10:
                         w_ans = ans[:-1] + random.choice(["ь", "ж", "ф", "а"])
                         msg = await e.reply(w_ans); await asyncio.sleep(random.uniform(1.0, 2.0)); await e.reply(f"*{ans.split()[-1]}")
                     else: msg = await e.reply(ans)
                     st.my_msgs.append(msg.id)
-                except Exception as e:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[TEXT ANS ERR]</b> <code>{e}</code>", cat="err"))
+                except Exception as ex:
+                    if self._c: self._c.loop.create_task(self._log(f"<b>[TEXT ANS ERR]</b> <code>{ex}</code>", cat="err"))
 
 
             st.cd_u = time.time() + random.uniform(st.cd_m, st.cd_x)
             if sid: st.usr_cd[sid] = time.time() + random.uniform(st.cd_m, st.cd_x) * 2.0
-        except Exception as e:
-            if self._c: self._c.loop.create_task(self._log(f"<b>[WATCHER GLOBAL ERR]</b> <code>{e}</code>"))
+        except Exception as ex:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[WATCHER GLOBAL ERR]</b> <code>{ex}</code>"))
     @loader.command(ru_doc="<on/off> | Включить/выключить автоответчик")
     async def gpulsecmd(self, m: Message):
         try:
