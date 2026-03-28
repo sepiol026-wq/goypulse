@@ -30,6 +30,8 @@ except Exception:
     CRYPTO_READY = False
 TOK_RE = re.compile(r"[a-zа-яё0-9_]+", re.I)
 URL_RE = re.compile(r"https?://\S+")
+CODE_FENCE_RE = re.compile(r"```|`[^`\n]{2,}`")
+LONG_BLOB_RE = re.compile(r"\b(?:[01]{8,}|[a-f0-9]{16,}|[A-Za-z0-9+/]{24,}={0,2})\b", re.I)
 STOP_W = {"и", "в", "во", "на", "не", "что", "это", "я", "ты", "он", "она", "оно", "мы", "вы", "они", "а", "но", "или", "да", "нет", "ну", "как", "так", "к", "ко", "из", "за", "по", "у", "от", "до", "же", "ли", "бы", "то", "для", "если", "уже", "тут", "там", "ведь", "вот", "даже", "лишь", "о", "об", "очень", "с", "со", "тоже", "только", "чем", "чтобы", "этом", "эти", "этого", "какой", "просто", "может", "раз", "два", "типа", "короче", "кст", "кстати", "вообще", "наверное", "вроде", "кажется", "однако", "хотя", "хоть", "между", "через", "около", "будто", "словно", "ровно", "почти", "вдруг", "разве", "неужели", "снова", "опять", "все", "всё", "вся", "весь", "всех", "всем", "всеми", "всею", "всея", "меня", "мне", "тебя", "тебе", "его", "ее", "её", "их", "наш", "ваш", "свой", "кто", "чей", "этот", "тот", "мой", "твой", "сам", "самый", "весь", "вся", "всё", "все", "зачем", "почему", "когда", "где", "куда", "откуда", "есть", "быть", "был", "была", "было", "были", "хочу", "хочет", "будет", "будут", "твоя", "мое", "моё", "the", "a", "an", "and", "or", "but", "is", "are", "am", "was", "were", "be", "been", "being", "in", "on", "at", "to", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "from", "up", "down", "of", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "should", "now", "could", "would", "which", "who", "whom", "whose", "this", "that", "these", "those", "my", "your", "his", "her", "its", "our", "their", "mine", "yours", "hers", "ours", "theirs", "me", "him", "us", "them", "myself", "yourself", "himself", "herself", "itself", "ourselves", "themselves", "whose", "which", "what", "where", "when", "why", "how", "all", "another", "any", "anybody", "anyone", "anything", "both", "each", "either", "everybody", "everyone", "everything", "few", "many", "neither", "nobody", "none", "no one", "nothing", "one", "other", "others", "some", "somebody", "someone", "something", "such", "that", "these", "this", "those", "each", "which", "who", "whom", "whose", "as", "at", "by", "for", "from", "in", "into", "of", "off", "on", "onto", "out", "over", "to", "up", "with", "yet", "above", "below", "beside", "between", "beyond", "during", "except", "near", "past", "since", "through", "toward", "under", "until", "upon", "within", "without", "че", "чё", "чо", "кароч", "кароче", "типо", "ваще", "ващето", "вобще", "походу", "плз", "плиз", "спс", "пасиб", "пасиба", "пж", "дя", "нее", "неа", "нука", "мол", "типатого", "прям", "тока", "пока", "прив", "ку", "hi", "hey", "hello", "yo", "sup", "howdy", "morning", "afternoon", "evening", "night", "goodbye", "bye", "see ya", "later", "please", "thanks", "thank you", "thx", "welcome", "yw", "sorry", "excuse me", "yes", "yeah", "yep", "no", "nope", "nah", "maybe", "perhaps", "actually", "basically", "literally", "totally", "definitely", "absolutely", "probably", "sure", "ok", "okay", "alright", "fine", "cool", "great", "awesome", "good", "bad", "well", "very", "much", "many", "little", "few", "enough", "too", "so", "very", "really", "quite", "rather", "pretty", "somewhat", "almost", "nearly", "mostly", "partly", "half", "least", "most", "more", "less", "bit", "piece", "way", "far", "near", "long", "short", "high", "low", "big", "small", "new", "old", "young", "early", "late", "fast", "slow", "hard", "easy", "clear", "dark", "light", "heavy", "soft", "loud", "quiet", "strong", "weak", "rich", "poor", "hot", "cold", "warm", "cool", "dry", "wet", "clean", "dirty", "full", "empty", "open", "closed", "first", "last", "right", "wrong", "true", "false", "real", "fake"}
 GRTS = {"привет", "хай", "здарова", "ку", "дарова", "салам", "куку", "добрый", "вечер", "утро", "шалом", "qq", "прив", "здрасьте", "вечерочек", "утречко", "салют", "здравствуй", "приветствую", "алоха", "дратути", "кусь", "сап", "йо", "кукушки", "здоров", "превед", " хаюшки", "добрейший", "конишуа", "бонжур", "гутен", "таг", "приветс", "дароу", "салам алейкум", "ассаламу", "hello", "hi", "hey", "greetings", "morning", "yo", "sup", "howdy", "hiya", "evening", "afternoon", "welcome", "aloha", "shalom", "hola", "bonjour", "ciao", "namaste", "heyyo", "hibro", "hi there", "wassup", "whats up", "good morning", "good evening", "good afternoon", "nice to see you", "hey there", "it's been a while", "long time no see", "lovely to meet you", "how's it going", "how are you", "what's new", "how's life", "how's things", "morning all", "hi everyone", "hello folks", "доброе", "утречко", "вечер", "в хату", "здравия", "желаю", "почтение", "приветствую всех", "хайль", "ave", "здорово", "привет", "доброе утро", "добрый день", "добрый вечер", "доброй ночи", "хайль", "здравия желаю", "низкий поклон", "моё почтение", "честь имею", "барев", "салам алейкум", "уалейкум ассалам", "нихао", "ола", "аннён", "дзякуй", "вечер в радость", "здорово бандиты", "здорово жиганы", "всем ку", "кукусики", "приветики", "даровчики", "приветствую", "добрейшего денёчка", "утреца", "доброй ночи", "салам пополам", "здаристи", "здрасьте мордасьте", "куку", "qq", "q-q", "ку", "hi", "hey", "hello", "greetings", "salutations", "morning", "evening", "afternoon", "good day", "howdy", "sup", "yo", "wassup", "welcome", "aloha", "bonjour", "ciao", "hola", "namaste", "shalom", "hiya", "hey there", "hi there", "long time no see", "lovely to meet you", "nice to meet you", "how's it going", "how are you", "how have you been", "what's up", "what's going on", "what's new", "good to see you", "pleasure to meet you", "it's an honor", "greetings everyone"}
 RCTS = {"ахах", "лол", "жиза", "жестко", "имба", "топ", "пон", "кринж", "база", "хах", "треш", "ору", "рил", "мда", "пздц", "пиздец", "ебать", "бля", "блять", "чел", "капец", "шок", "ужас", "жесть", "согл", "базару", "факты", "хуйня", "дичь", "ор", "ржомба", "рофл", "кринге", "понял", "ясно", "хуй", "пизда", "охренеть", "охуеть", "писец", "бб", "ок", "окей", "окда", "спс", "спасибо", "сигма", "вумен", "скуф", "нормис", "альтушка", "масик", "тюбик", "штрих", "чечик", "имбово", "разрывная", "свэг", "чиназес", "легенда", "гигачад", "базированно", "кринжатина", "дэмн", "люто", "чертовски", "пиздато", "офигенно", "кайф", "кайфово", "найс", "ладно", "бебра", "абуз", "тильт", "флекс", "шейм", "горишь", "слит", "попуск", "агро", "душно", "душнила", "ахаха", "лолз", "мем", "рофлишь", "кринжую", "нереально", "круто", "четко", "красава", "красавчик", "харош", "хорош", "гений", "легендарно", "сильно", "жёстко", "безумно", "lmao", "rofl", "wtf", "omg", "bruh", "based", "cringe", "fr", "frfr", "ong", "tbh", "ngl", "idk", "idc", "stfu", "gtfo", "lmfao", "damn", "sheesh", "bet", "cap", "nocap", "dope", "lit", "trash", "awesome", "cool", "sick", "wild", "insane", "legit", "standard", "classic", "vibes", "mood", "shook", "dead", "skull", "че за", "шо за", "пиздец", "ппц", "ну и ну", "ох", "ах", "ого", "ух ты", "нифига", "ничоси", "воу", "эщкере", "вуху", "ура", "еее", "йоу", "хоспади", "господи", "боже мой", "матерь божья", "бляха муха", "сука", "епт", "епта", "ебаный рот", "пидорас", "гандон", "хуило", "еблан", "дебил", "даун", "лошара", "чушпан", "пацаны", "ребята", "братва", "брат", "братик", "бро", "кентуфурик", "кореш", "дружбан", "парень", "девушка", "тян", "кун", "лоля", "вайфу", "краш", "шип", "шипперить", "кринжануть", "рофляночка", "шуточка", "прикол", "кек", "кеке", "кекаю", "пушка", "бомба", "ракета", "космос", "вышка", "огонь", "горячо", "жара", "мощно", "крутяк", "заебись", "охуенно", "чётко", "збс", "гг", "wp", "gl", "hf", "ggwp", "ez", "ezez", "сидим", "кайфуем", "отдыхаем", "работаем", "учимся", "спать", "жрать", "бухать", "курить", "парить", "жидкость", "жижа", "под", "вейп", "электронка", "ашка", "одноразка", "кальян", "пиво", "водка", "виски", "вино", "коньяк", "вискарь", "текила", "ром", "джин", "шампусик", "шампанское", "лимонад", "кола", "пепси", "энергетик", "монстр", "редбулл", "адреналин", "флэш", "торч", "солевой", "наркоман", "алкаш", "бомж", "бич", "нищий", "богатый", "мажор", "нищеброд", "нищий", "лох", "терпила", "куколд", "омежка", "сигмач", "гигачад", "папич", "величайший", "видос", "стрим", "видосик", "видяха", "карта", "проц", "комп", "пк", "ноут", "клава", "мышка", "моник", "наушники", "уши", "микро", "вебка", "телефон", "смартфон", "айфон", "самсунг", "андроид", "дискорд", "тг", "телеграм", "вк", "инста", "тикток", "ютуб", "твич", "кик", "сайт", "интернет", "сеть", "вайфай", "скорость", "пинг" , "лаги", "фризы", "баги", "ошибки", "еррор", "хелп", "помогите", "спасите", "админ", "модер", "владелец", "овнер", "создатель", "хуйло", "красавец", "молодец", "умничка", "солнышко", "зайка", "котик", "киса", "лапочка", "милота", "кавай", "ня", "няшка", "ня кавай", "ураа", "еее", "крутотенюшка", "лучший", "лучшая", "the best", "classic", "standard", "norm", "normal", "okey", "fine", "good", "nice", "very good", "excellent", "perfect", "amazing", "wonderful", "terrible", "awful", "bad", "badly", "horrible", "shit", "holy shit", "omg", "wtf", "wth", "lmao", "lmfao", "lol", "rofl", "bruh", "damn", "sheesh", "fr", "frfr", "real", "really", "literally", "literally me", "me", "mood", "vibes", "vibe", "aesthetic", "standard", "basic", "premium", "lux", "luxury", "rich", "poor", "money", "cash", "dollars", "bucks", "rubles", "crypto", "bitcoin", "eth", "nft", "scam", "scammer", "legit", "safe", "scary", "fear", "horror", "spooky", "creepy", "weird", "strange", "bizarre", "odd", "funny", "hilarious", "joke", "prank", "troll", "trolling", "hater", "fan", "fandom", "stan", "simp", "incel", "femcel", "chad", "gigachad", "sigma", "alpha", "beta", "omega", "cuck", "cuckold", "soyboy", "npc", "main character", "hero", "villain", "boss", "noob", "pro", "hacker", "cheater", "admin", "mod", "staff", "user", "player", "game", "gaming", "stream", "steamer", "video", "content", "creator", "famous", "popular", "viral", "tranding", "tags", "reposts", "likes", "views", "subscribers", "subs", "goat", "legend", "icon", "masterpiece", "peak", "mid", "flop", "w", "l", "massive w", "huge l", "ratio", "canceled", "cancelled", "toxic", "wholesome", "cursed", "blessed", "blursed", "sus", "imposter", "amongus", "amogus", "vent", "sussy", "baka", "pog", "poggers", "pogchamp", "kekw", "omegalul", "pepeh", "kappa", "sadge", "monkas", "feelsbadman", "feelsgoodman", "clap", "ez", "ggwp", "get rekt", "rekt", "destroyed", "owned", "skill issue", "noob", "get gud", "cope", "seethe", "mald", "cry about it", "stay mad", "touch grass", "ratio", "owned", "powned", "pwned", "clapped", "dumped", "washed", "washed up", "fraud", "overrated", "underrated", "sleeper", "banger", "slaps", "fire", "heat", "cold", "frozen", "icy", "drip", "drippy", "swag", "yolo", "swag", "gucci", "prada", "hype", "hypebeast", "og", "real one", "homie", "bestie", "brother", "sister", "fam", "squad", "crew", "gang", "tribe", "folk", "folks", "peeps", "people"}
@@ -76,6 +78,7 @@ class CSt:
     parsed_cnt: int = 0
     cd_u: float = 0.0
     mute_u: float = 0.0
+    auto_off_u: float = 0.0
     lrn: bool = False
     last_usr: int = 0
     last_tone: str = "нейтрал"
@@ -90,7 +93,7 @@ class GoyPulseMod(loader.Module):
         "name": "GoyPulse V9",
         "brand": "GoyPulse V9 by goy(@samsepi0l_ovf)",
         "og": "🛡️ <b>[GoyPulse]</b> Только для групп.",
-        "on": "⚡ <b>[GoyPulse]</b> Система активирована.\n<i>Теперь я обучаюсь и буду отвечать в этом чате.</i>",
+        "on": "⚡ <b>[GoyPulse]</b> Система активирована.\n<i>Теперь я обучаюсь и буду отвечать в этом чате.</i>{}",
         "off": "💤 <b>[GoyPulse]</b> Система деактивирована.\n<i>Я больше не буду отвечать здесь.</i>",
         "ref_st": "🧬 <b>[Обучение]</b> Анализ истории сообщений...{}",
         "ref_upd": "🧠 <b>[Обучение]</b> В процессе... <code>[{}{}]</code>\n\n📊 <b>Статистика:</b>\n├─ 💠 Словарь: <code>{}</code>\n├─ 🖼️ Медиа: <code>{}</code>\n├─ 📚 Слова: <code>{}</code>\n└─ ⚡ Скорость: <code>{}</code> msg/s\n\n⏳ <b>Осталось:</b> <code>{}</code>",
@@ -126,7 +129,7 @@ class GoyPulseMod(loader.Module):
         "bp_trust_imported": "✅ Ключ пользователя <code>{}</code> импортирован.",
         "bp_trust_missing": "❌ Нет доверенного ключа для пользователя <code>{}</code>.",
         "react_ok": "✨ <b>[Реакция]</b> Бот отреагировал на сообщение.",
-        "h_pulse": "🔌 <b>[Usage] .gpulse [on|off]</b>\n\nВключает или полностью отключает обработку сообщений ботом в текущем чате.\n\n<b>Инструкция:</b>\n├ <code>.gpulse on</code> — Бот начинает слушать чат, обучаться и отвечать согласно настройкам.\n└ <code>.gpulse off</code> — Бот полностью игнорирует всё происходящее в этом чате.\n\n<i>Примечание: Если база пуста, бот напомнит о необходимости обучения (.gpref).</i>\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
+        "h_pulse": "🔌 <b>[Usage] .gpulse [on|off] [time]</b>\n\nВключает или отключает обработку сообщений ботом в текущем чате.\n\n<b>Инструкция:</b>\n├ <code>.gpulse on</code> — включить без таймера.\n├ <code>.gpulse on 30</code> — включить на 30 минут.\n├ <code>.gpulse on 2h</code> — включить на 2 часа.\n└ <code>.gpulse off</code> — выключить сразу.\n\n<i>Поддерживаются суффиксы: s, m, h, d и русские м, ч, д.</i>\n\n<code>GoyPulse V9 by goy(@samsepi0l_ovf)</code>",
         "h_set": "⚙️ <b>Настройки GoyPulse V9</b> | <code>by goy(@samsepi0l_ovf)</code>\n\n"
                  "Использование: <code>.gpset &lt;ключ&gt; &lt;значение&gt; [target_group]</code>\n\n"
                  "🌐 <b>Глобальные параметры:</b>\n"
@@ -211,6 +214,7 @@ class GoyPulseMod(loader.Module):
         self._max_backup_input = 30 * 1024 * 1024
         self._max_backup_plain = 24 * 1024 * 1024
         self._max_backup_chats = 500
+        self._backup_keep_limit = 24
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
         self._module_version = "9.1.2"
@@ -232,11 +236,25 @@ class GoyPulseMod(loader.Module):
         try:
             if self._db_conn:
                 with self._sql_lock:
-                    is_trans = any(q.strip().upper().startswith(x) for x in ["BEGIN", "COMMIT", "ROLLBACK"])
-                    if q.strip().upper().startswith("BEGIN") and self._db_conn.in_transaction:
+                    qn = q.strip().upper()
+                    is_begin = qn.startswith("BEGIN")
+                    is_commit = qn.startswith("COMMIT")
+                    is_rollback = qn.startswith("ROLLBACK")
+                    is_trans = is_begin or is_commit or is_rollback
+                    if is_begin and self._db_conn.in_transaction:
+                        return None
+                    if (is_commit or is_rollback) and not self._db_conn.in_transaction:
                         return None
                     cur = self._db_conn.cursor()
-                    cur.execute(q, p)
+                    try:
+                        cur.execute(q, p)
+                    except sqlite3.OperationalError as e:
+                        msg = str(e).lower()
+                        if is_begin and "within a transaction" in msg:
+                            return None
+                        if (is_commit or is_rollback) and "no transaction is active" in msg:
+                            return None
+                        raise
                     res = cur.fetchall() if fetch else None
                     if commit and not fetch and "SELECT" not in q.upper() and not is_trans:
                         if self._db_conn.in_transaction:
@@ -265,7 +283,7 @@ class GoyPulseMod(loader.Module):
         except: pass
 
                                        
-        self._sql("CREATE TABLE IF NOT EXISTS chats (cid INTEGER PRIMARY KEY, on_off INTEGER, lim INTEGER, min_m INTEGER, r_ch INTEGER, m_ch INTEGER, my_ch INTEGER, cd_m INTEGER, cd_x INTEGER, bp_on INTEGER, bp_int INTEGER, react_ch INTEGER, last_mid INTEGER, parsed_cnt INTEGER, w_cnt INTEGER, cd_u REAL, mute_u REAL, last_usr INTEGER, last_tone TEXT, last_t REAL)")
+        self._sql("CREATE TABLE IF NOT EXISTS chats (cid INTEGER PRIMARY KEY, on_off INTEGER, lim INTEGER, min_m INTEGER, r_ch INTEGER, m_ch INTEGER, my_ch INTEGER, cd_m INTEGER, cd_x INTEGER, bp_on INTEGER, bp_int INTEGER, react_ch INTEGER, last_mid INTEGER, parsed_cnt INTEGER, w_cnt INTEGER, cd_u REAL, mute_u REAL, auto_off_u REAL, last_usr INTEGER, last_tone TEXT, last_t REAL)")
 
         
                                                  
@@ -279,7 +297,7 @@ class GoyPulseMod(loader.Module):
                     ("cd_m", "INTEGER"), ("cd_x", "INTEGER"), ("bp_on", "INTEGER"),
                     ("bp_int", "INTEGER"), ("react_ch", "INTEGER"), ("last_mid", "INTEGER"),
                     ("parsed_cnt", "INTEGER"), ("w_cnt", "INTEGER"), ("cd_u", "REAL"),
-                    ("mute_u", "REAL"), ("last_usr", "INTEGER"), ("last_tone", "TEXT"),
+                    ("mute_u", "REAL"), ("auto_off_u", "REAL"), ("last_usr", "INTEGER"), ("last_tone", "TEXT"),
                     ("last_t", "REAL")
                 ]
                 for col, ctype in expected:
@@ -368,18 +386,99 @@ class GoyPulseMod(loader.Module):
     def _tks(self, t: str) -> Tuple[str, ...]: return tuple(x for x in TOK_RE.findall(self._nrm(t)) if len(x) > 1 and x not in STOP_W)
     def _ngs(self, t: Tuple[str, ...], n: int) -> List[Tuple[str, ...]]: return [tuple(t[i:i+n]) for i in range(len(t)-n+1)] if len(t) >= n else []
     def _iq(self, t: str) -> bool: return (n := self._nrm(t)).endswith("?") or (bool(n) and n.split()[0] in QW)
+    def _parse_duration_seconds(self, raw: str) -> int:
+        s = (raw or "").strip().lower()
+        if not s:
+            return 0
+        m = re.fullmatch(r"(\d{1,7})([smhdмчд]?)", s)
+        if not m:
+            raise ValueError("bad duration")
+        val = int(m.group(1))
+        unit = m.group(2) or "m"
+        mult = {
+            "s": 1,
+            "m": 60,
+            "h": 3600,
+            "d": 86400,
+            "м": 60,
+            "ч": 3600,
+            "д": 86400,
+        }.get(unit, 60)
+        return max(0, min(val * mult, 30 * 86400))
+    def _is_code_like(self, t: str, tk: Tuple[str, ...] = ()) -> bool:
+        t = (t or "").strip()
+        if not t:
+            return False
+        low = t.lower()
+        lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+        if CODE_FENCE_RE.search(t):
+            return True
+        if len(lines) >= 3:
+            code_lines = 0
+            for ln in lines[:12]:
+                if re.search(r"[{}[\];<>]|=>|==|!=|:=|::|#include\b|\b(import|from|class|def|return|await|async|func|package|var|let|const|public|private)\b", ln, re.I):
+                    code_lines += 1
+            if code_lines >= max(2, len(lines) // 2):
+                return True
+        if re.search(r"\b(import|from|class|def|return|async|await|lambda|console\.|print\(|SELECT\b|INSERT\b|UPDATE\b|DELETE\b|function\s*\(|var\s+\w+\s*=|let\s+\w+\s*=|const\s+\w+\s*=)\b", t, re.I):
+            return True
+        if sum(ch in "{}[]();<>/\\=*_#" for ch in t) >= max(6, len(t) // 8):
+            return True
+        if tk and len(tk) >= 4 and sum(1 for x in tk if any(ch.isdigit() for ch in x) or "_" in x) >= max(3, len(tk) // 2):
+            return True
+        if low.startswith(("traceback", "error:", "exception:", "warning:", "info:", "debug:")) and len(lines) > 1:
+            return True
+        return False
     def _ig(self, t: str) -> bool:
         tks = set(self._tks(t))
         return bool(tks & GRTS or any(any(x.startswith(g) for g in GRTS if len(g) > 3) for x in tks))
     def _ir(self, t: str) -> bool:
         tks = set(self._tks(t))
         return bool(tks & RCTS or any(any(x.startswith(r) for r in RCTS if len(r) > 3) for x in tks))
+    def _is_bad_text(self, t: str, tk: Tuple[str, ...] = (), allow_short: bool = True) -> bool:
+        t = (t or "").strip()
+        if not t:
+            return True
+        if len(t) > 1000 or "GoyPulse" in t:
+            return True
+        if t.startswith(("/", ".", "!")):
+            return True
+        if self._is_code_like(t, tk):
+            return True
+        if LONG_BLOB_RE.search(t):
+            return True
+        digits = sum(ch.isdigit() for ch in t)
+        alpha = sum(ch.isalpha() for ch in t)
+        non_space = sum(not ch.isspace() for ch in t) or 1
+        punct = sum(not ch.isalnum() and not ch.isspace() for ch in t)
+        if digits / non_space > 0.45:
+            return True
+        if punct / non_space > 0.35 and alpha < max(3, len(tk)):
+            return True
+        if re.search(r'(.)\1{4,}', t):
+            return True
+        if tk and any(len(x) >= 20 for x in tk):
+            return True
+        if tk and len(set(tk)) <= len(tk) * 0.35 and len(tk) > 3:
+            return True
+        if not tk:
+            return True
+        if not allow_short and len(tk) < 2 and not (self._ig(t) or self._ir(t) or self._iq(t)):
+            return True
+        return False
+    def _should_log_client_err(self, ex: Exception) -> bool:
+        msg = str(ex or "").lower()
+        noisy = (
+            "local variable 'e' referenced before assignment",
+            "local variable e referenced before assignment",
+            "invalid reaction provided",
+            "only emoji are allowed",
+        )
+        return not any(x in msg for x in noisy)
     def _jnk(self, t: str, tk: Tuple[str, ...]) -> bool:
+        if self._is_bad_text(t, tk, allow_short=True): return True
         if len(tk) < 2 and not (self._ig(t) or self._ir(t) or self._iq(t) or len(t) < 5): return True
         if t.isupper() and len(t) > 12: return True
-        if tk and len(set(tk)) <= len(tk) * 0.35 and len(tk) > 3: return True
-        if not tk: return True
-        if re.search(r'(.)\1{4,}', t): return True
         return False
     def _emo_cat(self, w: str) -> str:
         if w in {"шок", "охуеть", "пиздец", "ужас", "жесть", "wtf", "omg"}: return "шок"
@@ -728,11 +827,11 @@ class GoyPulseMod(loader.Module):
             self._upd_last_state = state
             return state
 
-    async def _apply_update(self, manifest: Optional[dict] = None) -> Tuple[bool, str, str]:
+    async def _apply_update(self, manifest: Optional[dict] = None) -> Tuple[bool, str, dict]:
         target = manifest or self._upd_pending_manifest
         valid, err, normalized = self._validate_update_manifest(target)
         if not valid:
-            return False, self.strings("upd_fail").format(utils.escape_html(err)), ""
+            return False, self.strings("upd_fail").format(utils.escape_html(err)), {}
         try:
             self.set("gpupd_verified_ver", normalized["version"])
             self.set("gpupd_skip_ver", "")
@@ -741,9 +840,9 @@ class GoyPulseMod(loader.Module):
             self._upd_pending_manifest = {}
             self._upd_mandatory_active = False
             self._tamper_mode = False
-            return True, "verified", normalized["module_url"]
+            return True, "verified", normalized
         except Exception as e:
-            return False, self.strings("upd_fail").format(utils.escape_html(str(e))), ""
+            return False, self.strings("upd_fail").format(utils.escape_html(str(e))), {}
 
     async def _format_update_status(self) -> str:
         st = self._upd_last_state or {}
@@ -751,6 +850,9 @@ class GoyPulseMod(loader.Module):
         checked = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(checked_ts)) if checked_ts else "never"
         postpone_until = int(self.get("gpupd_postpone_until", 0) or 0)
         postpone = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(postpone_until)) if postpone_until > int(time.time()) else "-"
+        last_inst_ver = str(self.get("gpupd_last_installed_ver", "") or "-")
+        last_inst_ts = int(self.get("gpupd_last_installed_ts", 0) or 0)
+        last_inst = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_inst_ts)) if last_inst_ts else "-"
         skip_ver = str(self.get("gpupd_skip_ver", "") or "-")
         restricted = self._restricted_reason() or "off"
         return (
@@ -762,6 +864,8 @@ class GoyPulseMod(loader.Module):
             f"├ Mandatory: <code>{'yes' if (self._upd_mandatory_active or st.get('mandatory')) else 'no'}</code>\n"
             f"├ Restricted: <code>{restricted}</code>\n"
             f"├ Postpone until: <code>{postpone}</code>\n"
+            f"├ Last installed: <code>{utils.escape_html(last_inst_ver)}</code>\n"
+            f"├ Installed at: <code>{last_inst}</code>\n"
             f"├ Skip version: <code>{utils.escape_html(skip_ver)}</code>\n"
             f"└ Last error: <code>{utils.escape_html(st.get('error') or '-')}</code>"
         )
@@ -770,9 +874,9 @@ class GoyPulseMod(loader.Module):
         if hasattr(call, "edit"):
             await call.edit("⏳ <b>Применяю обновление...</b>")
 
-        ok, msg, url = await self._apply_update()
+        ok, msg, manifest = await self._apply_update()
         if ok:
-            await self._install_from_url(url)
+            await self._install_from_url(manifest)
         else:
             await self._respond(call, msg)
 
@@ -795,9 +899,19 @@ class GoyPulseMod(loader.Module):
         except Exception as e:
             await self._respond(call, self.strings("sub_fail").format(utils.escape_html(str(e))))
 
-    async def _install_from_url(self, url: str):
+    async def _install_from_url(self, manifest: dict):
         try:
+            if not isinstance(manifest, dict):
+                raise ValueError("manifest missing")
+            url = str(manifest.get("module_url", "") or "").strip()
+            expected_sha = str(manifest.get("sha256", "") or "").strip().lower()
+            version = str(manifest.get("version", "") or "").strip()
+            if not url:
+                raise ValueError("module_url missing")
             doc = (await self._fetch_remote_bytes(url, max_len=1024 * 1024)).decode("utf-8")
+            actual_sha = self._sha256_bytes(doc.encode("utf-8")).lower()
+            if expected_sha and not hmac.compare_digest(actual_sha, expected_sha):
+                raise ValueError("sha256 mismatch")
             lm = self.lookup("loader")
             
             import ast, uuid, sys
@@ -848,7 +962,13 @@ class GoyPulseMod(loader.Module):
                 if lm.fully_loaded:
                     lm.update_modules_in_db()
                 
-                await self._log(f"Module updated to <code>{normalized.get('version', 'unknown')}</code>", cat="lrn")
+                self.set("gpupd_last_installed_ver", version or self._module_version)
+                self.set("gpupd_last_installed_ts", int(time.time()))
+                await self._log(
+                    f"Module updated to <code>{utils.escape_html(version or 'unknown')}</code>\n"
+                    f"SHA256: <code>{actual_sha}</code>",
+                    cat="lrn",
+                )
             except Exception as e:
                 await self._log(f"<b>[INSTALL ERR]</b> <code>{e}</code>", cat="err")
         except Exception as e:
@@ -1223,8 +1343,8 @@ class GoyPulseMod(loader.Module):
             self._sql("BEGIN")
             for cid, st in self._chs.items():
                 if not st.on and not st.msgs and not st.parsed_cnt: continue
-                self._sql("INSERT OR REPLACE INTO chats (cid, on_off, lim, min_m, r_ch, m_ch, my_ch, cd_m, cd_x, bp_on, bp_int, react_ch, last_mid, parsed_cnt, w_cnt, cd_u, mute_u, last_usr, last_tone, last_t) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
-                          (cid, int(st.on), st.lim, st.min_m, st.r_ch, st.m_ch, st.my_ch, st.cd_m, st.cd_x, int(self.config["bp_on"]), int(self.config["bp_int"]), int(self.config["react_ch"]), st.last_mid, st.parsed_cnt, st.w_cnt, st.cd_u, st.mute_u, st.last_usr, st.last_tone, st.last_t), commit=False)
+                self._sql("INSERT OR REPLACE INTO chats (cid, on_off, lim, min_m, r_ch, m_ch, my_ch, cd_m, cd_x, bp_on, bp_int, react_ch, last_mid, parsed_cnt, w_cnt, cd_u, mute_u, auto_off_u, last_usr, last_tone, last_t) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 
+                          (cid, int(st.on), st.lim, st.min_m, st.r_ch, st.m_ch, st.my_ch, st.cd_m, st.cd_x, int(self.config["bp_on"]), int(self.config["bp_int"]), int(self.config["react_ch"]), st.last_mid, st.parsed_cnt, st.w_cnt, st.cd_u, st.mute_u, st.auto_off_u, st.last_usr, st.last_tone, st.last_t), commit=False)
                 self._sql("DELETE FROM mem_msgs WHERE cid=?", (cid,), commit=False)
                 for mtype, dq in [('msgs', st.msgs), ('rec', st.rec), ('mds', st.mds)]:
                     for m in dq: self._sql("INSERT INTO mem_msgs (cid, mid, txt, hm, mk, mtype, sender_id) VALUES (?,?,?,?,?,?,?)", (cid, m.mid, m.txt, int(m.hm), m.mk, mtype, m.sender_id), commit=False)
@@ -1262,9 +1382,10 @@ class GoyPulseMod(loader.Module):
                 st.w_cnt = r[14] or 0
                 st.cd_u = r[15] or 0.0
                 st.mute_u = r[16] or 0.0
-                st.last_usr = r[17] or 0
-                st.last_tone = r[18] or "нейтрал"
-                st.last_t = r[19] or 0.0
+                st.auto_off_u = r[17] or 0.0
+                st.last_usr = r[18] or 0
+                st.last_tone = r[19] or "нейтрал"
+                st.last_t = r[20] or 0.0
 
                                     
                 for tk, cnt in self._sql("SELECT tk, cnt FROM tokens WHERE cid=?", (cid,), fetch=True):
@@ -1354,6 +1475,35 @@ class GoyPulseMod(loader.Module):
                     continue
         return sorted(seen)
 
+    def _backup_store_dir(self) -> str:
+        try:
+            base = os.path.dirname(self._module_file_path()) or os.getcwd()
+        except Exception:
+            base = os.getcwd()
+        path = os.path.join(base, "goypulse_backups")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _prune_backup_store(self):
+        try:
+            root = self._backup_store_dir()
+            files = []
+            for name in os.listdir(root):
+                if name.endswith(".gpb2"):
+                    full = os.path.join(root, name)
+                    try:
+                        files.append((os.path.getmtime(full), full))
+                    except OSError:
+                        continue
+            files.sort(reverse=True)
+            for _, full in files[self._backup_keep_limit:]:
+                try:
+                    os.remove(full)
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
     def _chat_backup_data(self, cid: int) -> dict:
         st = self._chs.get(cid)
         if st:
@@ -1406,18 +1556,42 @@ class GoyPulseMod(loader.Module):
             total_links += sum(len(x) for x in dat.get("mkv4", {}).values())
         return data, len(selected), total_words, total_links
 
-    async def _send_payload_file(self, dest: int, fname: str, caption: str):
-        try:
-            await self._c.send_file(dest, fname, caption=caption)
-        except ValueError:
-            ent = await self._c.get_entity(dest)
-            await self._c.send_file(ent, fname, caption=caption)
+    async def _send_payload_file(self, dest: int, fname: str, caption: str) -> int:
+        last_err = None
+        targets = []
+        if dest is not None:
+            targets.append(dest)
+        if self._my_id and self._my_id not in targets:
+            targets.append(self._my_id)
+        if "me" not in targets:
+            targets.append("me")
+        for target in targets:
+            try:
+                msg = await self._c.send_file(target, fname, caption=caption)
+                if target != dest:
+                    self._log_ch = self._my_id if target in {self._my_id, "me"} else self._log_ch
+                    self.set("log_ch", self._my_id if target in {self._my_id, "me"} else self._log_ch)
+                return getattr(msg, "id", 0) or 0
+            except Exception as e:
+                last_err = e
+                try:
+                    ent = await self._c.get_entity(target)
+                    msg = await self._c.send_file(ent, fname, caption=caption)
+                    if target != dest:
+                        self._log_ch = self._my_id if target in {self._my_id, "me"} else self._log_ch
+                        self.set("log_ch", self._my_id if target in {self._my_id, "me"} else self._log_ch)
+                    return getattr(msg, "id", 0) or 0
+                except Exception as inner:
+                    last_err = inner
+                    continue
+        raise last_err or RuntimeError("send_file failed")
 
     async def _sv_loop(self):
         while True:
             if await self._wait_or_stop(120):
                 return
             try:
+                await self._apply_chat_timeouts()
                 await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except asyncio.CancelledError:
                 return
@@ -1452,9 +1626,6 @@ class GoyPulseMod(loader.Module):
                     if manual and m:
                         await self._ans(m, "❌ Не удалось сформировать зашифрованный бэкап.")
                     return
-                fname = f"gp_backup_{time.strftime('%Y%m%d_%H%M%S')}.gpb2"
-                with open(fname, "w", encoding="utf-8") as f:
-                    f.write(payload)
                 reason = "Manual" if manual else "Auto"
                 caption = (
                     f"💾 <b>GoyPulse Backup ({reason})</b>\n"
@@ -1463,12 +1634,23 @@ class GoyPulseMod(loader.Module):
                     f"└ 🔗 Связей: <code>{total_links}</code>\n\n"
                     f"Формат: <code>GPB2 (AEAD)</code>"
                 )
+                root = self._backup_store_dir()
+                suffix = "manual" if manual else "auto"
+                fname = os.path.join(root, f"gp_backup_{time.strftime('%Y%m%d_%H%M%S')}_{suffix}.gpb2")
+                with open(fname, "w", encoding="utf-8") as f:
+                    f.write(payload)
+                self._prune_backup_store()
                 dst = out_chat if out_chat is not None else await self._get_log()
-                await self._send_payload_file(dst, fname, caption)
+                msg_id = await self._send_payload_file(dst, fname, caption)
                 if manual and m:
-                    await self._ans(m, self.strings("bp_up").format(fname))
+                    await self._ans(m, self.strings("bp_up").format(os.path.basename(fname)))
                 if self._c:
-                    self._c.loop.create_task(self._log(f"Бэкап отправлен. Чатов: <code>{total_chats}</code>", cat="bkp"))
+                    self._c.loop.create_task(self._log(
+                        f"Бэкап сохранён: <code>{utils.escape_html(fname)}</code>\n"
+                        f"Отправка: <code>{'ok' if msg_id else 'unknown'}</code>\n"
+                        f"Чатов: <code>{total_chats}</code>",
+                        cat="bkp",
+                    ))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1476,12 +1658,6 @@ class GoyPulseMod(loader.Module):
                 await self._ans(m, self.strings("bp_err").format(e))
             if self._c:
                 self._c.loop.create_task(self._log(f"<b>[BKP ERR]</b> {e}", cat="err"))
-        finally:
-            if fname and os.path.exists(fname):
-                try:
-                    os.remove(fname)
-                except Exception:
-                    pass
 
     async def _bp_loop(self):
         while True:
@@ -1523,7 +1699,13 @@ class GoyPulseMod(loader.Module):
     async def _get_log(self):
         if self._log_ch: return self._log_ch
         self._log_ch = self.get("log_ch", 0)
-        if self._log_ch: return self._log_ch
+        if self._log_ch:
+            try:
+                await self._c.get_entity(self._log_ch)
+                return self._log_ch
+            except Exception:
+                self._log_ch = 0
+                self.set("log_ch", 0)
         
                                      
         try:
@@ -1583,9 +1765,9 @@ class GoyPulseMod(loader.Module):
     def _add(self, st: CSt, m: Message, commit: bool = True):
         try:
             t = (m.raw_text or "").strip()
-            if len(t) > 1000 or t.startswith(("/", ".", "!")) or "GoyPulse" in t: return
             hm = bool(getattr(m, "media", None))
             tk = self._tks(t)
+            if self._is_bad_text(t, tk, allow_short=False) and not hm: return
             mk = next((k for k in ["sticker", "photo", "gif", "video", "voice"] if getattr(m, k, None)), "media") if hm else ""
             cid = m.chat_id
             mo = MObj(m.id, t, tk, hm, mk, getattr(m, 'sender_id', 0), cid)
@@ -1645,7 +1827,10 @@ class GoyPulseMod(loader.Module):
             async for m in self._c.iter_messages(cid, limit=lm, offset_id=offs):
                 if getattr(m.sender, 'bot', False) or getattr(m, 'fwd_from', None) or (getattr(m, 'sender_id', None) in st.ign): continue
                 st.last_mid = m.id
-                if (m.raw_text or "").strip() or getattr(m, "media", None): self._add(st, m, commit=False)
+                raw = (m.raw_text or "").strip()
+                tk = self._tks(raw)
+                if ((raw and not self._is_bad_text(raw, tk, allow_short=False)) or getattr(m, "media", None)):
+                    self._add(st, m, commit=False)
                 cnt += 1
                 if cnt % 500 == 0:
                     self._sql("COMMIT")
@@ -1733,6 +1918,7 @@ class GoyPulseMod(loader.Module):
             w_ctx = ctx_tks[-10:]
             for m in st.msgs:
                 if not m.tks: continue
+                if self._is_bad_text(m.txt, m.tks, allow_short=False): continue
                 sc = self._sim(st, w_ctx, m.tks)
                 if sc > 0.9: sc *= 0.1
                 if set(self._ngs(w_ctx, 2)) & set(self._ngs(m.tks, 2)): sc += 0.4
@@ -1744,6 +1930,212 @@ class GoyPulseMod(loader.Module):
         except Exception as e:
             if self._c: self._c.loop.create_task(self._log(f"<b>[CND ERR]</b> <code>{e}</code>"))
             return []
+
+    def _pick_smart_reply(self, st: CSt, src_text: str, ctx_tks: Tuple[str, ...], tme: bool) -> str:
+        try:
+            cands = self._cnd(st, ctx_tks, tme)
+            if not cands:
+                return ""
+            src_tks = tuple(ctx_tks[-10:]) if ctx_tks else self._tks(src_text)
+            src_is_q = self._iq(src_text)
+            src_is_g = self._ig(src_text)
+            src_is_r = self._ir(src_text)
+            best_txt, best_sc = "", 0.0
+            for txt in cands[:12]:
+                tk = self._tks(txt)
+                if self._is_bad_text(txt, tk, allow_short=False):
+                    continue
+                sc = self._sim(st, src_tks, tk)
+                if src_is_g and self._ig(txt):
+                    sc += 0.45
+                if src_is_r and self._ir(txt):
+                    sc += 0.25
+                if src_is_q and not self._iq(txt):
+                    sc += 0.2
+                if 2 <= len(tk) <= 16:
+                    sc += 0.15
+                if len(txt) > 220:
+                    sc -= 0.35
+                if txt.lower() in st.my_outs:
+                    sc -= 0.5
+                if sc > best_sc:
+                    best_txt, best_sc = txt, sc
+            return best_txt if best_sc >= 0.42 else ""
+        except Exception as e:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[SMART REPLY ERR]</b> <code>{e}</code>"))
+            return ""
+
+    def _pick_dialogue_reply(self, st: CSt, src_text: str, src_tks: Tuple[str, ...], sender_id: int = 0) -> str:
+        try:
+            if not src_tks or len(st.msgs) < 8:
+                return ""
+            best_txt, best_sc = "", 0.0
+            msgs = list(st.msgs)[-2500:]
+            src_is_q = self._iq(src_text)
+            src_is_g = self._ig(src_text)
+            src_is_r = self._ir(src_text)
+            for i, cur in enumerate(msgs[:-1]):
+                if not cur.tks or self._is_bad_text(cur.txt, cur.tks, allow_short=False):
+                    continue
+                sc = self._sim(st, src_tks[-10:], cur.tks[-10:])
+                if sc < 0.18:
+                    continue
+                if src_is_q and self._iq(cur.txt):
+                    sc += 0.12
+                if src_is_g and self._ig(cur.txt):
+                    sc += 0.18
+                if src_is_r and self._ir(cur.txt):
+                    sc += 0.1
+                reply = None
+                for nxt in msgs[i + 1:i + 5]:
+                    if not nxt.tks or self._is_bad_text(nxt.txt, nxt.tks, allow_short=False):
+                        continue
+                    if nxt.sender_id == cur.sender_id:
+                        continue
+                    reply = nxt
+                    break
+                if not reply:
+                    continue
+                if sender_id and reply.sender_id == sender_id:
+                    sc += 0.08
+                if self._iq(reply.txt):
+                    sc -= 0.12
+                if len(reply.tks) < 1 or len(reply.tks) > 18:
+                    sc -= 0.15
+                if len(reply.txt) > 240:
+                    sc -= 0.25
+                if reply.txt.lower() in st.my_outs:
+                    sc -= 0.5
+                sc += max(0.0, (i / max(1, len(msgs))) * 0.12)
+                if sc > best_sc:
+                    best_txt, best_sc = reply.txt, sc
+            return best_txt if best_sc >= 0.48 else ""
+        except Exception as e:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[DIALOGUE REPLY ERR]</b> <code>{e}</code>"))
+            return ""
+
+    def _pick_author_style_reply(self, st: CSt, sender_id: int, src_text: str, src_tks: Tuple[str, ...]) -> str:
+        try:
+            if not sender_id or not src_tks:
+                return ""
+            best_txt, best_sc = "", 0.0
+            samples = [m for m in list(st.msgs)[-1200:] if m.sender_id == sender_id and m.tks]
+            if not samples:
+                return ""
+            src_is_q = self._iq(src_text)
+            src_is_g = self._ig(src_text)
+            src_is_r = self._ir(src_text)
+            for m in samples[-120:]:
+                if self._is_bad_text(m.txt, m.tks, allow_short=False):
+                    continue
+                sc = self._sim(st, src_tks[-10:], m.tks[-10:])
+                if src_is_g and self._ig(m.txt):
+                    sc += 0.2
+                if src_is_r and self._ir(m.txt):
+                    sc += 0.12
+                if src_is_q and self._iq(m.txt):
+                    sc -= 0.08
+                if 1 <= len(m.tks) <= 14:
+                    sc += 0.12
+                if len(m.txt) > 180:
+                    sc -= 0.2
+                if m.txt.lower() in st.my_outs:
+                    sc -= 0.5
+                if sc > best_sc:
+                    best_txt, best_sc = m.txt, sc
+            return best_txt if best_sc >= 0.38 else ""
+        except Exception as e:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[AUTHOR STYLE ERR]</b> <code>{e}</code>"))
+            return ""
+
+    def _dialogue_mode(self, text: str, tks: Tuple[str, ...]) -> str:
+        if self._ig(text):
+            return "greet"
+        if self._iq(text):
+            return "question"
+        if self._ir(text):
+            return "react"
+        if len(tks) <= 2:
+            return "short"
+        return "chat"
+
+    def _pick_mode_reply(self, st: CSt, src_text: str, src_tks: Tuple[str, ...], sender_id: int = 0) -> str:
+        try:
+            mode = self._dialogue_mode(src_text, src_tks)
+            best_txt, best_sc = "", 0.0
+            msgs = list(st.msgs)[-2200:]
+            for i, cur in enumerate(msgs[:-1]):
+                if not cur.tks or self._is_bad_text(cur.txt, cur.tks, allow_short=False):
+                    continue
+                if self._dialogue_mode(cur.txt, cur.tks) != mode:
+                    continue
+                sc = self._sim(st, src_tks[-10:], cur.tks[-10:]) if src_tks else 0.0
+                if mode == "greet" and self._ig(cur.txt):
+                    sc += 0.35
+                elif mode == "question" and self._iq(cur.txt):
+                    sc += 0.22
+                elif mode == "react" and self._ir(cur.txt):
+                    sc += 0.22
+                elif mode == "short" and len(cur.tks) <= 2:
+                    sc += 0.16
+                reply = None
+                for nxt in msgs[i + 1:i + 4]:
+                    if not nxt.tks or self._is_bad_text(nxt.txt, nxt.tks, allow_short=False):
+                        continue
+                    if nxt.sender_id == cur.sender_id:
+                        continue
+                    if self._dialogue_mode(nxt.txt, nxt.tks) == mode and mode != "question":
+                        sc += 0.08
+                    reply = nxt
+                    break
+                if not reply:
+                    continue
+                if sender_id and reply.sender_id == sender_id:
+                    sc += 0.06
+                if len(reply.txt) > 180:
+                    sc -= 0.2
+                if reply.txt.lower() in st.my_outs:
+                    sc -= 0.5
+                if sc > best_sc:
+                    best_txt, best_sc = reply.txt, sc
+            threshold = {"greet": 0.32, "question": 0.38, "react": 0.34, "short": 0.28, "chat": 0.42}.get(mode, 0.4)
+            return best_txt if best_sc >= threshold else ""
+        except Exception as e:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[MODE REPLY ERR]</b> <code>{e}</code>"))
+            return ""
+
+    def _compose_hybrid_reply(self, st: CSt, src_text: str, base: str, style: str, generated: str) -> str:
+        try:
+            parts = []
+            for txt in (base, style, generated):
+                if not txt:
+                    continue
+                txt = txt.strip()
+                if not txt or self._is_bad_text(txt, self._tks(txt), allow_short=False):
+                    continue
+                if txt.lower() in {x.lower() for x in parts}:
+                    continue
+                parts.append(txt)
+            if not parts:
+                return ""
+            src_is_q = self._iq(src_text)
+            if src_is_q:
+                for txt in parts:
+                    if not self._iq(txt):
+                        return txt
+            if len(parts) >= 2:
+                a = parts[0]
+                b = parts[1]
+                a_tk = self._tks(a)
+                b_tk = self._tks(b)
+                if a_tk and b_tk and len(a_tk) <= 8 and len(b_tk) <= 8:
+                    joined = f"{a.rstrip('.!?, ')} {b}".strip()
+                    if not self._is_bad_text(joined, self._tks(joined), allow_short=False) and len(joined) <= 220:
+                        return joined
+            return parts[0]
+        except Exception as e:
+            if self._c: self._c.loop.create_task(self._log(f"<b>[HYBRID REPLY ERR]</b> <code>{e}</code>"))
+            return base or style or generated or ""
 
     def _gen(self, st: CSt, ctx_tks: Tuple[str, ...], tme: bool) -> str:
         try:
@@ -1781,7 +2173,8 @@ class GoyPulseMod(loader.Module):
                 if nxt == out[-1] and random.random() < 0.3: break
                 out.append(nxt)
             r = " ".join(out).strip()
-            if not r or r.lower() in st.my_outs: return "" 
+            if not r or r.lower() in st.my_outs: return ""
+            if self._is_bad_text(r, self._tks(r), allow_short=False): return ""
             rc_chk = [m.tks for m in list(st.rec)[-15:] if m.tks]
             if any(self._sim(st, self._tks(r), x) > 0.8 for x in rc_chk): return ""
             st.my_outs.append(r.lower())
@@ -1816,8 +2209,9 @@ class GoyPulseMod(loader.Module):
             if com and random.random() < 0.5:
                 w = random.choice(com[:20])
                 r = f"{w} — факт" if random.random() < 0.5 else f"ну {w} это база"
-                st.my_outs.append(r.lower())
-                return r
+                if not self._is_bad_text(r, self._tks(r), allow_short=False):
+                    st.my_outs.append(r.lower())
+                    return r
             return random.choice(["пон", "ок", "ага", "согл", "ясно", "бывает", "ну да", "мда уж"])
         except Exception: return "пон"
     def _stl(self, t: str, src: str) -> str:
@@ -2126,23 +2520,45 @@ class GoyPulseMod(loader.Module):
         self._pending_restore.pop(token, None)
         await self._respond(call, self.strings("bp_restore_cancel"))
 
+    async def _apply_chat_timeouts(self):
+        now = time.time()
+        changed = False
+        for cid, st in self._chs.items():
+            if st.on and st.auto_off_u and now >= st.auto_off_u:
+                st.on = False
+                st.auto_off_u = 0.0
+                changed = True
+                if self._c:
+                    self._c.loop.create_task(self._log(
+                        f"Автовыключение чата <code>{cid}</code> по таймеру.",
+                        cat="lrn",
+                    ))
+        if changed:
+            self._sv()
+            try:
+                await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
+            except Exception:
+                pass
+
     @loader.unrestricted
     async def watcher(self, e: Message):
         try:
             if not getattr(e, 'message', None) or self._glob_stop or getattr(e, 'out', False): return
+            await self._apply_chat_timeouts()
             if self._is_restricted_mode():
                 await self._log_restricted_once()
                 return
             await self._maybe_import_keycard(e)
             if getattr(e, 'is_private', False): return
-            if getattr(e.sender, 'bot', False) or getattr(e, 'fwd_from', None): return
+            sender = getattr(e, 'sender', None)
+            if getattr(sender, 'bot', False) or getattr(e, 'fwd_from', None): return
             st = self._chs[e.chat_id]
             sid = getattr(e, 'sender_id', None)
             if not st.on or st.lrn or time.time() < st.mute_u or (sid in st.ign): return
             t = (e.raw_text or "").strip()
             tk = self._tks(t)
             hm = bool(getattr(e, "media", None))
-            if len(t) > 1000 or t.startswith(("/", ".", "!")): return
+            if self._is_bad_text(t, tk, allow_short=False) and not hm: return
             if not t and not hm: return
             if self._jnk(t, tk) and not hm: return
             self._add(st, e, commit=True)
@@ -2172,22 +2588,31 @@ class GoyPulseMod(loader.Module):
 
             if random.randint(1, 100) <= self.config["react_ch"]:
                 try:
-                    emo = random.choice(["👍", "😂", "❤️", "🔥", "🤔", "👀", "🌚", "🤡"])
+                    emo = random.choice(["👍", "😂", "🔥", "❤", "👌", "👏"])
                     await e.react(emo)
                     if random.random() < 0.7: return 
                 except Exception as ex:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[REACT ERR]</b> <code>{ex}</code>"))
+                    if self._c and self._should_log_client_err(ex):
+                        self._c.loop.create_task(self._log(f"<b>[REACT ERR]</b> <code>{ex}</code>"))
 
             ctx_msgs = [m.tks for m in list(st.rec)[-4:] if m.tks]
             ctx_tks = tuple(w for msg in ctx_msgs for w in msg) + tk
-            ans = self._gen(st, ctx_tks, tme) or self._fb(st, t)
+            mode_ans = self._pick_mode_reply(st, t, ctx_tks, sid or 0)
+            dlg_ans = self._pick_dialogue_reply(st, t, ctx_tks, sid or 0)
+            style_ans = self._pick_author_style_reply(st, sid or 0, t, ctx_tks)
+            gen_ans = self._gen(st, ctx_tks, tme)
+            smart_ans = self._pick_smart_reply(st, t, ctx_tks, tme)
+            ans = self._compose_hybrid_reply(st, t, mode_ans or dlg_ans or smart_ans, style_ans, gen_ans) or mode_ans or smart_ans or gen_ans or self._fb(st, t)
             ans = self._stl(ans, t)
+            if self._is_bad_text(ans, self._tks(ans), allow_short=False):
+                ans = self._fb(st, t)
             mid = self._md(st, t)
             r_del = len(t) * 0.03 if t else 0.5
             await asyncio.sleep(min(max(r_del, 0.5), 3.0))
             try: await e.client.send_read_acknowledge(e.chat_id, e)
             except Exception as ex:
-                if self._c: self._c.loop.create_task(self._log(f"<b>[ACK ERR]</b> <code>{ex}</code>"))
+                if self._c and self._should_log_client_err(ex):
+                    self._c.loop.create_task(self._log(f"<b>[ACK ERR]</b> <code>{ex}</code>"))
 
             if mid and (random.random() < 0.45 or not ans):
                 try:
@@ -2203,7 +2628,8 @@ class GoyPulseMod(loader.Module):
                         try:
                             async with e.client.action(e.chat_id, act): await asyncio.sleep(min(max(dur, 1.5), 10.0))
                         except Exception as ex:
-                            if self._c: self._c.loop.create_task(self._log(f"<b>[ACTION ERR]</b> <code>{ex}</code>"))
+                            if self._c and self._should_log_client_err(ex):
+                                self._c.loop.create_task(self._log(f"<b>[ACTION ERR]</b> <code>{ex}</code>"))
                         if mm and (mm.media or getattr(mm, 'sticker', None)):
                             msg = await e.client.send_file(e.chat_id, mm, reply_to=e.id)
                             st.my_msgs.append(msg.id)
@@ -2219,11 +2645,16 @@ class GoyPulseMod(loader.Module):
                 try:
                     async with e.client.action(e.chat_id, 'typing'): await asyncio.sleep(tdl)
                 except Exception as ex:
-                    if self._c: self._c.loop.create_task(self._log(f"<b>[TYPING ERR]</b> <code>{ex}</code>"))
+                    if self._c and self._should_log_client_err(ex):
+                        self._c.loop.create_task(self._log(f"<b>[TYPING ERR]</b> <code>{ex}</code>"))
                 try:
                     if random.random() < 0.03 and len(ans) > 10:
                         w_ans = ans[:-1] + random.choice(["ь", "ж", "ф", "а"])
-                        msg = await e.reply(w_ans); await asyncio.sleep(random.uniform(1.0, 2.0)); await e.reply(f"*{ans.split()[-1]}")
+                        typo_tail = ans.split()
+                        msg = await e.reply(w_ans)
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
+                        if typo_tail:
+                            await e.reply(f"*{typo_tail[-1]}")
                     else: msg = await e.reply(ans)
                     st.my_msgs.append(msg.id)
                 except Exception as ex:
@@ -2240,13 +2671,28 @@ class GoyPulseMod(loader.Module):
             if not m.is_group: return await self._ans(m, self.strings("og"))
             if self._is_restricted_mode():
                 return await self._ans(m, self.strings("upd_lock").format(reason=self._restricted_reason()))
-            a = utils.get_args_raw(m).strip().lower()
-            if a not in ["on", "off"]: return await self._ans(m, self.strings("h_pulse"))
+            raw = utils.get_args_raw(m).strip().lower()
+            if not raw:
+                return await self._ans(m, self.strings("h_pulse"))
+            parts = raw.split()
+            if parts[0] not in ["on", "off"]:
+                return await self._ans(m, self.strings("h_pulse"))
             st = self._chs[m.chat_id]
-            st.on = (a == "on")
+            ttl = 0
+            if parts[0] == "on" and len(parts) > 1:
+                try:
+                    ttl = self._parse_duration_seconds(parts[1])
+                except Exception:
+                    return await self._ans(m, "❌ Неверный формат времени. Примеры: <code>30</code>, <code>45m</code>, <code>2h</code>, <code>1d</code>.")
+            st.on = (parts[0] == "on")
+            st.auto_off_u = (time.time() + ttl) if (st.on and ttl > 0) else 0.0
             self._glob_stop = False
             self._sv()
-            t = self.strings("on") if st.on else self.strings("off")
+            timer_note = ""
+            if st.on and ttl > 0:
+                mins = max(1, int(math.ceil(ttl / 60)))
+                timer_note = f"\n⏱️ Автовыключение через <code>{mins}</code> мин."
+            t = self.strings("on").format(timer_note) if st.on else self.strings("off")
             if st.on and not st.parsed_cnt: t += "\n\n⚠️ <b>База пуста!</b> Напиши <code>.gpref</code>"
             await self._ans(m, t, log=True)
             try: await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
@@ -2304,9 +2750,9 @@ class GoyPulseMod(loader.Module):
                     if not st.get("available"):
                         return await self._ans(m, self.strings("upd_none"))
                 
-                ok, msg, url = await self._apply_update()
+                ok, msg, manifest = await self._apply_update()
                 if ok:
-                    await self._install_from_url(url)
+                    await self._install_from_url(manifest)
                     await self._ans(m, "✅ Попытка обновления завершена. Проверь логи.")
                 else:
                     await self._ans(m, msg)
