@@ -217,7 +217,7 @@ class GoyPulseMod(loader.Module):
         self._backup_keep_limit = 24
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.1.2"
+        self._module_version = "9.1.5"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -525,6 +525,42 @@ class GoyPulseMod(loader.Module):
         if v > self._bp_interval_max:
             v = self._bp_interval_max
         return v
+
+    def _safe_int(self, value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except Exception:
+            try:
+                return int(float(value))
+            except Exception:
+                return default
+
+    def _safe_float(self, value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    def _normalize_chat_state(self, st: CSt) -> None:
+        st.lim = max(0, min(self._safe_int(st.lim, self.config["d_lim"]), 5000000))
+        st.min_m = max(0, min(self._safe_int(st.min_m, self.config["d_min"]), 500))
+        st.r_ch = max(0, min(self._safe_int(st.r_ch, self.config["d_ch"]), 100))
+        st.m_ch = max(0, min(self._safe_int(st.m_ch, self.config["d_mch"]), 100))
+        st.my_ch = max(0, min(self._safe_int(st.my_ch, self.config["d_mych"]), 100))
+        st.cd_m = max(0, min(self._safe_int(st.cd_m, self.config["d_cdm"]), 120))
+        st.cd_x = max(0, min(self._safe_int(st.cd_x, self.config["d_cdx"]), 240))
+        if st.cd_x < st.cd_m:
+            st.cd_x = st.cd_m
+        st.last_mid = max(0, self._safe_int(st.last_mid, 0))
+        st.parsed_cnt = max(0, self._safe_int(st.parsed_cnt, 0))
+        st.w_cnt = max(0, self._safe_int(st.w_cnt, 0))
+        st.cd_u = self._safe_float(st.cd_u, 0.0)
+        st.mute_u = self._safe_float(st.mute_u, 0.0)
+        st.auto_off_u = self._safe_float(st.auto_off_u, 0.0)
+        st.last_usr = self._safe_int(st.last_usr, 0)
+        st.last_t = self._safe_float(st.last_t, 0.0)
+        st.usr_cd = {self._safe_int(uid, 0): self._safe_float(ts, 0.0) for uid, ts in dict(st.usr_cd).items() if self._safe_int(uid, 0)}
+        st.ign = {self._safe_int(uid, 0) for uid in set(st.ign) if self._safe_int(uid, 0)}
 
     def _module_file_path(self) -> str:
         try:
