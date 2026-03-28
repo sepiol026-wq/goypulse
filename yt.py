@@ -3,7 +3,7 @@
 # authors: @goy_ai
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 # Description: лень писать итак всё ясно нахуй
-__version__ = (3, 0)
+__version__ = (3, 1)
 
 import asyncio
 import contextlib
@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 import textwrap
+import tempfile
+import shutil
 
 import requests
 import imageio_ffmpeg
@@ -23,14 +25,19 @@ from .. import loader, utils
 
 logger = logging.getLogger(__name__)
 
+def _fetch_sync(url: str) -> bytes:
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    return r.content
+
 class Banners:
-    def __init__(self, title: str, artists: list, duration: int, progress: int, track_cover: bytes, font, blur):
+    def __init__(self, title: str, artists: list, duration: int, progress: int, track_cover: bytes, font_bytes: bytes, blur: int):
         self.title = title
         self.artists = ", ".join(artists) if isinstance(artists, list) else artists
         self.duration = duration
         self.progress = progress
         self.track_cover = track_cover
-        self.font_url = font
+        self.font_bytes = font_bytes
         self.blur_intensity = blur
 
     def _get_font(self, size, font_bytes):
@@ -63,10 +70,9 @@ class Banners:
         W, H = 1500, 600
         padding = 60
         cover_size = 480
-        font_bytes = requests.get(self.font_url).content
-        title_font = self._get_font(55, font_bytes)
-        artist_font = self._get_font(45, font_bytes)
-        time_font = self._get_font(25, font_bytes)
+        title_font = self._get_font(55, self.font_bytes)
+        artist_font = self._get_font(45, self.font_bytes)
+        time_font = self._get_font(25, self.font_bytes)
 
         img = self._prepare_background(W, H)
         draw = ImageDraw.Draw(img)
@@ -126,10 +132,9 @@ class Banners:
         W, H = 1000, 1500
         padding = 80
         cover_size = 800
-        font_bytes = requests.get(self.font_url).content
-        title_font = self._get_font(60, font_bytes)
-        artist_font = self._get_font(45, font_bytes)
-        time_font = self._get_font(35, font_bytes)
+        title_font = self._get_font(60, self.font_bytes)
+        artist_font = self._get_font(45, self.font_bytes)
+        time_font = self._get_font(35, self.font_bytes)
 
         img = self._prepare_background(W, H)
         draw = ImageDraw.Draw(img)
@@ -193,7 +198,7 @@ class YTMusic(loader.Module):
 
     strings = {
         "name": "YTMusic",
-        "no_query": "👾 <b>Аргументы где?</b> Укажи таргет.",
+        "no_query": "👾 <b>Аргументы где?</b> Укажи таргет или сделай реплай на аудио.",
         "no_tracks": "🕳 <b>Нихуя не найдено.</b> Гугл молчит.",
         "searching": "⏳ <b>Снифаю ютуб...</b>",
         "search_results": "💉 <b>Снифф резалтс для:</b> <i>{query}</i>\nТаргет на мушку:",
@@ -213,6 +218,14 @@ class YTMusic(loader.Module):
             loader.ConfigValue("blur_intensity", 40, "Блюр фона", validator=loader.validators.Integer(minimum=0)),
         )
         self._search_cache = {}
+        self.storage_dir = os.path.join(os.getcwd(), "ytmusic_storage")
+        os.makedirs(self.storage_dir, exist_ok=True)
+
+    def _cleanup_cache(self):
+        if len(self._search_cache) > 30:
+            keys_to_remove = list(self._search_cache.keys())[:-20]
+            for k in keys_to_remove:
+                self._search_cache.pop(k, None)
 
     def _get_base_dlp_args(self):
         return [sys.executable, "-m", "yt_dlp"]
@@ -248,99 +261,118 @@ class YTMusic(loader.Module):
         return results
 
     async def _dl_and_send(self, call_or_msg, track_info, target_chat_id):
-        yt_id = track_info.get("id")
-        yt_url = f"https://music.youtube.com/watch?v={yt_id}"
-
-        dl_dir = os.path.join(os.getcwd(), "ytmusic_cache")
-        os.makedirs(dl_dir, exist_ok=True)
+        track_id = str(track_info.get("id"))
+        source = track_info.get("source", "yt")
         
-        for f in os.listdir(dl_dir):
-            with contextlib.suppress(Exception):
-                os.remove(os.path.join(dl_dir, f))
+        track_title = track_info.get("title", "Unknown")
+        track_artist = track_info.get("uploader") or track_info.get("channel") or "Unknown Artist"
+        duration_sec = track_info.get("duration", 0)
 
-        try:
-            ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-            cmd = self._get_base_dlp_args() + [
-                "-x", "--audio-format", "mp3",
-                "--ffmpeg-location", ffmpeg_path,
-                "--embed-thumbnail", "--embed-metadata",
-                "--parse-metadata", "title:%(title)s",
-                "--parse-metadata", "artist:%(artist,creator,uploader)s",
-                "--audio-quality", "0", "--no-warnings",
-                "-o", f"{dl_dir}/%(title)s [%(id)s].%(ext)s",
-                yt_url
-            ]
+        audio_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
+        thumb_path = os.path.join(self.storage_dir, f"{track_id}.jpg")
+        banner_path = os.path.join(self.storage_dir, f"{track_id}_banner.png")
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            _, stderr = await proc.communicate()
-
-            files = [f for f in os.listdir(dl_dir) if f.endswith(".mp3")]
-            if not files or proc.returncode != 0:
-                err_cause = self._parse_yt_error(stderr)
-                err_text = f"💀 <b>Фейл дампа.</b>\n⚠️ {err_cause}"
-                if hasattr(call_or_msg, "edit"):
-                    await call_or_msg.edit(err_text)
-                else:
-                    await utils.answer(call_or_msg, err_text)
+        if source == "tg":
+            if not os.path.exists(audio_path):
+                await utils.answer(call_or_msg, "💀 <b>Файл отсутствует в локальном кэше.</b> Удали из БД и сохрани заново.")
                 return
-
-            target_file = os.path.join(dl_dir, files[0])
-            
-            track_title = track_info.get("title", "Unknown")
-            track_artist = track_info.get("uploader") or track_info.get("channel") or "Unknown Artist"
-            duration_sec = track_info.get("duration", 0)
-
-            cover_url = track_info.get("thumbnails", [{}])[-1].get("url", "https://via.placeholder.com/800")
-            cover_bytes = requests.get(cover_url).content
-            
-            thumb_path = os.path.join(dl_dir, "thumb.jpg")
-            with open(thumb_path, "wb") as f:
-                f.write(cover_bytes)
-
-            banners = Banners(
-                title=track_title,
-                artists=track_artist,
-                duration=duration_sec * 1000,
-                progress=0, 
-                track_cover=cover_bytes,
-                font=self.config["font"],
-                blur=self.config["blur_intensity"],
-            )
-            banner_file = banners.vertical() if self.config["banner_version"] == "vertical" else banners.horizontal()
-
-            audio_attrs = [DocumentAttributeAudio(
-                duration=duration_sec,
-                title=track_title,
-                performer=track_artist
-            )]
-
-            sdata = {
-                "track": utils.escape_html(track_title),
-                "artists": utils.escape_html(track_artist),
-                "duration": f"{duration_sec//60}:{duration_sec%60:02}",
-                "yt_url": yt_url,
-                "ytm_url": yt_url,
-            }
-            caption = self.config["custom_text"].format(**sdata)
-
-            await self._client.send_file(target_chat_id, banner_file, caption="")
-            await self._client.send_file(target_chat_id, target_file, caption=caption, attributes=audio_attrs, thumb=thumb_path)
-            
+            audio_attrs = [DocumentAttributeAudio(duration=duration_sec, title=track_title, performer=track_artist)]
+            await self._client.send_file(target_chat_id, audio_path, caption=f"📁 <b>Локал-база:</b> {utils.escape_html(track_title)}", attributes=audio_attrs)
             with contextlib.suppress(Exception):
                 await call_or_msg.delete()
+            return
 
-        except Exception as e:
-            logger.error(f"Download Error: {e}")
-            err_text = f"💀 <b>Крах скрипта:</b> <code>{str(e)[:50]}</code>"
-            if hasattr(call_or_msg, "edit"):
-                with contextlib.suppress(Exception):
-                    await call_or_msg.edit(err_text)
-        finally:
-            for f in os.listdir(dl_dir):
-                with contextlib.suppress(Exception):
-                    os.remove(os.path.join(dl_dir, f))
+        yt_url = f"https://music.youtube.com/watch?v={track_id}"
+        is_cached = os.path.exists(audio_path) and os.path.exists(thumb_path) and os.path.exists(banner_path)
+
+        if not is_cached:
+            dl_dir = tempfile.mkdtemp(prefix="ytmusic_cache_")
+            try:
+                ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+                cmd = self._get_base_dlp_args() + [
+                    "-x", "--audio-format", "mp3",
+                    "--ffmpeg-location", ffmpeg_path,
+                    "--embed-thumbnail", "--embed-metadata",
+                    "--parse-metadata", "title:%(title)s",
+                    "--parse-metadata", "artist:%(artist,creator,uploader)s",
+                    "--audio-quality", "0", "--no-warnings",
+                    "-o", f"{dl_dir}/%(id)s.%(ext)s",
+                    yt_url
+                ]
+
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                _, stderr = await proc.communicate()
+
+                if proc.returncode != 0 or not os.path.exists(f"{dl_dir}/{track_id}.mp3"):
+                    err_cause = self._parse_yt_error(stderr)
+                    err_text = f"💀 <b>Фейл дампа.</b>\n⚠️ {err_cause}"
+                    if hasattr(call_or_msg, "edit"):
+                        await call_or_msg.edit(err_text)
+                    else:
+                        await utils.answer(call_or_msg, err_text)
+                    return
+
+                cover_url = track_info.get("thumbnails", [{}])[-1].get("url", "https://via.placeholder.com/800")
+                
+                loop = asyncio.get_running_loop()
+                cover_bytes = await loop.run_in_executor(None, _fetch_sync, cover_url)
+                font_bytes = await loop.run_in_executor(None, _fetch_sync, self.config["font"])
+                
+                with open(f"{dl_dir}/thumb.jpg", "wb") as f:
+                    f.write(cover_bytes)
+
+                banners = Banners(
+                    title=track_title,
+                    artists=track_artist,
+                    duration=duration_sec * 1000,
+                    progress=0, 
+                    track_cover=cover_bytes,
+                    font_bytes=font_bytes,
+                    blur=self.config["blur_intensity"],
+                )
+                banner_file = banners.vertical() if self.config["banner_version"] == "vertical" else banners.horizontal()
+                
+                with open(f"{dl_dir}/banner.png", "wb") as f:
+                    f.write(banner_file.read())
+
+                shutil.copy(f"{dl_dir}/{track_id}.mp3", audio_path)
+                shutil.copy(f"{dl_dir}/thumb.jpg", thumb_path)
+                shutil.copy(f"{dl_dir}/banner.png", banner_path)
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Download Error: {e}")
+                err_text = f"💀 <b>Крах скрипта:</b> <code>{str(e)[:50]}</code>"
+                if hasattr(call_or_msg, "edit"):
+                    with contextlib.suppress(Exception):
+                        await call_or_msg.edit(err_text)
+                return
+            finally:
+                if 'dl_dir' in locals() and os.path.exists(dl_dir):
+                    shutil.rmtree(dl_dir, ignore_errors=True)
+
+        audio_attrs = [DocumentAttributeAudio(duration=duration_sec, title=track_title, performer=track_artist)]
+        sdata = {
+            "track": utils.escape_html(track_title),
+            "artists": utils.escape_html(track_artist),
+            "duration": f"{duration_sec//60}:{duration_sec%60:02}",
+            "yt_url": yt_url,
+            "ytm_url": yt_url,
+        }
+        
+        try:
+            caption = self.config["custom_text"].format(**sdata)
+        except Exception:
+            caption = "👾 <b>Таргет:</b> {track}\n👤 <b>Хакер:</b> {artists}\n🔗 <b>Лонг-линк:</b> <a href='{ytm_url}'>Сурс</a>".format(**sdata)
+
+        await self._client.send_file(target_chat_id, banner_path, caption="")
+        await self._client.send_file(target_chat_id, audio_path, caption=caption, attributes=audio_attrs, thumb=thumb_path)
+        
+        with contextlib.suppress(Exception):
+            await call_or_msg.delete()
 
     @loader.command(ru_doc="<запрос> - Дамп трека из YT", alias="yt")
     async def ytcmd(self, message: Message):
@@ -358,12 +390,13 @@ class YTMusic(loader.Module):
         call_id = str(message.id)
         target_chat_id = utils.get_chat_id(message)
         self._search_cache[call_id] = results
+        self._cleanup_cache()
 
         keyboard = []
         for idx, track in enumerate(results):
-            title = track.get("title", "Unknown")[:35]
+            title = track.get("title", "Unknown")[:30]
             artist = track.get("uploader") or track.get("channel") or "Unknown"
-            artist = artist[:20]
+            artist = artist[:15]
             
             keyboard.append([{
                 "text": f"{title} — {artist}",
@@ -392,7 +425,7 @@ class YTMusic(loader.Module):
         await self._dl_and_send(call, track_info, target_chat_id)
 
         if call_id in self._search_cache:
-            del self._search_cache[call_id]
+            self._search_cache.pop(call_id, None)
 
     # если ты это читаешь то пошёл нахуй, я этот мусор заебался фиксить
 
@@ -410,31 +443,69 @@ class YTMusic(loader.Module):
             
         await self.inline.form(self.strings("pl_list"), message=message, reply_markup=keyboard)
 
-    @loader.command(ru_doc="<база> <запрос> - Фаст инжект трека в базу", alias="ytadd")
+    @loader.command(ru_doc="<база> <запрос/реплай> - Фаст инжект трека в базу", alias="ytadd")
     async def ytaddcmd(self, message: Message):
-        """<playlist> <query> - Fast add to playlist"""
+        """<playlist> <query/reply> - Fast add to playlist"""
         args = utils.get_args_raw(message)
-        if not args or " " not in args:
-            return await utils.answer(message, "👾 <b>Юзаж:</b> <code>.ytadd [БД] [Таргет]</code>")
+        reply = await message.get_reply_message()
         
-        pl_name, query = args.split(" ", 1)
+        if not args:
+            return await utils.answer(message, "👾 <b>Юзаж:</b> <code>.ytadd [БД] [Таргет/Реплай на аудио]</code>")
+        
+        parts = args.split(" ", 1)
+        pl_name = parts[0].strip()
+        query = parts[1].strip() if len(parts) > 1 else ""
+        
+        playlists = self.get("playlists", {"Favs": []})
+        if pl_name not in playlists:
+            playlists[pl_name] = []
+            
+        if reply and reply.audio:
+            msg = await utils.answer(message, "⏳ <b>Кэширую локально...</b>")
+            audio = reply.document
+            title = "Unknown"
+            artist = "Unknown"
+            duration = 0
+            
+            for attr in audio.attributes:
+                if isinstance(attr, DocumentAttributeAudio):
+                    title = attr.title or title
+                    artist = attr.performer or artist
+                    duration = attr.duration or duration
+            
+            track_id = f"tg_{audio.id}"
+            if any(t.get("id") == track_id for t in playlists[pl_name]):
+                return await utils.answer(msg, f"⚠️ <b>Таргет уже есть в БД {utils.escape_html(pl_name)}</b>")
+                
+            storage_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
+            if not os.path.exists(storage_path):
+                try:
+                    await reply.download_media(file=storage_path)
+                except Exception as e:
+                    return await utils.answer(msg, f"💀 <b>Ошибка скачивания:</b> <code>{str(e)[:50]}</code>")
+                
+            track = {"id": track_id, "title": title, "uploader": artist, "duration": duration, "source": "tg"}
+            playlists[pl_name].append(track)
+            self.set("playlists", playlists)
+            return await utils.answer(msg, self.strings("pl_added").format(pl=utils.escape_html(pl_name), track=utils.escape_html(title)))
+
+        if not query:
+            return await utils.answer(message, self.strings("no_query"))
+            
         msg = await utils.answer(message, self.strings("searching"))
-        
         results = await self._search_tracks(query, limit=1)
         if not results:
             return await utils.answer(msg, self.strings("no_tracks"))
             
         track = results[0]
-        playlists = self.get("playlists", {"Favs": []})
-        if pl_name not in playlists:
-            playlists[pl_name] = []
-            
-        if any(t.get("id") == track.get("id") for t in playlists[pl_name]):
-            return await utils.answer(msg, f"⚠️ <b>Таргет уже есть в БД {pl_name}:</b> {track.get('title')}")
+        track["source"] = "yt"
+        
+        if any(t.get("id") == str(track.get("id")) for t in playlists[pl_name]):
+            return await utils.answer(msg, f"⚠️ <b>Таргет уже есть в БД {utils.escape_html(pl_name)}:</b> {utils.escape_html(track.get('title', ''))}")
             
         playlists[pl_name].append(track)
         self.set("playlists", playlists)
-        await utils.answer(msg, self.strings("pl_added").format(pl=utils.escape_html(pl_name), track=utils.escape_html(track.get('title'))))
+        await utils.answer(msg, self.strings("pl_added").format(pl=utils.escape_html(pl_name), track=utils.escape_html(track.get('title', 'Unknown'))))
 
     @loader.command(ru_doc="<база> <имя_трека> - Вырезать трек из базы", alias="ytrm")
     async def ytrmcmd(self, message: Message):
@@ -468,7 +539,7 @@ class YTMusic(loader.Module):
         keyboard = []
         
         for idx, t in enumerate(tracks[:15]):
-            title = t.get("title", "Unknown")[:40]
+            title = t.get("title", "Unknown")[:30]
             keyboard.append([{"text": f"▶️ {title}", "callback": self._inline_pl_play, "args": (pl_name, idx, call.message.chat_id)}])
             
         keyboard.append([{"text": "🔙 Назад", "callback": self._inline_pl_back}])
