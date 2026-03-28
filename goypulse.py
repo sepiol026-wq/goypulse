@@ -230,7 +230,7 @@ class GoyPulseMod(loader.Module):
         self._backup_keep_limit = 24
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.1.8"
+        self._module_version = "9.1.9"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -247,13 +247,13 @@ class GoyPulseMod(loader.Module):
 
     def _sql(self, q: str, p: tuple = (), fetch: bool = False, commit: bool = True):
         try:
+            qn = q.strip().upper()
+            is_begin = qn.startswith("BEGIN")
+            is_commit = qn.startswith("COMMIT")
+            is_rollback = qn.startswith("ROLLBACK")
+            is_trans = is_begin or is_commit or is_rollback
             if self._db_conn:
                 with self._sql_lock:
-                    qn = q.strip().upper()
-                    is_begin = qn.startswith("BEGIN")
-                    is_commit = qn.startswith("COMMIT")
-                    is_rollback = qn.startswith("ROLLBACK")
-                    is_trans = is_begin or is_commit or is_rollback
                     cur = self._db_conn.cursor()
                     try:
                         cur.execute(q, p)
@@ -270,6 +270,8 @@ class GoyPulseMod(loader.Module):
                             self._db_conn.commit()
                     return res
             else:
+                if is_trans:
+                    return None
                 with sqlite3.connect(self._db_path) as conn:
                     cur = conn.cursor()
                     cur.execute(q, p)
@@ -1345,7 +1347,7 @@ class GoyPulseMod(loader.Module):
             if not isinstance(d, dict) or not d or len(d) > self._max_backup_chats:
                 return False
             total_edges = 0
-            token_re = re.compile(r"^.{1,250}$", re.I | re.DOTALL)
+            token_re = re.compile(r"^.{1,65536}$", re.I | re.DOTALL)
 
             def _validate_tfq(tfq: Any) -> bool:
                 if not isinstance(tfq, dict) or len(tfq) > self._max_chat_tokens:
