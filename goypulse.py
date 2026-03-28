@@ -217,7 +217,7 @@ class GoyPulseMod(loader.Module):
         self._backup_keep_limit = 24
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.1.5"
+        self._module_version = "9.1.6"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._upd_manifest_url = "https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.manifest.json"
@@ -241,18 +241,14 @@ class GoyPulseMod(loader.Module):
                     is_commit = qn.startswith("COMMIT")
                     is_rollback = qn.startswith("ROLLBACK")
                     is_trans = is_begin or is_commit or is_rollback
-                    if is_begin and self._db_conn.in_transaction:
-                        return None
-                    if (is_commit or is_rollback) and not self._db_conn.in_transaction:
-                        return None
                     cur = self._db_conn.cursor()
                     try:
                         cur.execute(q, p)
-                    except sqlite3.OperationalError as e:
+                    except sqlite3.Error as e:
                         msg = str(e).lower()
-                        if is_begin and "within a transaction" in msg:
+                        if is_begin and ("within a transaction" in msg or "already in a transaction" in msg):
                             return None
-                        if (is_commit or is_rollback) and "no transaction is active" in msg:
+                        if (is_commit or is_rollback) and ("no transaction is active" in msg or "not in a transaction" in msg):
                             return None
                         raise
                     res = cur.fetchall() if fetch else None
