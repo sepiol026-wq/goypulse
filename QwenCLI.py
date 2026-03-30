@@ -3,6 +3,30 @@
 # authors: @goy_ai
 # Description: QwenCLI — продвинутый интерфейс для Qwen CLI с поддержкой AI-анализа и авто-ответов.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+#
+# --------------------------------------------------------------------------
+# Copyright (C) 2026 @samsepi0l_ovf, @goy_ai
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, version 3 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------------
+# ACKNOWLEDGEMENT & ORIGINAL LICENSE:
+# This module is a modified fork of the Gemini module from SenkoGuardianModules.
+# The original code is licensed under the MIT License:
+#
+# Copyright (c) 2025 Senko (@SenkoGuardianModules)
+# https://opensource.org/licenses/MIT
+# --------------------------------------------------------------------------
+
 __version__ = (1, 0, 2)
 
 import asyncio
