@@ -68,6 +68,7 @@ DB_PRESETS_KEY = "qwencli_prompt_presets"
 DB_MEMORY_DISABLED_KEY = "qwencli_memory_disabled_chats"
 
 QWEN_TIMEOUT = 300
+QWEN_STARTUP_TIMEOUT = 20
 QWEN_STREAM_BUFFER_LIMIT = 120
 QWEN_MAX_HISTORY_MESSAGES = 16
 QWEN_MAX_HISTORY_ENTRY_CHARS = 1200
@@ -256,7 +257,7 @@ class QwenCLI(loader.Module):
         "medium": {
             "pre_cleanup": True,
             "force_lean": True,
-            "heap_mb": 128,
+            "heap_mb": 160,
             "minimal_runtime_settings": True,
             "history_messages": 24,
             "history_entry_chars": 2200,
@@ -265,7 +266,7 @@ class QwenCLI(loader.Module):
         "max": {
             "pre_cleanup": True,
             "force_lean": True,
-            "heap_mb": 80,
+            "heap_mb": 128,
             "minimal_runtime_settings": True,
             "history_messages": QWEN_MAX_HISTORY_MESSAGES,
             "history_entry_chars": QWEN_MAX_HISTORY_ENTRY_CHARS,
@@ -395,7 +396,7 @@ class QwenCLI(loader.Module):
             ),
             loader.ConfigValue(
                 "resource_profile",
-                "max",
+                "medium",
                 self.strings["cfg_resource_profile_doc"],
                 validator=loader.validators.Choice(["off", "medium", "max"]),
             ),
@@ -1251,6 +1252,7 @@ class QwenCLI(loader.Module):
             "interrupt_reason": "",
             "proc": None,
             "request_id": None,
+            "task": asyncio.current_task(),
         }
 
         try:
@@ -1421,7 +1423,15 @@ class QwenCLI(loader.Module):
     ):
         resource_profile = self._get_resource_profile()
         if resource_profile.get("pre_cleanup"):
-            await self._kill_zombie_processes()
+            try:
+                await asyncio.wait_for(self._kill_zombie_processes(), timeout=4)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out while cleaning stale Qwen/Node processes")
+            except Exception:
+                logger.exception("Pre-run Qwen cleanup failed")
+        session = self._request_sessions.get(chat_id) or {}
+        if session.get("cancel_requested"):
+            raise QwenRequestInterrupted(session.get("interrupt_reason") or "cancel")
         if auto and self._request_semaphore.locked():
             raise RuntimeError(self.strings["request_busy_global"])
         if not auto and self._request_semaphore.locked() and status_entity is not None:
@@ -1433,6 +1443,11 @@ class QwenCLI(loader.Module):
         await self._request_semaphore.acquire()
         self._chat_running.add(chat_id)
         try:
+            session = self._request_sessions.get(chat_id) or {}
+            if session.get("cancel_requested"):
+                raise QwenRequestInterrupted(
+                    session.get("interrupt_reason") or "cancel"
+                )
             return await self._run_qwen_request(
                 chat_id=chat_id,
                 payload=payload,
@@ -1472,110 +1487,167 @@ class QwenCLI(loader.Module):
             auto=auto,
             history_override=history_override,
         )
-        env = self._build_subprocess_env()
+        resource_profile = self._get_resource_profile()
+        heap_mb = resource_profile.get("heap_mb")
 
-        with tempfile.TemporaryDirectory(prefix="qwencli_") as tempdir:
-            runtime_home = self._prepare_qwen_runtime_home(tempdir)
-            env["HOME"] = runtime_home
-            args = self._build_qwen_args(
-                qwen_path=qwen_path,
-                prompt=prompt,
-                file_specs=file_specs,
-                selected_model=selected_model,
-                lean_mode=lean_mode,
-            )
-            input_paths = set()
-            for spec in file_specs:
-                abs_path = os.path.join(tempdir, spec["name"])
-                os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-                with open(abs_path, "wb") as file_obj:
-                    file_obj.write(spec["data"])
-                input_paths.add(os.path.abspath(abs_path))
+        async def _execute_once(heap_limit):
+            env = self._build_subprocess_env(heap_override=heap_limit)
 
-            creation_kwargs = {
-                "cwd": tempdir,
-                "stdin": asyncio.subprocess.DEVNULL,
-                "stdout": asyncio.subprocess.PIPE,
-                "stderr": asyncio.subprocess.PIPE,
-                "env": env,
-            }
-            if os.name != "nt":
-                creation_kwargs["start_new_session"] = True
-
-            proc = await asyncio.create_subprocess_exec(*args, **creation_kwargs)
-            request_id = uuid.uuid4().hex[:10]
-            self._active_processes[request_id] = proc
-            progress_state = self._make_qwen_progress_state()
-            progress_state["model"] = selected_model or "coder-model"
-            session = self._request_sessions.get(chat_id)
-            progress_state["reply_markup"] = self._get_processing_buttons(
-                chat_id,
-                session.get("base_message_id") if session else None,
-            )
-            stdout_lines = deque(maxlen=QWEN_STREAM_BUFFER_LIMIT)
-            stderr_lines = deque(maxlen=QWEN_STREAM_BUFFER_LIMIT)
-            if session is not None:
-                session["proc"] = proc
-                session["request_id"] = request_id
-            stdout_task = asyncio.create_task(
-                self._read_qwen_stdout_stream(
-                    proc.stdout,
-                    stdout_lines,
-                    progress_state,
-                    status_entity if not auto else None,
+            with tempfile.TemporaryDirectory(prefix="qwencli_") as tempdir:
+                runtime_home = self._prepare_qwen_runtime_home(tempdir)
+                env["HOME"] = runtime_home
+                args = self._build_qwen_args(
+                    qwen_path=qwen_path,
+                    prompt=prompt,
+                    file_specs=file_specs,
+                    selected_model=selected_model,
+                    lean_mode=lean_mode,
                 )
-            )
-            stderr_task = asyncio.create_task(
-                self._read_qwen_stderr_stream(proc.stderr, stderr_lines, progress_state)
-            )
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=QWEN_TIMEOUT)
-            except asyncio.TimeoutError:
-                await self._terminate_process(proc)
-                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
-                raise RuntimeError(f"Qwen CLI превысил таймаут ({QWEN_TIMEOUT} сек).")
-            finally:
-                self._active_processes.pop(request_id, None)
+                input_paths = set()
+                for spec in file_specs:
+                    abs_path = os.path.join(tempdir, spec["name"])
+                    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                    with open(abs_path, "wb") as file_obj:
+                        file_obj.write(spec["data"])
+                    input_paths.add(os.path.abspath(abs_path))
+
+                creation_kwargs = {
+                    "cwd": tempdir,
+                    "stdin": asyncio.subprocess.DEVNULL,
+                    "stdout": asyncio.subprocess.PIPE,
+                    "stderr": asyncio.subprocess.PIPE,
+                    "env": env,
+                }
+                if os.name != "nt":
+                    creation_kwargs["start_new_session"] = True
+
+                proc = await asyncio.create_subprocess_exec(*args, **creation_kwargs)
+                request_id = uuid.uuid4().hex[:10]
+                self._active_processes[request_id] = proc
+                progress_state = self._make_qwen_progress_state()
+                progress_state["model"] = selected_model or "coder-model"
                 session = self._request_sessions.get(chat_id)
-                if session and session.get("request_id") == request_id:
-                    session["proc"] = None
-                    session["request_id"] = None
-            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
-            session = self._request_sessions.get(chat_id)
-            if session and session.get("cancel_requested"):
-                raise QwenRequestInterrupted(
-                    session.get("interrupt_reason") or "cancel"
+                progress_state["reply_markup"] = self._get_processing_buttons(
+                    chat_id,
+                    session.get("base_message_id") if session else None,
                 )
-            if status_entity and not auto:
-                await self._update_qwen_status_message(
-                    status_entity, progress_state, force=True
+                stdout_lines = deque(maxlen=QWEN_STREAM_BUFFER_LIMIT)
+                stderr_lines = deque(maxlen=QWEN_STREAM_BUFFER_LIMIT)
+                if session is not None:
+                    session["proc"] = proc
+                    session["request_id"] = request_id
+                stdout_task = asyncio.create_task(
+                    self._read_qwen_stdout_stream(
+                        proc.stdout,
+                        stdout_lines,
+                        progress_state,
+                        status_entity if not auto else None,
+                    )
                 )
+                stderr_task = asyncio.create_task(
+                    self._read_qwen_stderr_stream(
+                        proc.stderr, stderr_lines, progress_state
+                    )
+                )
+                try:
+                    while True:
+                        session = self._request_sessions.get(chat_id) or {}
+                        if session.get("cancel_requested"):
+                            raise QwenRequestInterrupted(
+                                session.get("interrupt_reason") or "cancel"
+                            )
+                        if proc.returncode is not None:
+                            break
+                        now = asyncio.get_running_loop().time()
+                        if (
+                            progress_state.get("step", 0) == 0
+                            and not stdout_lines
+                            and not stderr_lines
+                            and now - progress_state["last_activity_at"]
+                            >= QWEN_STARTUP_TIMEOUT
+                        ):
+                            raise RuntimeError(
+                                f"Qwen CLI завис на старте и не выдал вывод за {QWEN_STARTUP_TIMEOUT} сек."
+                            )
+                        if now - progress_state["started_at"] >= QWEN_TIMEOUT:
+                            raise asyncio.TimeoutError
+                        await asyncio.sleep(1)
+                except QwenRequestInterrupted:
+                    await self._terminate_process(proc)
+                    await asyncio.gather(
+                        stdout_task, stderr_task, return_exceptions=True
+                    )
+                    raise
+                except (asyncio.TimeoutError, RuntimeError):
+                    await self._terminate_process(proc)
+                    await asyncio.gather(
+                        stdout_task, stderr_task, return_exceptions=True
+                    )
+                    if proc.returncode is None and not stdout_lines and not stderr_lines:
+                        raise RuntimeError(
+                            f"Qwen CLI завис на старте и не выдал вывод за {QWEN_STARTUP_TIMEOUT} сек."
+                        )
+                    raise RuntimeError(
+                        f"Qwen CLI превысил таймаут ({QWEN_TIMEOUT} сек)."
+                    )
+                finally:
+                    self._active_processes.pop(request_id, None)
+                    session = self._request_sessions.get(chat_id)
+                    if session and session.get("request_id") == request_id:
+                        session["proc"] = None
+                        session["request_id"] = None
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(self._kill_zombie_processes(), timeout=3)
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+                session = self._request_sessions.get(chat_id)
+                if session and session.get("cancel_requested"):
+                    raise QwenRequestInterrupted(
+                        session.get("interrupt_reason") or "cancel"
+                    )
+                if status_entity and not auto:
+                    await self._update_qwen_status_message(
+                        status_entity, progress_state, force=True
+                    )
 
-            final_text = progress_state["final_text"].strip()
-            generated_files = self._collect_qwen_generated_files(
-                tempdir,
-                ignored_names={".qwen", "runtime-home", "input"},
-                ignored_paths=input_paths,
-            )
-            stderr_text = "\n".join(stderr_lines).strip()
-            stdout_text = "\n".join(stdout_lines).strip()
-            if progress_state["final_error"]:
-                raise RuntimeError(progress_state["final_error"])
-            if proc.returncode != 0 and not final_text and not generated_files:
-                raise RuntimeError(
-                    stderr_text
-                    or stdout_text
-                    or f"Qwen не вернул ответ (код {proc.returncode})."
+                final_text = progress_state["final_text"].strip()
+                generated_files = self._collect_qwen_generated_files(
+                    tempdir,
+                    ignored_names={".qwen", "runtime-home", "input"},
+                    ignored_paths=input_paths,
                 )
-            if not final_text and not generated_files:
-                raise RuntimeError("Qwen не вернул ответ. Попробуйте ещё раз.")
+                stderr_text = "\n".join(stderr_lines).strip()
+                stdout_text = "\n".join(stdout_lines).strip()
+                if progress_state["final_error"]:
+                    raise RuntimeError(progress_state["final_error"])
+                if proc.returncode != 0 and not final_text and not generated_files:
+                    raise RuntimeError(
+                        stderr_text
+                        or stdout_text
+                        or f"Qwen не вернул ответ (код {proc.returncode})."
+                    )
+                if not final_text and not generated_files:
+                    raise RuntimeError("Qwen не вернул ответ. Попробуйте ещё раз.")
+                with contextlib.suppress(Exception):
+                    self._persist_qwen_runtime_state(runtime_home)
 
-        return {
-            "text": final_text,
-            "model": selected_model or "coder-model",
-            "label": "Qwen CLI",
-            "files": generated_files,
-        }
+            return {
+                "text": final_text,
+                "model": selected_model or "coder-model",
+                "label": "Qwen CLI",
+                "files": generated_files,
+            }
+
+        try:
+            return await _execute_once(heap_mb)
+        except RuntimeError as exc:
+            if heap_mb and self._is_node_heap_oom(str(exc)):
+                logger.warning(
+                    "Qwen CLI hit V8 heap limit at %s MB, retrying without heap cap",
+                    heap_mb,
+                )
+                await self._kill_zombie_processes()
+                return await _execute_once(False)
+            raise
 
     def _build_qwen_args(
         self,
@@ -1613,8 +1685,10 @@ class QwenCLI(loader.Module):
         return args
 
     def _make_qwen_progress_state(self) -> dict:
+        now = asyncio.get_running_loop().time()
         return {
-            "started_at": asyncio.get_running_loop().time(),
+            "started_at": now,
+            "last_activity_at": now,
             "last_status_at": 0.0,
             "last_status_text": "",
             "phase": "starting",
@@ -1955,6 +2029,7 @@ class QwenCLI(loader.Module):
             text = line.decode("utf-8", errors="ignore").strip()
             if not text:
                 continue
+            state["last_activity_at"] = asyncio.get_running_loop().time()
             self._append_limited_line(stdout_lines, text)
             try:
                 payload = json.loads(text)
@@ -1972,6 +2047,7 @@ class QwenCLI(loader.Module):
             text = line.decode("utf-8", errors="ignore").strip()
             if not text:
                 continue
+            state["last_activity_at"] = asyncio.get_running_loop().time()
             self._append_limited_line(stderr_lines, text)
             if "error" in text.lower() and not state["final_error"]:
                 state["final_error"] = text[:300]
@@ -2064,6 +2140,9 @@ class QwenCLI(loader.Module):
         if proc and getattr(proc, "returncode", None) is None:
             with contextlib.suppress(Exception):
                 await self._terminate_process(proc)
+        task = session.get("task")
+        if task and not task.done():
+            task.cancel()
         return True
 
     async def _prepare_request_payload(self, message: Message, custom_text: str = None):
@@ -2256,8 +2335,8 @@ class QwenCLI(loader.Module):
         return "\n".join(lines), file_specs
 
     def _get_resource_profile(self):
-        name = (self.config["resource_profile"] or "max").strip().lower()
-        return self._RESOURCE_PROFILES.get(name, self._RESOURCE_PROFILES["max"])
+        name = (self.config["resource_profile"] or "medium").strip().lower()
+        return self._RESOURCE_PROFILES.get(name, self._RESOURCE_PROFILES["medium"])
 
     def _get_proxy(self):
         proxy = self.config["proxy"].strip()
@@ -2568,10 +2647,14 @@ class QwenCLI(loader.Module):
                 ):
                     os.chmod(full, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    def _build_subprocess_env(self):
+    def _build_subprocess_env(self, heap_override=None):
         env = os.environ.copy()
         resource_profile = self._get_resource_profile()
-        heap_mb = resource_profile.get("heap_mb")
+        heap_mb = (
+            resource_profile.get("heap_mb")
+            if heap_override is None
+            else heap_override
+        )
         proxy = self._get_proxy()
         if proxy:
             for key in [
@@ -2592,13 +2675,11 @@ class QwenCLI(loader.Module):
             wrapper_dir = os.path.join(self._get_bootstrap_base_dir(), "wrapper")
             os.makedirs(wrapper_dir, exist_ok=True)
             wrapper_path = os.path.join(wrapper_dir, "node")
-            heap_arg = f"--max-old-space-size={heap_mb} " if heap_mb else ""
             with open(wrapper_path, "w") as f:
                 f.write(
                     "#!/bin/bash\n"
                     f"exec {self._get_local_node_binary()} "
                     "--disable-wasm-trap-handler "
-                    f"{heap_arg}"
                     '"$@"\n'
                 )
             os.chmod(wrapper_path, 0o755)
@@ -2667,6 +2748,14 @@ class QwenCLI(loader.Module):
             marker and marker in haystack for marker in qwen_markers
         )
 
+    def _is_node_heap_oom(self, *chunks) -> bool:
+        haystack = "\n".join(str(chunk or "") for chunk in chunks).lower()
+        return (
+            "reached heap limit" in haystack
+            or "javascript heap out of memory" in haystack
+            or "allocation failed - javaScript heap out of memory".lower() in haystack
+        )
+
     async def _kill_process_tree_by_pid(self, pid: int):
         if not pid or pid <= 0:
             return
@@ -2674,13 +2763,23 @@ class QwenCLI(loader.Module):
         if psutil:
             with contextlib.suppress(Exception):
                 proc = psutil.Process(pid)
+                with contextlib.suppress(Exception):
+                    if proc.status() == psutil.STATUS_ZOMBIE:
+                        if os.name != "nt":
+                            with contextlib.suppress(Exception):
+                                os.waitpid(pid, os.WNOHANG)
+                        return
                 children = proc.children(recursive=True)
                 for child in reversed(children):
                     with contextlib.suppress(Exception):
+                        if child.status() == psutil.STATUS_ZOMBIE and os.name != "nt":
+                            with contextlib.suppress(Exception):
+                                os.waitpid(child.pid, os.WNOHANG)
+                            continue
                         child.terminate()
                 with contextlib.suppress(Exception):
                     proc.terminate()
-                gone, alive = psutil.wait_procs(children + [proc], timeout=3)
+                gone, alive = psutil.wait_procs(children + [proc], timeout=1)
                 for survivor in alive:
                     with contextlib.suppress(Exception):
                         survivor.kill()
@@ -2706,7 +2805,7 @@ class QwenCLI(loader.Module):
                 )
                 await proc.communicate()
 
-    async def _list_child_processes_fallback(self):
+    async def _list_processes_fallback(self):
         if os.name == "nt":
             return []
 
@@ -2744,16 +2843,7 @@ class QwenCLI(loader.Module):
                     "cwd": "",
                 }
 
-            descendants = set()
-            queue = [os.getpid()]
-            while queue:
-                parent_pid = queue.pop()
-                for info in records.values():
-                    if info["ppid"] == parent_pid and info["pid"] not in descendants:
-                        descendants.add(info["pid"])
-                        queue.append(info["pid"])
-
-            result = [records[pid] for pid in descendants if pid in records]
+            result = list(records.values())
 
         return result
 
@@ -2764,27 +2854,26 @@ class QwenCLI(loader.Module):
             if getattr(proc, "pid", None) and proc.returncode is None
         }
         stale_pids = set()
+        current_pid = os.getpid()
 
         if psutil:
             with contextlib.suppress(Exception):
-                current = psutil.Process(os.getpid())
-                for child in current.children(recursive=True):
-                    pid = child.pid
-                    if pid in active_pids:
+                for proc in psutil.process_iter(["pid", "name", "exe", "cmdline", "cwd"]):
+                    pid = proc.info.get("pid")
+                    if not pid or pid == current_pid or pid in active_pids:
                         continue
-                    with contextlib.suppress(Exception):
-                        info = child.as_dict(attrs=["name", "exe", "cmdline", "cwd"])
-                        if self._is_qwen_related_process(
-                            name=info.get("name") or "",
-                            exe=info.get("exe") or "",
-                            cmdline=info.get("cmdline") or [],
-                            cwd=info.get("cwd") or "",
-                        ):
-                            stale_pids.add(pid)
+                    info = proc.info
+                    if self._is_qwen_related_process(
+                        name=info.get("name") or "",
+                        exe=info.get("exe") or "",
+                        cmdline=info.get("cmdline") or [],
+                        cwd=info.get("cwd") or "",
+                    ):
+                        stale_pids.add(pid)
         else:
-            for info in await self._list_child_processes_fallback():
+            for info in await self._list_processes_fallback():
                 pid = info.get("pid")
-                if pid in active_pids:
+                if not pid or pid == current_pid or pid in active_pids:
                     continue
                 if self._is_qwen_related_process(
                     name=info.get("name") or "",
@@ -2801,6 +2890,7 @@ class QwenCLI(loader.Module):
         for pid in sorted(stale_pids):
             with contextlib.suppress(Exception):
                 await self._kill_process_tree_by_pid(pid)
+            await asyncio.sleep(0)
 
     async def _terminate_process(self, proc):
         if proc.returncode is not None:
@@ -2966,6 +3056,30 @@ class QwenCLI(loader.Module):
         ) as file_obj:
             json.dump(settings, file_obj, ensure_ascii=False, indent=2)
         return runtime_home
+
+    def _persist_qwen_runtime_state(self, runtime_home: str):
+        runtime_qwen = os.path.join(runtime_home, ".qwen")
+        if not os.path.isdir(runtime_qwen):
+            return
+        target_qwen = self._get_user_qwen_dir()
+        os.makedirs(target_qwen, exist_ok=True)
+        for name in [
+            "oauth_creds.json",
+            "installation_id",
+            "google_accounts.json",
+            "output-language.md",
+            "settings.json",
+        ]:
+            src = os.path.join(runtime_qwen, name)
+            dst = os.path.join(target_qwen, name)
+            if not os.path.exists(src):
+                continue
+            if os.path.isdir(src):
+                continue
+            temp_path = f"{dst}.tmp.{uuid.uuid4().hex[:8]}"
+            with open(src, "rb") as src_f, open(temp_path, "wb") as dst_f:
+                dst_f.write(src_f.read())
+            os.replace(temp_path, dst)
 
     def _get_user_qwen_dir(self):
         home = os.path.expanduser("~")
