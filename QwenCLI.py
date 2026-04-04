@@ -27,7 +27,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 0, 6)
+__version__ = (1, 0, 7)
 
 import asyncio
 import contextlib
@@ -1842,6 +1842,13 @@ class QwenCLI(loader.Module):
                 "multiaction": "batch_actions",
                 "multi_action": "batch_actions",
                 "bulkactions": "batch_actions",
+                "getparticipants": "get_participants",
+                "listparticipants": "get_participants",
+                "participants": "get_participants",
+                "members": "get_participants",
+                "sendbulk": "send_bulk_messages",
+                "bulksend": "send_bulk_messages",
+                "sendmessages": "send_bulk_messages",
             }
             action = aliases.get(action, action)
             if not action:
@@ -1906,6 +1913,38 @@ class QwenCLI(loader.Module):
                         "action": action,
                         "count": len(results),
                         "results": results,
+                    }
+                )
+
+            if action == "send_bulk_messages":
+                target_chat = (
+                    tool_data.get("target_chat")
+                    or tool_data.get("target")
+                    or tool_data.get("query")
+                    or chat_id
+                )
+                text = str(tool_data.get("text") or "").strip()
+                if not text:
+                    return _err("missing text")
+                count = _normalize_limit(tool_data.get("count", tool_data.get("limit", 1)), default=1, maximum=30)
+                pause_ms = int(tool_data.get("pause_ms") or 0)
+                if pause_ms < 0:
+                    pause_ms = 0
+                if pause_ms > 5000:
+                    pause_ms = 5000
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                sent_ids = []
+                for i in range(count):
+                    sent = await self.client.send_message(entity, text)
+                    sent_ids.append(getattr(sent, "id", None))
+                    if pause_ms and i < count - 1:
+                        await asyncio.sleep(pause_ms / 1000.0)
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "sent": len(sent_ids),
+                        "message_ids": sent_ids,
                     }
                 )
 
@@ -2113,10 +2152,9 @@ class QwenCLI(loader.Module):
                     or tool_data.get("target")
                     or tool_data.get("query")
                     or tool_data.get("username")
+                    or chat_id
                 )
                 text = str(tool_data.get("text") or "").strip()
-                if target_chat in (None, ""):
-                    return _err("missing target_chat")
                 if not text:
                     return _err("missing text")
                 entity = None
@@ -2143,6 +2181,34 @@ class QwenCLI(loader.Module):
                         "target_title": get_display_name(entity),
                         "target_username": getattr(entity, "username", None),
                         "message_id": getattr(sent, "id", None),
+                    }
+                )
+
+            if action == "get_participants":
+                target_chat = (
+                    tool_data.get("target_chat")
+                    or tool_data.get("target")
+                    or tool_data.get("query")
+                    or chat_id
+                )
+                limit = _normalize_limit(tool_data.get("limit", 100), default=100, maximum=300)
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                participants = []
+                async for user in self.client.iter_participants(entity, limit=limit):
+                    participants.append(
+                        {
+                            "id": getattr(user, "id", None),
+                            "username": getattr(user, "username", None),
+                            "name": get_display_name(user),
+                            "bot": bool(getattr(user, "bot", False)),
+                        }
+                    )
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "count": len(participants),
+                        "participants": participants,
                     }
                 )
 
@@ -3218,9 +3284,9 @@ class QwenCLI(loader.Module):
                     "Для действий в Telegram используй СТРОГО ОДИН блок: <telegram_tool>{...}</telegram_tool> без дополнительного текста.",
                     "Допустимые ключи: action, target, target_chat, query, text, limit, emoji, message_id, from_chat, to_chat, sticker.",
                     "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, edit_message, get_dialogs, forward_message, pin_message, unpin_message, batch_actions.",
+                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, forward_message, pin_message, unpin_message, batch_actions.",
                     "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
-                    "Также принимаются алиасы action: sendMessage, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch.",
+                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch.",
                     "Запрещено отвечать, что ты не можешь выполнить действие Telegram, если allow_telegram_tools включен.",
                 ]
             )
