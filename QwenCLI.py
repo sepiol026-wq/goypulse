@@ -27,7 +27,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 0, 5)
+__version__ = (1, 0, 6)
 
 import asyncio
 import contextlib
@@ -1738,6 +1738,40 @@ class QwenCLI(loader.Module):
                 return None, 0.0, ""
             return best_dialog.entity, best_score, (best_name or "Unknown")
 
+        async def _resolve_target_entity(target_value, fallback_chat=chat_id):
+            if target_value in (None, ""):
+                return await self.client.get_entity(fallback_chat)
+            prepared_target = target_value
+            if isinstance(prepared_target, str):
+                prepared_target = prepared_target.strip()
+                if re.fullmatch(r"-?\d+", prepared_target):
+                    prepared_target = int(prepared_target)
+            return await self.client.get_entity(prepared_target)
+
+        async def _collect_target_messages(target_entity, target_value: str, limit: int):
+            target_str = (target_value or "").strip().lower().lstrip("@")
+            scanned = 0
+            matches = []
+            async for msg in self.client.iter_messages(target_entity, limit=350):
+                scanned += 1
+                if not getattr(msg, "sender_id", None):
+                    continue
+                sender = None
+                with contextlib.suppress(Exception):
+                    sender = await msg.get_sender()
+                sender_name = (get_display_name(sender) if sender else "").lower()
+                sender_username = (
+                    (getattr(sender, "username", None) or "").lower().lstrip("@")
+                )
+                sender_id = str(getattr(sender, "id", "") or "")
+                if target_str in {sender_username, sender_id} or (
+                    sender_name and target_str in sender_name
+                ):
+                    matches.append(msg)
+                if len(matches) >= limit:
+                    break
+            return matches, scanned
+
         async def _get_replied_sender_from_request():
             session = self._request_sessions.get(chat_id) or {}
             base_mid = session.get("base_message_id")
@@ -1791,10 +1825,78 @@ class QwenCLI(loader.Module):
                 "forwardmessage": "forward_message",
                 "pinmessage": "pin_message",
                 "unpinmessage": "unpin_message",
+                "replymessages": "reply_messages",
+                "replymessage": "reply_messages",
+                "batch": "batch_actions",
+                "multiaction": "batch_actions",
+                "multi_action": "batch_actions",
+                "bulkactions": "batch_actions",
             }
             action = aliases.get(action, action)
             if not action:
                 return _err("missing action")
+
+            if action == "batch_actions":
+                actions = tool_data.get("actions")
+                if not isinstance(actions, list) or not actions:
+                    return _err("missing actions list")
+                if len(actions) > 12:
+                    return _err("too many actions; maximum is 12")
+                blocked_for_batch = {
+                    "read_history",
+                    "get_dialogs",
+                    "find_and_send_message",
+                    "batch_actions",
+                }
+                results = []
+                for idx, one in enumerate(actions, start=1):
+                    if not isinstance(one, dict):
+                        results.append(
+                            {
+                                "index": idx,
+                                "status": "error",
+                                "error": "action item must be object",
+                            }
+                        )
+                        continue
+                    one_action = (one.get("action") or "").strip().lower()
+                    one_action = aliases.get(one_action, one_action)
+                    if one_action in blocked_for_batch:
+                        results.append(
+                            {
+                                "index": idx,
+                                "status": "error",
+                                "error": f"action not allowed in batch: {one_action}",
+                            }
+                        )
+                        continue
+                    one_payload = dict(one)
+                    one_payload["action"] = one_action
+                    if "target_chat" not in one_payload and "chat_id" in tool_data:
+                        one_payload["target_chat"] = tool_data.get("chat_id")
+                    one_result_raw = await self._execute_telegram_tool(
+                        chat_id, json.dumps(one_payload, ensure_ascii=False)
+                    )
+                    with contextlib.suppress(Exception):
+                        one_result = json.loads(one_result_raw)
+                        if isinstance(one_result, dict):
+                            one_result["index"] = idx
+                            results.append(one_result)
+                            continue
+                    results.append(
+                        {
+                            "index": idx,
+                            "status": "error",
+                            "error": one_result_raw,
+                        }
+                    )
+                return _ok(
+                    {
+                        "action": action,
+                        "count": len(results),
+                        "results": results,
+                    }
+                )
 
             if action == "delete_messages":
                 target = str(tool_data.get("target") or "").strip().lstrip("@")
@@ -1805,26 +1907,11 @@ class QwenCLI(loader.Module):
                 if not target:
                     return _err("missing target")
                 limit = _normalize_limit(tool_data.get("limit", 5))
-                to_delete = []
-                scanned = 0
-                async for msg in self.client.iter_messages(chat_id, limit=250):
-                    scanned += 1
-                    if not getattr(msg, "sender_id", None):
-                        continue
-                    sender = None
-                    with contextlib.suppress(Exception):
-                        sender = await msg.get_sender()
-                    sender_name = (get_display_name(sender) if sender else "").lower()
-                    sender_username = (
-                        (getattr(sender, "username", None) or "").lower().lstrip("@")
-                    )
-                    sender_id = str(getattr(sender, "id", "") or "")
-                    if target.lower() in {sender_username, sender_id} or (
-                        target.lower() in sender_name and sender_name
-                    ):
-                        to_delete.append(msg.id)
-                    if len(to_delete) >= limit:
-                        break
+                target_entity = await _resolve_target_entity(tool_data.get("target_chat"), chat_id)
+                matched_messages, scanned = await _collect_target_messages(
+                    target_entity, target, limit
+                )
+                to_delete = [m.id for m in matched_messages]
                 if not to_delete:
                     return _ok(
                         {
@@ -1834,11 +1921,12 @@ class QwenCLI(loader.Module):
                             "message": "no matching messages found",
                         }
                     )
-                await self.client.delete_messages(chat_id, to_delete)
+                await self.client.delete_messages(target_entity, to_delete)
                 return _ok(
                     {
                         "action": action,
                         "target": target,
+                        "target_chat": getattr(target_entity, "id", chat_id),
                         "deleted": len(to_delete),
                         "message_ids": to_delete,
                     }
@@ -1855,35 +1943,24 @@ class QwenCLI(loader.Module):
                 limit = _normalize_limit(tool_data.get("limit", 5))
                 emoji = (str(tool_data.get("emoji") or "👍").strip() or "👍")[:10]
                 reacted = []
-                async for msg in self.client.iter_messages(chat_id, limit=250):
-                    if not getattr(msg, "sender_id", None):
-                        continue
-                    sender = None
-                    with contextlib.suppress(Exception):
-                        sender = await msg.get_sender()
-                    sender_name = (get_display_name(sender) if sender else "").lower()
-                    sender_username = (
-                        (getattr(sender, "username", None) or "").lower().lstrip("@")
-                    )
-                    sender_id = str(getattr(sender, "id", "") or "")
-                    if target.lower() not in {sender_username, sender_id} and (
-                        not sender_name or target.lower() not in sender_name
-                    ):
-                        continue
+                target_entity = await _resolve_target_entity(tool_data.get("target_chat"), chat_id)
+                matched_messages, _ = await _collect_target_messages(
+                    target_entity, target, limit
+                )
+                for msg in matched_messages:
                     await self.client(
                         SendReactionRequest(
-                            peer=chat_id,
+                            peer=target_entity,
                             msg_id=msg.id,
                             reaction=[ReactionEmoji(emoticon=emoji)],
                         )
                     )
                     reacted.append(msg.id)
-                    if len(reacted) >= limit:
-                        break
                 return _ok(
                     {
                         "action": action,
                         "target": target,
+                        "target_chat": getattr(target_entity, "id", chat_id),
                         "emoji": emoji,
                         "reacted": len(reacted),
                         "message_ids": reacted,
@@ -1963,31 +2040,59 @@ class QwenCLI(loader.Module):
                     return _err("missing sticker")
                 limit = _normalize_limit(tool_data.get("limit", 3), default=3, maximum=20)
                 replied = []
-                async for msg in self.client.iter_messages(chat_id, limit=250):
-                    if not getattr(msg, "sender_id", None):
-                        continue
-                    sender = None
-                    with contextlib.suppress(Exception):
-                        sender = await msg.get_sender()
-                    sender_name = (get_display_name(sender) if sender else "").lower()
-                    sender_username = (
-                        (getattr(sender, "username", None) or "").lower().lstrip("@")
-                    )
-                    sender_id = str(getattr(sender, "id", "") or "")
-                    if target.lower() not in {sender_username, sender_id} and (
-                        not sender_name or target.lower() not in sender_name
-                    ):
-                        continue
+                target_entity = await _resolve_target_entity(tool_data.get("target_chat"), chat_id)
+                matched_messages, _ = await _collect_target_messages(
+                    target_entity, target, limit
+                )
+                for msg in matched_messages:
                     await msg.reply(file=sticker)
                     replied.append(msg.id)
-                    if len(replied) >= limit:
-                        break
                 return _ok(
                     {
                         "action": action,
                         "target": target,
+                        "target_chat": getattr(target_entity, "id", chat_id),
                         "replied": len(replied),
                         "message_ids": replied,
+                    }
+                )
+
+            if action == "reply_messages":
+                target = str(tool_data.get("target") or "").strip().lstrip("@")
+                text = str(tool_data.get("text") or "").strip()
+                if not target:
+                    sender_hint = await _get_replied_sender_from_request()
+                    if sender_hint:
+                        target = sender_hint["username"] or sender_hint["id"] or sender_hint["name"]
+                if not target:
+                    return _err("missing target")
+                if not text:
+                    return _err("missing text")
+                limit = _normalize_limit(tool_data.get("limit", 3), default=3, maximum=20)
+                target_entity = await _resolve_target_entity(tool_data.get("target_chat"), chat_id)
+                matched_messages, _ = await _collect_target_messages(
+                    target_entity, target, limit
+                )
+                replied = []
+                for msg in matched_messages:
+                    sent = await self.client.send_message(
+                        target_entity,
+                        text,
+                        reply_to=getattr(msg, "id", None),
+                    )
+                    replied.append(
+                        {
+                            "source_message_id": getattr(msg, "id", None),
+                            "reply_message_id": getattr(sent, "id", None),
+                        }
+                    )
+                return _ok(
+                    {
+                        "action": action,
+                        "target": target,
+                        "target_chat": getattr(target_entity, "id", chat_id),
+                        "replied": len(replied),
+                        "items": replied,
                     }
                 )
 
@@ -3074,8 +3179,9 @@ class QwenCLI(loader.Module):
                     "Для действий в Telegram используй СТРОГО ОДИН блок: <telegram_tool>{...}</telegram_tool> без дополнительного текста.",
                     "Допустимые ключи: action, target, target_chat, query, text, limit, emoji, message_id, from_chat, to_chat, sticker.",
                     "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, send_message, edit_message, get_dialogs, forward_message, pin_message, unpin_message.",
-                    "Также принимаются алиасы action: sendMessage, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, getDialogs, findAndSendMessage, forwardMessage, pinMessage, unpinMessage.",
+                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, edit_message, get_dialogs, forward_message, pin_message, unpin_message, batch_actions.",
+                    "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
+                    "Также принимаются алиасы action: sendMessage, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch.",
                     "Запрещено отвечать, что ты не можешь выполнить действие Telegram, если allow_telegram_tools включен.",
                 ]
             )
