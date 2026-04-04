@@ -1432,7 +1432,7 @@ class QwenCLI(loader.Module):
                         self.config["allow_telegram_tools"]
                         and not impersonation_mode
                         and re.search(
-                            r"(unable to|не могу|не удалось|tool returned an error|action .* not supported)",
+                            r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|tool is not available|not available in this environment)",
                             candidate_text.lower(),
                         )
                     )
@@ -1518,11 +1518,11 @@ class QwenCLI(loader.Module):
                     flags=re.IGNORECASE | re.DOTALL,
                 )
                 and re.search(
-                    r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|unsupported action)",
+                    r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|unsupported action|tool is not available|not available in this environment)",
                     (result_text or "").lower(),
                 )
             ):
-                forced_tool = self._extract_direct_send_tool_from_text(original_task_text)
+                forced_tool = self._extract_direct_tool_from_text(original_task_text)
                 if forced_tool:
                     tool_result = await self._execute_telegram_tool(
                         chat_id,
@@ -1534,13 +1534,18 @@ class QwenCLI(loader.Module):
                         forced_json = {"status": "error", "error": tool_result}
                     if forced_json.get("status") == "success":
                         det = forced_json.get("details") or {}
-                        result_text = (
-                            "Готово: сообщение отправлено."
-                            f" chat={det.get('target_chat')} message_id={det.get('message_id')}"
-                        )
+                        action_done = det.get("action") or forced_tool.get("action")
+                        result_text = f"Готово: выполнено действие {action_done}."
+                        if det.get("target_chat") is not None:
+                            result_text += f" chat={det.get('target_chat')}"
+                        if det.get("message_id") is not None:
+                            result_text += f" message_id={det.get('message_id')}"
+                        if det.get("replied") is not None:
+                            result_text += f" replied={det.get('replied')}"
                     else:
+                        action_done = forced_tool.get("action") or "unknown_action"
                         result_text = (
-                            "Не удалось отправить сообщение. "
+                            f"Не удалось выполнить {action_done}. "
                             f"Точная ошибка: {forced_json.get('error') or 'unknown error'}"
                         )
             result_text = re.sub(
@@ -1746,7 +1751,13 @@ class QwenCLI(loader.Module):
                 prepared_target = prepared_target.strip()
                 if re.fullmatch(r"-?\d+", prepared_target):
                     prepared_target = int(prepared_target)
-            return await self.client.get_entity(prepared_target)
+            try:
+                return await self.client.get_entity(prepared_target)
+            except Exception:
+                entity, score, _ = await _resolve_dialog_entity_by_query(str(target_value))
+                if entity and score >= 0.45:
+                    return entity
+                raise
 
         async def _collect_target_messages(target_entity, target_value: str, limit: int):
             target_str = (target_value or "").strip().lower().lstrip("@")
@@ -2241,10 +2252,29 @@ class QwenCLI(loader.Module):
             return _err(f"{e.__class__.__name__}: {e}")
 
     @staticmethod
-    def _extract_direct_send_tool_from_text(request_text: str):
+    def _extract_direct_tool_from_text(request_text: str):
         text = (request_text or "").strip()
         if not text:
             return None
+        reply_mass_match = re.search(
+            r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if reply_mass_match:
+            limit = max(1, min(20, int(reply_mass_match.group(1))))
+            target_chat = (reply_mass_match.group(2) or "").strip(" \n\t:;,")
+            target_user = f"@{reply_mass_match.group(3)}"
+            reply_text = (reply_mass_match.group(4) or "").strip()
+            payload = {
+                "action": "reply_messages",
+                "target": target_user,
+                "text": reply_text or ".",
+                "limit": limit,
+            }
+            if target_chat:
+                payload["target_chat"] = target_chat
+            return payload
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -2265,6 +2295,15 @@ class QwenCLI(loader.Module):
             "target_chat": target,
             "text": message_text,
         }
+
+    @staticmethod
+    def _extract_direct_send_tool_from_text(request_text: str):
+        payload = QwenCLI._extract_direct_tool_from_text(request_text)
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("action") != "send_message":
+            return None
+        return payload
 
     async def _run_qwen_request_guarded(
         self,
