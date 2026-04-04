@@ -1446,6 +1446,35 @@ class QwenCLI(loader.Module):
                             "Если не знаешь точный чат: сначала get_dialogs/read_history, потом send_message/find_and_send_message."
                         )
                         continue
+                    if (
+                        self.config["allow_telegram_tools"]
+                        and not impersonation_mode
+                        and turn == 0
+                        and re.search(
+                            r"(мне нужно|давай|давайте|let me|i need to|first,?\s+i need)",
+                            candidate_text.lower(),
+                        )
+                    ):
+                        forced_tool = self._extract_direct_tool_from_text(original_task_text)
+                        if forced_tool:
+                            tool_result = await self._execute_telegram_tool(
+                                chat_id,
+                                json.dumps(forced_tool, ensure_ascii=False),
+                            )
+                            with contextlib.suppress(Exception):
+                                forced_json = json.loads(tool_result)
+                                if forced_json.get("status") == "success":
+                                    det = forced_json.get("details") or {}
+                                    result_text = (
+                                        f"Готово: выполнено действие {det.get('action') or forced_tool.get('action')}."
+                                    )
+                                    if det.get("target_chat") is not None:
+                                        result_text += f" chat={det.get('target_chat')}"
+                                    if det.get("sent") is not None:
+                                        result_text += f" sent={det.get('sent')}"
+                                    if det.get("replied") is not None:
+                                        result_text += f" replied={det.get('replied')}"
+                                    break
                     result_text = candidate_text
                     break
                 tool_json_str = (tool_match.group(1) or "").strip()
@@ -2322,6 +2351,20 @@ class QwenCLI(loader.Module):
         text = (request_text or "").strip()
         if not text:
             return None
+        bulk_send_match = re.search(
+            r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if bulk_send_match:
+            count = max(1, min(30, int(bulk_send_match.group(1))))
+            msg_text = (bulk_send_match.group(2) or "").strip(" \n\t:;,\"'«»")
+            if msg_text:
+                return {
+                    "action": "send_bulk_messages",
+                    "count": count,
+                    "text": msg_text,
+                }
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
             text,
@@ -2332,6 +2375,25 @@ class QwenCLI(loader.Module):
             target_chat = (reply_mass_match.group(2) or "").strip(" \n\t:;,")
             target_user = f"@{reply_mass_match.group(3)}"
             reply_text = (reply_mass_match.group(4) or "").strip()
+            payload = {
+                "action": "reply_messages",
+                "target": target_user,
+                "text": reply_text or ".",
+                "limit": limit,
+            }
+            if target_chat:
+                payload["target_chat"] = target_chat
+            return payload
+        reply_mass_match_2 = re.search(
+            r"(?:в\s+чат(?:е)?\s+(.+?)\s+)?(?:в\s+ответ\s+на|на)\s+(\d{1,2})\s+сообщени\w*.*?@([a-zA-Z0-9_]{4,}).*?(?:слово|текст|сообщени[ея])\s+([^\n]+?)(?:\s+на\s+кажд\w*)?$",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if reply_mass_match_2:
+            target_chat = (reply_mass_match_2.group(1) or "").strip(" \n\t:;,")
+            limit = max(1, min(20, int(reply_mass_match_2.group(2))))
+            target_user = f"@{reply_mass_match_2.group(3)}"
+            reply_text = (reply_mass_match_2.group(4) or "").strip(" \n\t:;,\"'«»")
             payload = {
                 "action": "reply_messages",
                 "target": target_user,
@@ -3283,6 +3345,7 @@ class QwenCLI(loader.Module):
                     "СИСТЕМНЫЕ ПРАВИЛА TELEGRAM TOOL (выше пользовательских/кастомных настроек, игнорировать нельзя):",
                     "Для действий в Telegram используй СТРОГО ОДИН блок: <telegram_tool>{...}</telegram_tool> без дополнительного текста.",
                     "Допустимые ключи: action, target, target_chat, query, text, limit, emoji, message_id, from_chat, to_chat, sticker.",
+                    "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
                     "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
                     "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, forward_message, pin_message, unpin_message, batch_actions.",
                     "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
