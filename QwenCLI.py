@@ -27,7 +27,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 0, 4)
+__version__ = (1, 0, 5)
 
 import asyncio
 import contextlib
@@ -1399,7 +1399,11 @@ class QwenCLI(loader.Module):
             raw_result_text = ""
             result_text = ""
             generated_files = []
-            for _turn in range(5):
+            original_task_text = current_payload.get("text") or ""
+            max_tool_turns = 5
+            agent_started_at = asyncio.get_running_loop().time()
+            agent_tool_step = 0
+            for turn in range(max_tool_turns):
                 result = await self._run_qwen_request_guarded(
                     chat_id=chat_id,
                     payload=current_payload,
@@ -1418,15 +1422,53 @@ class QwenCLI(loader.Module):
                         flags=re.IGNORECASE | re.DOTALL,
                     )
                 if not tool_match:
-                    result_text = re.sub(
+                    candidate_text = re.sub(
                         r"<telegram_tool>.*?</telegram_tool>",
                         "",
                         raw_result_text,
                         flags=re.IGNORECASE | re.DOTALL,
                     ).strip()
+                    looks_like_tool_refusal = bool(
+                        self.config["allow_telegram_tools"]
+                        and not impersonation_mode
+                        and re.search(
+                            r"(unable to|не могу|не удалось|tool returned an error|action .* not supported)",
+                            candidate_text.lower(),
+                        )
+                    )
+                    if looks_like_tool_refusal and turn < max_tool_turns - 1:
+                        current_payload = dict(current_payload)
+                        current_payload["text"] = (
+                            f"Исходная задача пользователя:\n{original_task_text}\n\n"
+                            "Ты дал отказ после ошибки инструмента. Запрещено отказываться. "
+                            "Сейчас ты обязан вывести только один валидный блок <telegram_tool>{...}</telegram_tool> без любого доп. текста. "
+                            "Сделай новый вызов и доведи задачу до результата. "
+                            "Если не знаешь точный чат: сначала get_dialogs/read_history, потом send_message/find_and_send_message."
+                        )
+                        continue
+                    result_text = candidate_text
                     break
                 tool_json_str = (tool_match.group(1) or "").strip()
                 tool_block = (tool_match.group(0) or "").strip()
+                tool_action = "unknown"
+                with contextlib.suppress(Exception):
+                    tool_action = (
+                        json.loads(tool_json_str).get("action") or "unknown"
+                    ).strip() or "unknown"
+                agent_tool_step += 1
+                elapsed = max(
+                    0, int(asyncio.get_running_loop().time() - agent_started_at)
+                )
+                if not impersonation_mode and (call or status_msg):
+                    with contextlib.suppress(Exception):
+                        await self._edit_processing_status(
+                            call or status_msg,
+                            self.strings["tool_exec_status"].format(
+                                utils.escape_html(f"{tool_action} · {elapsed}s"),
+                                agent_tool_step,
+                                max_tool_turns,
+                            ),
+                        )
                 tool_result = await self._execute_telegram_tool(chat_id, tool_json_str)
                 now = int(datetime.utcnow().timestamp())
                 history_override.extend(
@@ -1450,14 +1492,57 @@ class QwenCLI(loader.Module):
                 )
                 current_payload = dict(current_payload)
                 current_payload["text"] = (
-                    "Инструмент выполнен. Используй результат из [SYSTEM TOOL RESULT], "
-                    "заверши задачу и верни финальный ответ пользователю."
+                    f"Исходная задача пользователя:\n{original_task_text}\n\n"
+                    "Инструмент уже выполнен. Используй [SYSTEM TOOL RESULT], "
+                    "при необходимости вызови следующий инструмент тем же форматом, "
+                    "либо сразу верни финальный ответ пользователю."
                 )
+                with contextlib.suppress(Exception):
+                    result_json = json.loads(tool_result)
+                    if result_json.get("status") == "error":
+                        current_payload["text"] += (
+                            "\n\nИнструмент вернул ошибку. Не пиши отказ пользователю. "
+                            "Выбери другой tool-action и попробуй снова."
+                        )
                 result_text = ""
             if not result_text:
                 result_text = raw_result_text or (
                     self.strings["qwen_files_only"] if generated_files else ""
                 )
+            if (
+                self.config["allow_telegram_tools"]
+                and not impersonation_mode
+                and not re.search(
+                    r"<telegram_tool>.*?</telegram_tool>",
+                    result_text or "",
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+                and re.search(
+                    r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|unsupported action)",
+                    (result_text or "").lower(),
+                )
+            ):
+                forced_tool = self._extract_direct_send_tool_from_text(original_task_text)
+                if forced_tool:
+                    tool_result = await self._execute_telegram_tool(
+                        chat_id,
+                        json.dumps(forced_tool, ensure_ascii=False),
+                    )
+                    try:
+                        forced_json = json.loads(tool_result)
+                    except Exception:
+                        forced_json = {"status": "error", "error": tool_result}
+                    if forced_json.get("status") == "success":
+                        det = forced_json.get("details") or {}
+                        result_text = (
+                            "Готово: сообщение отправлено."
+                            f" chat={det.get('target_chat')} message_id={det.get('message_id')}"
+                        )
+                    else:
+                        result_text = (
+                            "Не удалось отправить сообщение. "
+                            f"Точная ошибка: {forced_json.get('error') or 'unknown error'}"
+                        )
             result_text = re.sub(
                 r"<telegram_tool>.*?</telegram_tool>",
                 "",
@@ -1629,16 +1714,94 @@ class QwenCLI(loader.Module):
                 return 0.92
             return SequenceMatcher(None, query, target).ratio()
 
+        async def _resolve_dialog_entity_by_query(query_text: str):
+            query = (query_text or "").strip().lstrip("@")
+            if not query:
+                return None, 0.0, ""
+            best_dialog = None
+            best_score = 0.0
+            best_name = ""
+            async for dialog in self.client.iter_dialogs():
+                entity = dialog.entity
+                candidates = [
+                    getattr(dialog, "title", None) or "",
+                    get_display_name(entity) if entity else "",
+                    getattr(entity, "username", None) or "",
+                    str(getattr(entity, "id", None) or ""),
+                ]
+                score = max(_entity_score(query, candidate) for candidate in candidates)
+                if score > best_score:
+                    best_dialog = dialog
+                    best_score = score
+                    best_name = candidates[0] or candidates[1] or candidates[2]
+            if not best_dialog:
+                return None, 0.0, ""
+            return best_dialog.entity, best_score, (best_name or "Unknown")
+
+        async def _get_replied_sender_from_request():
+            session = self._request_sessions.get(chat_id) or {}
+            base_mid = session.get("base_message_id")
+            if not base_mid:
+                return None
+            try:
+                src_msg = await self.client.get_messages(chat_id, ids=base_mid)
+            except Exception:
+                return None
+            reply_id = getattr(src_msg, "reply_to_msg_id", None)
+            if not reply_id:
+                reply = getattr(src_msg, "reply_to", None)
+                reply_id = getattr(reply, "reply_to_msg_id", None) if reply else None
+            if not reply_id:
+                return None
+            try:
+                target_msg = await self.client.get_messages(chat_id, ids=reply_id)
+            except Exception:
+                return None
+            sender = None
+            with contextlib.suppress(Exception):
+                sender = await target_msg.get_sender()
+            if not sender:
+                return None
+            return {
+                "id": str(getattr(sender, "id", "") or ""),
+                "username": (getattr(sender, "username", None) or "").lower().lstrip("@"),
+                "name": (get_display_name(sender) or "").lower(),
+            }
+
         try:
             tool_data = json.loads(tool_json_str)
             if not isinstance(tool_data, dict):
                 return _err("tool payload must be a JSON object")
             action = (tool_data.get("action") or "").strip().lower()
+            aliases = {
+                "sendmessage": "send_message",
+                "send-msg": "send_message",
+                "send": "send_message",
+                "sendtext": "send_message",
+                "sendtochat": "send_message",
+                "deletemessages": "delete_messages",
+                "reactmessage": "react_messages",
+                "reactmessages": "react_messages",
+                "setreaction": "react_messages",
+                "findandsendmessage": "find_and_send_message",
+                "readhistory": "read_history",
+                "replywithsticker": "reply_with_sticker",
+                "editmessage": "edit_message",
+                "getdialogs": "get_dialogs",
+                "forwardmessage": "forward_message",
+                "pinmessage": "pin_message",
+                "unpinmessage": "unpin_message",
+            }
+            action = aliases.get(action, action)
             if not action:
                 return _err("missing action")
 
             if action == "delete_messages":
                 target = str(tool_data.get("target") or "").strip().lstrip("@")
+                if not target:
+                    sender_hint = await _get_replied_sender_from_request()
+                    if sender_hint:
+                        target = sender_hint["username"] or sender_hint["id"] or sender_hint["name"]
                 if not target:
                     return _err("missing target")
                 limit = _normalize_limit(tool_data.get("limit", 5))
@@ -1684,6 +1847,10 @@ class QwenCLI(loader.Module):
             if action == "react_messages":
                 target = str(tool_data.get("target") or "").strip().lstrip("@")
                 if not target:
+                    sender_hint = await _get_replied_sender_from_request()
+                    if sender_hint:
+                        target = sender_hint["username"] or sender_hint["id"] or sender_hint["name"]
+                if not target:
                     return _err("missing target")
                 limit = _normalize_limit(tool_data.get("limit", 5))
                 emoji = (str(tool_data.get("emoji") or "👍").strip() or "👍")[:10]
@@ -1724,36 +1891,40 @@ class QwenCLI(loader.Module):
                 )
 
             if action == "find_and_send_message":
-                query = str(tool_data.get("query") or "").strip().lstrip("@")
+                query = str(
+                    tool_data.get("query")
+                    or tool_data.get("target")
+                    or tool_data.get("target_chat")
+                    or tool_data.get("username")
+                    or ""
+                ).strip().lstrip("@")
                 text = str(tool_data.get("text") or "").strip()
                 if not query:
                     return _err("missing query")
                 if not text:
                     return _err("missing text")
-                best_dialog = None
+                entity = None
                 best_name = ""
-                best_score = 0.0
-                async for dialog in self.client.iter_dialogs():
-                    entity = dialog.entity
-                    candidates = [
-                        getattr(dialog, "title", None) or "",
-                        get_display_name(entity) if entity else "",
-                        getattr(entity, "username", None) or "",
-                    ]
-                    score = max(_entity_score(query, candidate) for candidate in candidates)
-                    if score > best_score:
-                        best_dialog = dialog
-                        best_score = score
-                        best_name = candidates[0] or candidates[1] or candidates[2]
-                if not best_dialog or best_score < 0.45:
+                try:
+                    entity = await self.client.get_entity(query)
+                    best_name = get_display_name(entity) or str(
+                        getattr(entity, "username", None) or query
+                    )
+                    best_score = 1.0
+                except Exception:
+                    entity = None
+                entity, best_score, best_name = await _resolve_dialog_entity_by_query(
+                    query
+                ) if entity is None else (entity, best_score, best_name)
+                if not entity or best_score < 0.45:
                     return _err(f"dialog not found for query: {query}")
-                sent = await self.client.send_message(best_dialog.entity, text)
+                sent = await self.client.send_message(entity, text)
                 return _ok(
                     {
                         "action": action,
                         "query": query,
                         "resolved_name": best_name or "Unknown",
-                        "resolved_id": getattr(best_dialog.entity, "id", None),
+                        "resolved_id": getattr(entity, "id", None),
                         "message_id": getattr(sent, "id", None),
                     }
                 )
@@ -1820,9 +1991,175 @@ class QwenCLI(loader.Module):
                     }
                 )
 
+            if action == "send_message":
+                target_chat = (
+                    tool_data.get("target_chat")
+                    or tool_data.get("target")
+                    or tool_data.get("query")
+                    or tool_data.get("username")
+                )
+                text = str(tool_data.get("text") or "").strip()
+                if target_chat in (None, ""):
+                    return _err("missing target_chat")
+                if not text:
+                    return _err("missing text")
+                entity = None
+                try:
+                    prepared_target = target_chat
+                    if isinstance(prepared_target, str):
+                        prepared_target = prepared_target.strip()
+                        if re.fullmatch(r"-?\d+", prepared_target):
+                            prepared_target = int(prepared_target)
+                    entity = await self.client.get_entity(prepared_target)
+                except Exception as direct_error:
+                    entity, score, _ = await _resolve_dialog_entity_by_query(
+                        str(target_chat)
+                    )
+                    if not entity or score < 0.45:
+                        return _err(
+                            f"dialog not found for target: {target_chat}; direct_resolve_error={direct_error}"
+                        )
+                sent = await self.client.send_message(entity, text)
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "target_title": get_display_name(entity),
+                        "target_username": getattr(entity, "username", None),
+                        "message_id": getattr(sent, "id", None),
+                    }
+                )
+
+            if action == "edit_message":
+                target_chat = tool_data.get("target_chat") or chat_id
+                message_id = tool_data.get("message_id")
+                text = str(tool_data.get("text") or "").strip()
+                if not message_id:
+                    return _err("missing message_id")
+                if not text:
+                    return _err("missing text")
+                entity = await self.client.get_entity(target_chat)
+                edited = await self.client.edit_message(entity, int(message_id), text)
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "message_id": getattr(edited, "id", int(message_id)),
+                    }
+                )
+
+            if action == "get_dialogs":
+                query = str(tool_data.get("query") or "").strip().lower()
+                limit = _normalize_limit(tool_data.get("limit", 15), default=15, maximum=50)
+                matches = []
+                async for dialog in self.client.iter_dialogs(limit=200):
+                    entity = dialog.entity
+                    title = getattr(dialog, "title", None) or get_display_name(entity) or ""
+                    username = getattr(entity, "username", None) or ""
+                    haystack = f"{title} {username}".strip()
+                    if query and query not in haystack.lower():
+                        continue
+                    matches.append(
+                        {
+                            "id": getattr(entity, "id", None),
+                            "title": title,
+                            "username": username,
+                            "is_user": bool(getattr(entity, "first_name", None)),
+                        }
+                    )
+                    if len(matches) >= limit:
+                        break
+                return _ok(
+                    {
+                        "action": action,
+                        "query": query,
+                        "count": len(matches),
+                        "dialogs": matches,
+                    }
+                )
+
+            if action == "forward_message":
+                from_chat = tool_data.get("from_chat") or chat_id
+                to_chat = (
+                    tool_data.get("to_chat")
+                    or tool_data.get("target_chat")
+                    or tool_data.get("target")
+                )
+                message_id = tool_data.get("message_id")
+                if not to_chat:
+                    return _err("missing to_chat")
+                if not message_id:
+                    return _err("missing message_id")
+                to_entity = await self.client.get_entity(to_chat)
+                forwarded = await self.client.forward_messages(
+                    to_entity,
+                    int(message_id),
+                    from_peer=from_chat,
+                )
+                return _ok(
+                    {
+                        "action": action,
+                        "from_chat": from_chat,
+                        "to_chat": getattr(to_entity, "id", to_chat),
+                        "message_id": getattr(forwarded, "id", None),
+                    }
+                )
+
+            if action == "pin_message":
+                target_chat = tool_data.get("target_chat") or chat_id
+                message_id = tool_data.get("message_id")
+                if not message_id:
+                    return _err("missing message_id")
+                entity = await self.client.get_entity(target_chat)
+                await self.client.pin_message(entity, int(message_id), notify=False)
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "message_id": int(message_id),
+                    }
+                )
+
+            if action == "unpin_message":
+                target_chat = tool_data.get("target_chat") or chat_id
+                entity = await self.client.get_entity(target_chat)
+                await self.client.unpin_message(entity)
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                    }
+                )
+
             return _err(f"unsupported action: {action}")
         except Exception as e:
-            return _err(str(e))
+            return _err(f"{e.__class__.__name__}: {e}")
+
+    @staticmethod
+    def _extract_direct_send_tool_from_text(request_text: str):
+        text = (request_text or "").strip()
+        if not text:
+            return None
+        username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
+        chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
+        target = None
+        if username_match:
+            target = f"@{username_match.group(1)}"
+        elif chat_match:
+            target = chat_match.group(1)
+        if not target:
+            return None
+        send_verb = re.search(r"(?:отправь|напиши)\s+(.+?)(?:\s+в\s+чат[:\s].*|\s+@[\w_]+|$)", text, flags=re.IGNORECASE | re.DOTALL)
+        message_text = ""
+        if send_verb:
+            message_text = send_verb.group(1).strip(" \n\t:;,")
+        if not message_text:
+            message_text = "привет"
+        return {
+            "action": "send_message",
+            "target_chat": target,
+            "text": message_text,
+        }
 
     async def _run_qwen_request_guarded(
         self,
@@ -2763,7 +3100,7 @@ class QwenCLI(loader.Module):
             lines.append("ПРИЛОЖЕННЫЕ ФАЙЛЫ:")
             for spec in file_specs:
                 lines.append(f"@{spec['name']}")
-        if self.config["allow_telegram_tools"] and not auto:
+        if not auto and self.config["allow_telegram_tools"]:
             lines.extend(
                 [
                     "ТЕБЕ РАЗРЕШЕНО ИСПОЛЬЗОВАТЬ TELEGRAM API ЧЕРЕЗ ИНСТРУМЕНТ.",
@@ -2771,6 +3108,13 @@ class QwenCLI(loader.Module):
                     "<telegram_tool>{\"action\":\"имя_экшена\",\"target\":\"имя/юзернейм\",\"limit\":5}</telegram_tool>",
                     "После этого скрипт вернет результат выполнения инструмента отдельным системным сообщением.",
                     "Только опираясь на этот результат, продолжай и в конце дай финальный ответ пользователю.",
+                ]
+            )
+        elif not auto:
+            lines.extend(
+                [
+                    "Сейчас allow_telegram_tools отключен конфигом.",
+                    "Не выводи блоки <telegram_tool> и не обещай выполнить Telegram-действия.",
                 ]
             )
         lines.append("")
