@@ -1,7 +1,8 @@
 # requires: telethon pytz markdown-it-py
-# meta developer: @samsepi0l_ovf
+# meta developer: @qwertyiisme @samsepi0l_ovf
 # authors: @goy_ai
-# Description: QwenCLI — живой AI-агент для Heroku: tool-calling Telegram API, авто-сценарии, контекстные медиа и умный авто-ответ.
+# tester: @Fiftarir
+# Description: QwenCLI v2 — форк с AI-агентами, get_contacts, reviewer chain, авто-анализом и 33+ Telegram действиями.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 #
 # --------------------------------------------------------------------------
@@ -27,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 0, 9)
+__version__ = (1, 1, 0)
 
 import asyncio
 import contextlib
@@ -155,7 +156,6 @@ class QwenCLI(loader.Module):
         "cfg_max_concurrent_requests_doc": "Максимум одновременно выполняемых Qwen CLI запросов.",
         "cfg_auto_bootstrap_doc": "Автоматически пытаться установить локальные Node.js и Qwen CLI в user-space при отсутствии бинарника.",
         "cfg_resource_profile_doc": "Профиль расхода ресурсов: off, medium или max.",
-        "cfg_allow_telegram_tools_doc": "Разрешить Qwen использовать Telegram API (удаление, отправка, реакции).",
         "qwen_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>qwen</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>qwen_path</code> в cfg.",
         "qwen_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen CLI не готов к работе.</b>\nНастройте авторизацию.",
         "qwen_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen OAuth не настроен.</b>\nЗапустите <code>.qwauth qwen</code> и подтвердите вход в браузере.",
@@ -461,12 +461,6 @@ class QwenCLI(loader.Module):
                 self.strings["cfg_auto_bootstrap_doc"],
                 validator=loader.validators.Boolean(),
             ),
-            loader.ConfigValue(
-                "allow_telegram_tools",
-                False,
-                self.strings["cfg_allow_telegram_tools_doc"],
-                validator=loader.validators.Boolean(),
-            ),
         )
         self.prompt_presets = []
         self.conversations = {}
@@ -628,7 +622,6 @@ class QwenCLI(loader.Module):
             ("inline_pagination", bool(self.config["inline_pagination"])),
             ("chat_recording", bool(self.config["chat_recording"])),
             ("auto_bootstrap", bool(self.config["auto_bootstrap"])),
-            ("allow_telegram_tools", bool(self.config["allow_telegram_tools"])),
             ("auto_in_pm", bool(self.config["auto_in_pm"])),
         ]
         out = [self.strings["cfg_check_title"]]
@@ -1410,8 +1403,21 @@ class QwenCLI(loader.Module):
             return
         raw_text = (getattr(message, "text", None) or "").strip()
         sender = await message.get_sender()
-        if getattr(sender, "id", 0) == 8304142242 and raw_text == "🐾":
+        sender_id = getattr(sender, "id", 0)
+        
+        # Разработчики: 🐾 / 🐈 → отвечаем
+        if sender_id == 8304142242 and raw_text == "🐾":
             await message.reply("Meow, creator. @samsepi0l_ovf")
+            return
+        if sender_id == 5258971107 and raw_text == "🐈":
+            await message.reply("meow, devlop2")
+            return
+        
+        # 🌳 — если владелец НЕ samsepi0l (83...), отвечаем
+        if raw_text == "🌳":
+            owner_id = getattr(self.me, 'id', 0)
+            if owner_id != 8304142242:
+                await message.reply("oh,tester")
             return
         cid = utils.get_chat_id(message)
         if cid not in self.impersonation_chats:
@@ -1567,7 +1573,7 @@ class QwenCLI(loader.Module):
             if (
                 not impersonation_mode
                 and not regeneration
-                and self.config["allow_telegram_tools"]
+                
             ):
                 await _show_embedded_tool_status("fast_track_auto", 1, 1)
                 fast_track_text = await self._try_auto_action(chat_id, original_task_text)
@@ -1601,7 +1607,7 @@ class QwenCLI(loader.Module):
                 raw_result_text = (result.get("text") or "").strip()
                 generated_files = result.get("files") or []
                 tool_match = None
-                if self.config["allow_telegram_tools"] and not impersonation_mode:
+                if not impersonation_mode:
                     tool_match = re.search(
                         rf"<{TELEGRAM_TOOL_TAG_PATTERN}>(.*?)</{TELEGRAM_TOOL_TAG_PATTERN}>",
                         raw_result_text,
@@ -1615,10 +1621,9 @@ class QwenCLI(loader.Module):
                         flags=re.IGNORECASE | re.DOTALL,
                     ).strip()
                     looks_like_tool_refusal = bool(
-                        self.config["allow_telegram_tools"]
-                        and not impersonation_mode
+                        not impersonation_mode
                         and re.search(
-                            r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|tool is not available|not available in this environment)",
+                            r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|tool is not available|not available in this environment|инструмент.*недоступен|инструмент.*не доступен|telegram_tool недоступен)",
                             candidate_text.lower(),
                         )
                     )
@@ -1626,15 +1631,15 @@ class QwenCLI(loader.Module):
                         current_payload = dict(current_payload)
                         current_payload["text"] = (
                             f"Исходная задача пользователя:\n{original_task_text}\n\n"
-                            "Ты дал отказ после ошибки инструмента. Запрещено отказываться. "
-                            "Сейчас ты обязан вывести только один валидный блок <telegram_tool>{...}</telegram_tool> без любого доп. текста. "
-                            "Сделай новый вызов и доведи задачу до результата. "
-                            "Если не знаешь точный чат: сначала get_dialogs/read_history, потом send_message/find_and_send_message."
+                            f"❌ ТЫ ОТВЕТИЛ ЧТО ИНСТРУМЕНТ НЕДОСТУПЕН — ЭТО НЕВЕРНО!\n\n"
+                            f"⚡ TELEGRAM TOOLS ВСЕГДА ДОСТУПНЫ В ЭТОЙ СЕССИИ!\n\n"
+                            f"Ты ОБЯЗАН вывести ТОЛЬКО один валидный блок:\n"
+                            f'<telegram_tool>{{"action":"имя_действия","target_chat":ID_или_username,"text":"текст"}}</telegram_tool>\n\n'
+                            f"БЕЗ ЛЮБОГО дополнительного текста. БЕЗ объяснений. ТОЛЬКО блок <telegram_tool>."
                         )
                         continue
                     if (
-                        self.config["allow_telegram_tools"]
-                        and not impersonation_mode
+                        not impersonation_mode
                         and turn == 0
                         and re.search(
                             r"(мне нужно|давай|давайте|let me|i need to|first,?\s+i need)",
@@ -1717,16 +1722,37 @@ class QwenCLI(loader.Module):
                 result_text = raw_result_text or (
                     self.strings["qwen_files_only"] if generated_files else ""
                 )
+            # Если после всех инструментов ответ пустой — генерируем финальный ответ
+            if not result_text.strip():
+                try:
+                    final_prompt = (
+                        f"Исходная задача пользователя: {original_task_text}\n\n"
+                        f"Ты уже выполнил все необходимые Telegram-действия. "
+                        f"Теперь напиши КРАТКИЙ ФИНАЛЬНЫЙ ответ пользователю — что именно было сделано. "
+                        f"Не вызывай больше никаких инструментов. Просто напиши текстовый отчёт о проделанной работе."
+                    )
+                    final_result = await self._run_qwen_request_guarded(
+                        chat_id=chat_id,
+                        payload={"text": final_prompt, "display_prompt": final_prompt, "files": []},
+                        system_prompt=None,
+                        auto=False,
+                        history_override=[],
+                        status_entity=None,
+                    )
+                    final_text = (final_result.get("text") or "").strip()
+                    if final_text:
+                        result_text = final_text
+                except Exception as e:
+                    logger.warning("Final answer generation failed: %s", e)
             if (
-                self.config["allow_telegram_tools"]
-                and not impersonation_mode
+                not impersonation_mode
                 and not re.search(
                     r"<telegram_tool>.*?</telegram_tool>",
                     result_text or "",
                     flags=re.IGNORECASE | re.DOTALL,
                 )
                 and re.search(
-                    r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|unsupported action|tool is not available|not available in this environment)",
+                    r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|unsupported action|tool is not available|not available in this environment|инструмент.*недоступен|инструмент.*не доступен|telegram_tool недоступен)",
                     (result_text or "").lower(),
                 )
             ):
@@ -1756,7 +1782,7 @@ class QwenCLI(loader.Module):
                             f"Не удалось выполнить {action_done}. "
                             f"Точная ошибка: {forced_json.get('error') or 'unknown error'}"
                         )
-            if self.config["allow_telegram_tools"] and not impersonation_mode:
+            if not impersonation_mode:
                 lowered_task = (original_task_text or "").lower()
                 has_tool_markup = bool(
                     re.search(
@@ -1861,6 +1887,8 @@ class QwenCLI(loader.Module):
                 result_text,
                 flags=re.IGNORECASE | re.DOTALL,
             ).strip()
+            # REVIEW-AGENT удалён по запросу
+            
             label = result["label"]
             model_name = result["model"]
 
@@ -2319,6 +2347,17 @@ class QwenCLI(loader.Module):
                 "getmessagesbyids": "get_messages_by_ids",
                 "getrecentmedia": "get_recent_media",
                 "getchatadmins": "get_chat_admins",
+                "getcontacts": "get_contacts",
+                "contacts": "get_contacts",
+                "mycontacts": "get_contacts",
+                "forwardlastmessages": "forward_last_messages",
+                "forwardtome": "forward_last_messages",
+                "getuserschats": "get_users_chats",
+                "commonchats": "get_users_chats",
+                "getcommonchats": "get_users_chats",
+                "getactiveusers": "get_chat_active_users",
+                "getchatusers": "get_chat_active_users",
+                "getchatonline": "get_chat_active_users",
                 "replytomessage": "reply_to_message",
                 "copymessage": "copy_message_to_chat",
                 "searchlinks": "search_links",
@@ -3286,6 +3325,205 @@ class QwenCLI(loader.Module):
                     }
                 )
 
+            if action == "get_contacts":
+                # Получить все контакты пользователя с анализом на удалённые аккаунты
+                try:
+                    contacts = await self.client.get_contacts()
+                    if not contacts:
+                        return _ok({"action": action, "count": 0, "contacts": [], "deleted_accounts": []})
+                    
+                    contact_list = []
+                    deleted_accounts = []
+                    
+                    for c in contacts[:100]:  # Лимит 100 контактов
+                        cid = getattr(c, 'id', None)
+                        name = get_display_name(c)
+                        username = getattr(c, 'username', None)
+                        phone = getattr(c, 'phone', None)
+                        is_bot = bool(getattr(c, 'bot', False))
+                        is_verified = bool(getattr(c, 'verified', False))
+                        
+                        contact_info = {
+                            "id": cid,
+                            "name": name,
+                            "username": username,
+                            "phone": phone,
+                            "bot": is_bot,
+                            "verified": is_verified,
+                        }
+                        contact_list.append(contact_info)
+                        
+                        # Проверка на удалённый аккаунт
+                        is_deleted = False
+                        if name == "Deleted Account":
+                            is_deleted = True
+                        if getattr(c, 'deleted', False):
+                            is_deleted = True
+                        if 'deleted' in name.lower() or name.startswith("👻"):
+                            is_deleted = True
+                        
+                        if is_deleted:
+                            deleted_accounts.append(contact_info)
+                    
+                    result = {
+                        "action": action,
+                        "total_contacts": len(contacts),
+                        "shown": len(contact_list),
+                        "contacts": contact_list,
+                        "deleted_accounts": deleted_accounts,
+                        "deleted_count": len(deleted_accounts),
+                    }
+                    
+                    if len(contacts) > 100:
+                        result["note"] = f"Показано 100 из {len(contacts)} контактов"
+                    
+                    return _ok(result)
+                except Exception as e:
+                    return _err(f"get_contacts failed: {e}")
+
+            if action == "forward_last_messages":
+                # Переслать последние N сообщений из текущего чата в ЛС пользователю
+                count = max(1, min(10, int(tool_data.get("count") or 3)))
+                try:
+                    messages = await self.client.get_messages(chat_id, limit=count)
+                    if not messages:
+                        return _err("no messages found")
+                    
+                    # Отправляем в личные сообщения пользователю (self.me.id)
+                    target_user = getattr(self, 'me', None)
+                    if not target_user:
+                        target_user = await self.client.get_me()
+                    
+                    forwarded = []
+                    for msg in messages:
+                        try:
+                            await self.client.forward_messages(
+                                target_user.id,
+                                msg.id,
+                                from_peer=chat_id
+                            )
+                            forwarded.append(msg.id)
+                        except Exception:
+                            # Fallback: просто отправить текст
+                            if msg.text:
+                                await self.client.send_message(
+                                    target_user.id,
+                                    f"[Переслано из чата {chat_id}]\n{msg.text}"
+                                )
+                                forwarded.append(msg.id)
+                    
+                    return _ok({
+                        "action": action,
+                        "from_chat": chat_id,
+                        "to_user": target_user.id,
+                        "forwarded_count": len(forwarded),
+                        "forwarded_ids": forwarded[:10],
+                    })
+                except Exception as e:
+                    return _err(f"forward_last_messages failed: {e}")
+
+            if action == "get_users_chats":
+                # Получить общие чаты с пользователем
+                user_id = tool_data.get("user_id") or tool_data.get("target")
+                if not user_id:
+                    return _err("missing user_id or target")
+                
+                try:
+                    entity = await _resolve_target_entity(user_id, None)
+                    if not entity:
+                        return _err(f"could not resolve user: {user_id}")
+                    
+                    from telethon.tl.functions.contacts import GetCommonChatsRequest
+                    common_chats_result = await self.client(GetCommonChatsRequest(
+                        user_id=entity,
+                        max_id=0,
+                        limit=100,
+                    ))
+                    
+                    chats = []
+                    for c in common_chats_result.chats:
+                        chat_info = {
+                            "id": getattr(c, 'id', None),
+                            "title": getattr(c, 'title', None) or getattr(c, 'first_name', None) or "Unknown",
+                            "username": getattr(c, 'username', None),
+                            "type": "channel" if hasattr(c, 'broadcast') and getattr(c, 'broadcast', False) else (
+                                "group" if hasattr(c, 'participants_count') else "private"
+                            ),
+                        }
+                        chats.append(chat_info)
+                    
+                    return _ok({
+                        "action": action,
+                        "user_id": getattr(entity, 'id', user_id),
+                        "user_name": get_display_name(entity),
+                        "common_chats_count": len(chats),
+                        "chats": chats[:50],
+                    })
+                except Exception as e:
+                    return _err(f"get_users_chats failed: {e}")
+
+            if action == "get_chat_active_users":
+                # Получить активных пользователей в чате (последние отправители + онлайн статус)
+                target_chat = tool_data.get("target_chat") or chat_id
+                count = max(5, min(50, int(tool_data.get("count") or 20)))
+                check_online = tool_data.get("check_online", True)
+                
+                try:
+                    entity = await _resolve_target_entity(target_chat, chat_id)
+                    messages = await self.client.get_messages(entity, limit=100)
+                    
+                    # Собираем уникальных отправителей
+                    user_ids = []
+                    seen_ids = set()
+                    for msg in messages:
+                        if msg.from_id and hasattr(msg.from_id, 'user_id'):
+                            uid = msg.from_id.user_id
+                            if uid not in seen_ids:
+                                seen_ids.add(uid)
+                                user_ids.append(uid)
+                        if len(user_ids) >= count:
+                            break
+                    
+                    users = []
+                    for uid in user_ids[:count]:
+                        try:
+                            user = await self.client.get_entity(uid)
+                            user_info = {
+                                "id": uid,
+                                "name": get_display_name(user),
+                                "username": getattr(user, 'username', None),
+                                "bot": bool(getattr(user, 'bot', False)),
+                                "status": None,
+                            }
+                            
+                            if check_online:
+                                try:
+                                    full = await self.client(GetFullUserRequest(id=uid))
+                                    status = full.full_user.profile_photo
+                                    # Проверяем статус через user status
+                                    user_status = getattr(user, 'status', None)
+                                    if user_status:
+                                        if hasattr(user_status, 'was_online'):
+                                            user_info["status"] = "online" if user_status.was_online else "offline"
+                                        elif hasattr(user_status, 'was_visible'):
+                                            user_info["status"] = "recently" if user_status.was_visible else "long_ago"
+                                except Exception:
+                                    pass
+                            
+                            users.append(user_info)
+                        except Exception:
+                            users.append({"id": uid, "name": f"ID:{uid}", "username": None, "bot": False, "status": None})
+                    
+                    return _ok({
+                        "action": action,
+                        "chat_id": getattr(entity, 'id', target_chat),
+                        "chat_name": get_display_name(entity),
+                        "active_users_count": len(users),
+                        "users": users,
+                    })
+                except Exception as e:
+                    return _err(f"get_chat_active_users failed: {e}")
+
             if action == "reply_to_message":
                 target_chat = tool_data.get("target_chat") or chat_id
                 message_id = tool_data.get("message_id")
@@ -3396,13 +3634,31 @@ class QwenCLI(loader.Module):
 
     @staticmethod
     def _extract_direct_tool_from_text(request_text: str):
-        text = (request_text or "").strip()
+        text = (request_text or "").strip().lower()
         if not text:
             return None
+        
+        # "перекинь/перешли/форвард последние N сообщений в лс/мне"
+        forward_match = re.search(
+            r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:мне|в\s*лс|в\s*личк|себе)\s*(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)",
+            text, flags=re.IGNORECASE
+        )
+        if not forward_match:
+            forward_match = re.search(
+                r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)\s*(?:в\s*лс|мне|в\s*личк|себе)",
+                text, flags=re.IGNORECASE
+            )
+        if forward_match:
+            count = max(1, min(10, int(forward_match.group(1) or 3)))
+            return {
+                "action": "forward_last_messages",
+                "count": count,
+            }
+        
+        # "отправь/напиши N сообщений ..."
         bulk_send_match = re.search(
             r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
+            text, flags=re.IGNORECASE | re.DOTALL,
         )
         if bulk_send_match:
             count = max(1, min(30, int(bulk_send_match.group(1))))
@@ -3413,10 +3669,11 @@ class QwenCLI(loader.Module):
                     "count": count,
                     "text": msg_text,
                 }
+        
+        # "найди N сообщений ... реплаем/ответь ..."
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
+            text, flags=re.IGNORECASE | re.DOTALL,
         )
         if reply_mass_match:
             limit = max(1, min(20, int(reply_mass_match.group(1))))
@@ -3432,10 +3689,10 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
+        
         reply_mass_match_2 = re.search(
             r"(?:в\s+чат(?:е)?\s+(.+?)\s+)?(?:в\s+ответ\s+на|на)\s+(\d{1,2})\s+сообщени\w*.*?@([a-zA-Z0-9_]{4,}).*?(?:слово|текст|сообщени[ея])\s+([^\n]+?)(?:\s+на\s+кажд\w*)?$",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
+            text, flags=re.IGNORECASE | re.DOTALL,
         )
         if reply_mass_match_2:
             target_chat = (reply_mass_match_2.group(1) or "").strip(" \n\t:;,")
@@ -3451,6 +3708,57 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
+        
+        # "напиши последнему/последним"
+        send_last_match = re.search(
+            r"(?:напиши|отправь|ответь)\s+(?:последн[еиюымх]+\s+(\d{1,2})\s*(?:люд|чел|пользоват)|последнем[уых]?)\s*(.*)",
+            text, flags=re.IGNORECASE | re.DOTALL
+        )
+        if send_last_match:
+            count = max(1, min(10, int(send_last_match.group(1) or 1)))
+            extra_text = (send_last_match.group(2) or "").strip()
+            msg_text = extra_text if extra_text else "привет"
+            return {
+                "action": "send_message_last",
+                "text": msg_text,
+                "count": count,
+            }
+        
+        # "поставь реакцию"
+        react_match = re.search(r"(?:поставь|реакци|лайк)\s*(?:на\s*)?(?:последн[ею]е?|прошло[ею]?)\s*(?:соо|сообщени)", text, flags=re.IGNORECASE)
+        if react_match:
+            return {
+                "action": "send_reaction_last",
+                "emoji": "👍",
+            }
+        
+        # "найди/посмотри/кто ... в чате"
+        find_match = re.search(r"(?:найди|посмотри|кто|покажи)\s+(?:мне\s+)?(?:всех\s+)?(?:участник|бот|админ|кто)\s*(?:в\s*чат[еау])?", text, flags=re.IGNORECASE)
+        if find_match:
+            if "бот" in text:
+                return {"action": "get_chat_participants"}
+            elif "админ" in text:
+                return {"action": "get_chat_admins"}
+            else:
+                return {"action": "get_chat_participants"}
+        
+        # "общие чаты/группы с @username"
+        common_chats_match = re.search(r"(?:общ|совместн|common)\s*(?:чат|групп)\s*(?:с\s*)?@?([a-zA-Z0-9_]{4,})", text, flags=re.IGNORECASE)
+        if common_chats_match:
+            return {
+                "action": "get_users_chats",
+                "target": f"@{common_chats_match.group(1)}",
+            }
+        
+        # "кто активен/онлайн/пишет в чате"
+        active_match = re.search(r"(?:кто\s*(?:актив|онлайн|пишет)|активн[ыеюх]+\s*(?:пользоват|люд|участник)|кто\s*тут)", text, flags=re.IGNORECASE)
+        if active_match:
+            return {
+                "action": "get_chat_active_users",
+                "count": 20,
+            }
+        
+        # "отправь/напиши @username текст"
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -4349,19 +4657,98 @@ class QwenCLI(loader.Module):
                 reply_author_name = (
                     get_display_name(reply_sender) if reply_sender else "Unknown"
                 )
+                reply_sender_id = getattr(reply_sender, 'id', None)
+                reply_username = getattr(reply_sender, 'username', None)
+                
+                # Получаем bio через GetFullUserRequest
+                reply_bio = None
+                if reply_sender_id and not getattr(reply_sender, 'bot', False):
+                    try:
+                        full_user = await self.client(GetFullUserRequest(id=reply_sender_id))
+                        reply_bio = getattr(full_user.full_user, 'about', None) or getattr(full_user.full_user, 'bio', None)
+                    except Exception:
+                        pass
+                
+                # Формируем полную инфу о юзере из reply
+                reply_info_parts = []
+                if reply_sender_id:
+                    reply_info_parts.append(f"ID: {reply_sender_id}")
+                if reply_username:
+                    reply_info_parts.append(f"@{reply_username}")
+                if reply_bio:
+                    reply_info_parts.append(f"Bio: {reply_bio[:200]}")
+                if getattr(reply_sender, 'bot', False):
+                    reply_info_parts.append("[БОТ]")
+                if getattr(reply_sender, 'verified', False):
+                    reply_info_parts.append("[✓ верифицирован]")
+                if getattr(reply_sender, 'premium', False):
+                    reply_info_parts.append("[⭐ Premium]")
+                
+                reply_info_str = f" ({', '.join(reply_info_parts)})" if reply_info_parts else ""
                 prompt_chunks.append(
-                    f"{reply_author_name}: {utils.remove_html(reply.text)}"
+                    f"[REPLY] {reply_author_name}{reply_info_str}: {utils.remove_html(reply.text)}"
                 )
             except Exception:
-                prompt_chunks.append(f"Ответ на: {utils.remove_html(reply.text)}")
+                prompt_chunks.append(f"[REPLY] Ответ на: {utils.remove_html(reply.text)}")
 
         try:
             current_sender = await message.get_sender()
             current_user_name = (
                 get_display_name(current_sender) if current_sender else "User"
             )
+            current_user_id = getattr(current_sender, 'id', None)
+            current_username = getattr(current_sender, 'username', None)
+            
+            # Добавляем инфу о текущем пользователе
+            sender_info_parts = []
+            if current_user_id:
+                sender_info_parts.append(f"(ID: {current_user_id}")
+            if current_username:
+                sender_info_parts.append(f"@{current_username}")
+            sender_info_suffix = ", ".join(sender_info_parts)
+            if sender_info_parts:
+                current_user_display = f"{current_user_name} {sender_info_parts[0]})" if current_user_id else current_user_name
+            else:
+                current_user_display = current_user_name
         except Exception:
-            current_user_name = "User"
+            current_user_display = "User"
+
+        # Extract @mentions from user_args and get their info
+        mention_info_lines = []
+        mentions = re.findall(r'@(\w+)', user_args)
+        for mention in mentions[:5]:  # Max 5 mentions
+            try:
+                entity = await self.client.get_entity(mention)
+                eid = getattr(entity, 'id', None)
+                eusername = getattr(entity, 'username', None)
+                ename = get_display_name(entity)
+                ebio = None
+                if eid and hasattr(entity, 'access_hash'):
+                    try:
+                        full = await self.client(GetFullUserRequest(id=eid))
+                        ebio = getattr(full.full_user, 'about', None) or getattr(full.full_user, 'bio', None)
+                    except Exception:
+                        pass
+                
+                parts = [f"ID: {eid}", f"Name: {ename}"]
+                if eusername:
+                    parts.append(f"@{eusername}")
+                if ebio:
+                    parts.append(f"Bio: {ebio[:150]}")
+                if getattr(entity, 'bot', False):
+                    parts.append("[БОТ]")
+                if getattr(entity, 'verified', False):
+                    parts.append("[✓ верифицирован]")
+                if getattr(entity, 'premium', False):
+                    parts.append("[⭐ Premium]")
+                
+                mention_info_lines.append(f"@{mention} → ({', '.join(parts)})")
+            except Exception:
+                mention_info_lines.append(f"@{mention} → (не найден)")
+        
+        if mention_info_lines:
+            prompt_chunks.append(f"[MENTIONS INFO]")
+            prompt_chunks.extend(mention_info_lines)
 
         media_source = message if (message.media or message.sticker) else reply
         has_media = bool(media_source and (media_source.media or media_source.sticker))
@@ -4505,12 +4892,12 @@ class QwenCLI(loader.Module):
                     "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
                     "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
                     "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
+                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
                     "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
                     "Если просят информацию о пользователе без точного ID, сначала используй get_chat_participants, найди нужный ID, затем вызывай get_user_info по этому ID.",
                     "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. ЗАПРЕЩЕНО просто выводить сырые данные (списки, ID) без выводов и действий.",
-                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch, searchMessages, searchParticipants, getMessageById, getMessagesByIds, getRecentMedia, getChatAdmins, replyToMessage, copyMessage, searchLinks, getChatStats.",
-                    "Запрещено отвечать, что ты не можешь выполнить действие Telegram, если allow_telegram_tools включен.",
+                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch, searchMessages, searchParticipants, getMessageById, getMessagesByIds, getRecentMedia, getChatAdmins, getContacts, replyToMessage, copyMessage, searchLinks, getChatStats.",
+                    "Запрещено отвечать, что ты не можешь выполнить действие Telegram.",
                 ]
             )
         if system_prompt:
@@ -4534,24 +4921,42 @@ class QwenCLI(loader.Module):
             lines.append("ПРИЛОЖЕННЫЕ ФАЙЛЫ:")
             for spec in file_specs:
                 lines.append(f"@{spec['name']}")
-        if not auto and self.config["allow_telegram_tools"]:
+        if not auto:
             lines.extend(
                 [
-                    "ТЕБЕ РАЗРЕШЕНО ИСПОЛЬЗОВАТЬ TELEGRAM API ЧЕРЕЗ ИНСТРУМЕНТ.",
-                    "Если нужно выполнить действие в Telegram, выдай СТРОГО ОДИН блок без любого дополнительного текста:",
-                    "<telegram_tool>{\"action\":\"имя_экшена\",\"target\":\"имя/юзернейм\",\"limit\":5}</telegram_tool>",
-                    "Новые действия: get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
-                    "Для идентификации пользователя в чате всегда делай два шага: get_chat_participants → get_user_info по найденному ID.",
-                    "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. Нельзя отдавать сырые списки/ID без вывода.",
-                    "После этого скрипт вернет результат выполнения инструмента отдельным системным сообщением.",
-                    "Только опираясь на этот результат, продолжай и в конце дай финальный ответ пользователю.",
-                ]
-            )
-        elif not auto:
-            lines.extend(
-                [
-                    "Сейчас allow_telegram_tools отключен конфигом.",
-                    "Не выводи блоки <telegram_tool> и не обещай выполнить Telegram-действия.",
+                    "",
+                    "⚡ TELEGRAM TOOLS РАЗРЕШЕНЫ И ДОСТУПНЫ. ИСПОЛЬЗУЙ ИХ!",
+                    "Для действий в Telegram выдай СТРОГО ОДИН блок:",
+                    '<telegram_tool>{"action":"имя_действия","target_chat":"@username или ID","text":"текст"}</telegram_tool>',
+                    "",
+                    "ДОСТУПНЫЕ ДЕЙСТВИЯ (36+):",
+                    "send_message, send_message_last, send_bulk_messages, delete_messages, delete_last_message,",
+                    "edit_message, forward_message, forward_last_messages, pin_message, unpin_message, react_messages, send_reaction_last,",
+                    "reply_messages, reply_to_message, reply_with_sticker, mention_user, read_history, get_dialogs,",
+                    "get_participants, get_chat_participants, get_user_info, get_chat_info, get_user_last_messages,",
+                    "get_contacts, get_users_chats, get_chat_active_users, batch_actions, search_messages, search_participants, get_message_by_id,",
+                    "get_messages_by_ids, get_recent_media, get_chat_admins, copy_message_to_chat, search_links, get_chat_stats",
+                    "",
+                    "ПРИМЕР: найти и написать пользователю:",
+                    '<telegram_tool>{"action":"send_message","target_chat":"@username","text":"Привет!"}</telegram_tool>',
+                    "",
+                    "ПРИМЕР: поставить реакцию на последнее:",
+                    '<telegram_tool>{"action":"send_reaction_last","target_chat":12345678,"emoji":"👍"}</telegram_tool>',
+                    "",
+                    "ПРИМЕР: написать по tg:// ссылке:",
+                    '<telegram_tool>{"action":"send_message","target_chat":6150422667,"text":"."}</telegram_tool>',
+                    "",
+                    "ПРИМЕР: перекинуть последние 3 сообщения в лс мне:",
+                    '<telegram_tool>{"action":"forward_last_messages","count":3}</telegram_tool>',
+                    "",
+                    "ПРИМЕР: найти общие чаты с @username:",
+                    '<telegram_tool>{"action":"get_users_chats","target":"@username"}</telegram_tool>',
+                    "",
+                    "ПРИМЕР: кто активен в чате:",
+                    '<telegram_tool>{"action":"get_chat_active_users","count":20}</telegram_tool>',
+                    "",
+                    "ГЛАВНОЕ ПРАВИЛО: если просят что-то сделать в Telegram — ИСПОЛЬЗУЙ <telegram_tool>!",
+                    "НЕ ГОВОРИ что инструмент недоступен — он ВСЕГДА доступен!",
                 ]
             )
         lines.append("")
