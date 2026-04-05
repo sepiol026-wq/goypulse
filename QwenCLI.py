@@ -207,6 +207,7 @@ class QwenCLI(loader.Module):
         "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen active</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
         "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> step <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}s</code>",
+        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> modes: {}",
         "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
         "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <code>{}</code>{}",
         "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> error: <code>{}</code>",
@@ -1530,6 +1531,14 @@ class QwenCLI(loader.Module):
             result_text = ""
             generated_files = []
             original_task_text = current_payload.get("text") or ""
+            status_tags = []
+            lower_task = original_task_text.lower()
+            if impersonation_mode:
+                status_tags.append("auto")
+            if re.search(r"\bbatch\b|multi[\s_-]?action|bulk", lower_task):
+                status_tags.append("batch")
+            if re.search(r"fast[\s_-]?track|fasttrack", lower_task):
+                status_tags.append("fast_track")
             if (
                 not impersonation_mode
                 and not regeneration
@@ -1578,6 +1587,9 @@ class QwenCLI(loader.Module):
                     auto=impersonation_mode,
                     history_override=history_override,
                     status_entity=call or status_msg,
+                    progress_started_at=agent_started_at,
+                    progress_step_offset=agent_tool_step,
+                    status_tags=status_tags,
                 )
                 raw_result_text = (result.get("text") or "").strip()
                 generated_files = result.get("files") or []
@@ -2184,61 +2196,122 @@ class QwenCLI(loader.Module):
                 actions = tool_data.get("actions")
                 if not isinstance(actions, list) or not actions:
                     return _err("missing actions list")
-                if len(actions) > 12:
-                    return _err("too many actions; maximum is 12")
+                if len(actions) > 20:
+                    return _err("too many actions; maximum is 20")
                 blocked_for_batch = {
                     "read_history",
                     "get_dialogs",
                     "find_and_send_message",
                     "batch_actions",
                 }
-                results = []
-                for idx, one in enumerate(actions, start=1):
+                run_parallel = bool(tool_data.get("parallel"))
+                continue_on_error = bool(tool_data.get("continue_on_error", True))
+                retry_count = _normalize_limit(
+                    tool_data.get("retries", 0), default=0, maximum=2
+                )
+                concurrency = _normalize_limit(
+                    tool_data.get("concurrency", 3), default=3, maximum=8
+                )
+                if not run_parallel:
+                    concurrency = 1
+
+                async def _execute_one_action(idx, one):
                     if not isinstance(one, dict):
-                        results.append(
-                            {
-                                "index": idx,
-                                "status": "error",
-                                "error": "action item must be object",
-                            }
-                        )
-                        continue
+                        return {
+                            "index": idx,
+                            "status": "error",
+                            "error": "action item must be object",
+                        }
                     one_action = (one.get("action") or "").strip().lower()
                     one_action = aliases.get(one_action, one_action)
                     if one_action in blocked_for_batch:
-                        results.append(
-                            {
-                                "index": idx,
-                                "status": "error",
-                                "error": f"action not allowed in batch: {one_action}",
-                            }
-                        )
-                        continue
+                        return {
+                            "index": idx,
+                            "status": "error",
+                            "error": f"action not allowed in batch: {one_action}",
+                        }
                     one_payload = dict(one)
                     one_payload["action"] = one_action
                     if "target_chat" not in one_payload and "chat_id" in tool_data:
                         one_payload["target_chat"] = tool_data.get("chat_id")
-                    one_result_raw = await self._execute_telegram_tool(
-                        chat_id, json.dumps(one_payload, ensure_ascii=False)
-                    )
-                    with contextlib.suppress(Exception):
-                        one_result = json.loads(one_result_raw)
-                        if isinstance(one_result, dict):
-                            one_result["index"] = idx
-                            results.append(one_result)
-                            continue
-                    results.append(
-                        {
-                            "index": idx,
-                            "status": "error",
-                            "error": one_result_raw,
-                        }
-                    )
+                    attempt = 0
+                    last_raw = ""
+                    while attempt <= retry_count:
+                        started = asyncio.get_running_loop().time()
+                        one_result_raw = await self._execute_telegram_tool(
+                            chat_id, json.dumps(one_payload, ensure_ascii=False)
+                        )
+                        last_raw = one_result_raw
+                        elapsed_ms = int(
+                            max(
+                                0.0,
+                                (
+                                    asyncio.get_running_loop().time()
+                                    - started
+                                )
+                                * 1000.0,
+                            )
+                        )
+                        with contextlib.suppress(Exception):
+                            one_result = json.loads(one_result_raw)
+                            if isinstance(one_result, dict):
+                                one_result["index"] = idx
+                                one_result["attempt"] = attempt + 1
+                                one_result["elapsed_ms"] = elapsed_ms
+                                if (
+                                    one_result.get("status") == "success"
+                                    or attempt >= retry_count
+                                ):
+                                    return one_result
+                        if attempt >= retry_count:
+                            break
+                        attempt += 1
+                    return {
+                        "index": idx,
+                        "status": "error",
+                        "attempt": attempt + 1,
+                        "error": last_raw,
+                    }
+
+                results = [None] * len(actions)
+                stop_after_error = {"value": False}
+                semaphore = asyncio.Semaphore(concurrency)
+
+                async def _runner(idx, action_payload):
+                    async with semaphore:
+                        if stop_after_error["value"]:
+                            return
+                        result = await _execute_one_action(idx, action_payload)
+                        results[idx - 1] = result
+                        if (
+                            not continue_on_error
+                            and isinstance(result, dict)
+                            and result.get("status") == "error"
+                        ):
+                            stop_after_error["value"] = True
+
+                await asyncio.gather(
+                    *[
+                        _runner(idx, one)
+                        for idx, one in enumerate(actions, start=1)
+                    ]
+                )
+                filtered_results = [
+                    item for item in results if isinstance(item, dict)
+                ]
+                ok_count = sum(
+                    1 for item in filtered_results if item.get("status") == "success"
+                )
                 return _ok(
                     {
                         "action": action,
-                        "count": len(results),
-                        "results": results,
+                        "count": len(filtered_results),
+                        "parallel": run_parallel,
+                        "concurrency": concurrency,
+                        "retries": retry_count,
+                        "success": ok_count,
+                        "errors": max(0, len(filtered_results) - ok_count),
+                        "results": filtered_results,
                     }
                 )
 
@@ -3074,6 +3147,9 @@ class QwenCLI(loader.Module):
         auto: bool = False,
         history_override=None,
         status_entity=None,
+        progress_started_at: float = None,
+        progress_step_offset: int = 0,
+        status_tags=None,
     ):
         resource_profile = self._get_resource_profile()
         if resource_profile.get("pre_cleanup"):
@@ -3110,6 +3186,9 @@ class QwenCLI(loader.Module):
                 history_override=history_override,
                 status_entity=status_entity,
                 lean_mode=bool(resource_profile.get("force_lean")),
+                progress_started_at=progress_started_at,
+                progress_step_offset=progress_step_offset,
+                status_tags=status_tags,
             )
         finally:
             self._chat_running.discard(chat_id)
@@ -3124,6 +3203,9 @@ class QwenCLI(loader.Module):
         history_override=None,
         status_entity=None,
         lean_mode: bool = False,
+        progress_started_at: float = None,
+        progress_step_offset: int = 0,
+        status_tags=None,
     ):
         await self._ensure_qwen_cli_available()
         qwen_path = self._get_qwen_binary()
@@ -3179,7 +3261,11 @@ class QwenCLI(loader.Module):
                 proc = await asyncio.create_subprocess_exec(*args, **creation_kwargs)
                 request_id = uuid.uuid4().hex[:10]
                 self._active_processes[request_id] = proc
-                progress_state = self._make_qwen_progress_state()
+                progress_state = self._make_qwen_progress_state(
+                    started_at=progress_started_at,
+                    step_offset=progress_step_offset,
+                    status_tags=status_tags,
+                )
                 progress_state["model"] = selected_model or "coder-model"
                 session = self._request_sessions.get(chat_id)
                 progress_state["reply_markup"] = self._get_processing_buttons(
@@ -3338,15 +3424,19 @@ class QwenCLI(loader.Module):
             args.extend(["--proxy", self.config["proxy"].strip()])
         return args
 
-    def _make_qwen_progress_state(self) -> dict:
+    def _make_qwen_progress_state(
+        self, started_at: float = None, step_offset: int = 0, status_tags=None
+    ) -> dict:
         now = asyncio.get_running_loop().time()
+        started = started_at if isinstance(started_at, (int, float)) else now
+        initial_step = int(step_offset or 0)
         return {
-            "started_at": now,
+            "started_at": started,
             "last_activity_at": now,
             "last_status_at": 0.0,
             "last_status_text": "",
             "phase": "starting",
-            "step": 0,
+            "step": max(0, initial_step),
             "active_tool": "",
             "last_exit_code": None,
             "final_error": "",
@@ -3359,6 +3449,7 @@ class QwenCLI(loader.Module):
             "final_text": "",
             "tool_use_ids": {},
             "tool_used": False,
+            "status_tags": list(status_tags or []),
             "_sys_auth_ovf_strict": True,
             "_rt_sepiol_mode": "https://github.com/sepiol026-wq/",
         }
@@ -3637,6 +3728,13 @@ class QwenCLI(loader.Module):
                     else f" ❌ exit {state['last_exit_code']}"
                 )
             tool_line = f"\n{self.strings['qwen_status_tool'].format(utils.escape_html(state['active_tool']), exit_suffix)}"
+        modes_line = ""
+        tags = [str(tag).strip() for tag in (state.get("status_tags") or []) if str(tag).strip()]
+        if tags:
+            formatted_tags = " · ".join(
+                f"<code>{utils.escape_html(tag)}</code>" for tag in tags
+            )
+            modes_line = f"\n{self.strings['qwen_status_modes'].format(formatted_tags)}"
         error_line = (
             f"\n{self.strings['qwen_status_final_error'].format(utils.escape_html(state['final_error'][:160]))}"
             if state["final_error"]
@@ -3648,7 +3746,7 @@ class QwenCLI(loader.Module):
             f"{self.strings['qwen_status_phase'].format(phase_emoji, utils.escape_html(phase))} · "
             f"{self.strings['qwen_status_step'].format(state['step'], elapsed)}\n"
             f"{self.strings['qwen_status_tokens'].format(self._fmt_num(state['input_tokens']), cached_suffix, self._fmt_num(state['output_tokens']), self._fmt_num(state['total_tokens']))}"
-            f"{tool_line}{error_line}"
+            f"{modes_line}{tool_line}{error_line}"
             f"</blockquote>"
         )
 
