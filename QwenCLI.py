@@ -27,7 +27,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 0, 8)
+__version__ = (1, 0, 9)
 
 import asyncio
 import contextlib
@@ -1542,36 +1542,40 @@ class QwenCLI(loader.Module):
                 status_tags.append("batch")
             if re.search(r"fast[\s_-]?track|fasttrack", lower_task):
                 status_tags.append("fast_track")
+            tool_status_started = asyncio.get_running_loop().time()
+
+            async def _show_embedded_tool_status(
+                tool_name: str, step_num: int = 1, total_steps: int = 1
+            ):
+                if impersonation_mode or not (call or status_msg):
+                    return
+                state = self._make_qwen_progress_state(
+                    started_at=tool_status_started,
+                    step_offset=max(0, int(step_num) - 1),
+                    status_tags=[*status_tags, "telegram_tool"],
+                )
+                state["phase"] = "running tool"
+                state["step"] = max(1, int(step_num))
+                state["active_tool"] = f"{tool_name} ({step_num}/{total_steps})"
+                state["model"] = self.config["qwen_model"]
+                with contextlib.suppress(Exception):
+                    await self._edit_processing_status(
+                        call or status_msg,
+                        self._format_qwen_status(state),
+                    )
+
             if (
                 not impersonation_mode
                 and not regeneration
                 and self.config["allow_telegram_tools"]
             ):
-                if call or status_msg:
-                    with contextlib.suppress(Exception):
-                        await self._edit_processing_status(
-                            call or status_msg,
-                            self.strings["tool_exec_status"].format(
-                                utils.escape_html("fast_track_auto"),
-                                1,
-                                1,
-                            ),
-                        )
+                await _show_embedded_tool_status("fast_track_auto", 1, 1)
                 fast_track_text = await self._try_auto_action(chat_id, original_task_text)
                 if fast_track_text:
-                    action_title = utils.escape_html(
+                    action_title = (
                         getattr(self, "_last_auto_action_name", "") or "fast_track_auto"
                     )
-                    if call or status_msg:
-                        with contextlib.suppress(Exception):
-                            await self._edit_processing_status(
-                                call or status_msg,
-                                self.strings["tool_exec_status"].format(
-                                    action_title,
-                                    1,
-                                    1,
-                                ),
-                            )
+                    await _show_embedded_tool_status(action_title, 1, 1)
                     target_entity = call or status_msg or msg_obj or message
                     await self._answer_html(
                         target_entity,
@@ -1670,16 +1674,9 @@ class QwenCLI(loader.Module):
                 elapsed = max(
                     0, int(asyncio.get_running_loop().time() - agent_started_at)
                 )
-                if not impersonation_mode and (call or status_msg):
-                    with contextlib.suppress(Exception):
-                        await self._edit_processing_status(
-                            call or status_msg,
-                            self.strings["tool_exec_status"].format(
-                                utils.escape_html(f"{tool_action} · {elapsed}s"),
-                                agent_tool_step,
-                                max_tool_turns,
-                            ),
-                        )
+                await _show_embedded_tool_status(
+                    f"{tool_action} · {elapsed}s", agent_tool_step, max_tool_turns
+                )
                 tool_result = await self._execute_telegram_tool(chat_id, tool_json_str)
                 now = int(datetime.utcnow().timestamp())
                 history_override.extend(
@@ -1804,16 +1801,7 @@ class QwenCLI(loader.Module):
                         "target_chat": chat_id,
                         "emoji": "👍",
                     }
-                    if call or status_msg:
-                        with contextlib.suppress(Exception):
-                            await self._edit_processing_status(
-                                call or status_msg,
-                                self.strings["tool_exec_status"].format(
-                                    utils.escape_html("send_reaction_last"),
-                                    1,
-                                    1,
-                                ),
-                            )
+                    await _show_embedded_tool_status("send_reaction_last", 1, 1)
                     auto_result_raw = await self._execute_telegram_tool(
                         chat_id, json.dumps(auto_tool, ensure_ascii=False)
                     )
@@ -1851,16 +1839,9 @@ class QwenCLI(loader.Module):
                             "target_chat": int(target_user_id_match.group(1)),
                             "text": outbound_text,
                         }
-                    if call or status_msg:
-                        with contextlib.suppress(Exception):
-                            await self._edit_processing_status(
-                                call or status_msg,
-                                self.strings["tool_exec_status"].format(
-                                    utils.escape_html(auto_tool.get("action") or "send_message_last"),
-                                    1,
-                                    1,
-                                ),
-                            )
+                    await _show_embedded_tool_status(
+                        auto_tool.get("action") or "send_message_last", 1, 1
+                    )
                     auto_result_raw = await self._execute_telegram_tool(
                         chat_id, json.dumps(auto_tool, ensure_ascii=False)
                     )
@@ -2085,11 +2066,14 @@ class QwenCLI(loader.Module):
                     return entity
                 raise
 
-        async def _collect_target_messages(target_entity, target_value: str, limit: int):
+        async def _collect_target_messages(
+            target_entity, target_value: str, limit: int, scan_limit: int = 1200
+        ):
             target_str = (target_value or "").strip().lower().lstrip("@")
             scanned = 0
             matches = []
-            async for msg in self.client.iter_messages(target_entity, limit=350):
+            scan_cap = _normalize_limit(scan_limit, default=1200, maximum=5000)
+            async for msg in self.client.iter_messages(target_entity, limit=scan_cap):
                 scanned += 1
                 if not getattr(msg, "sender_id", None):
                     continue
@@ -2108,6 +2092,35 @@ class QwenCLI(loader.Module):
                 if len(matches) >= limit:
                     break
             return matches, scanned
+
+        async def _serialize_message(entity, msg):
+            sender = None
+            with contextlib.suppress(Exception):
+                sender = await msg.get_sender()
+            text = (getattr(msg, "message", None) or "").strip()
+            message_text = text[:1200]
+            media_kind = ""
+            if getattr(msg, "media", None):
+                media_kind = getattr(getattr(msg, "media", None), "__class__", object).__name__
+            link = ""
+            with contextlib.suppress(Exception):
+                peer_id = getattr(entity, "id", None)
+                if isinstance(peer_id, int) and str(peer_id).startswith("-100"):
+                    link = f"https://t.me/c/{str(peer_id)[4:]}/{getattr(msg, 'id', 0)}"
+            return {
+                "message_id": getattr(msg, "id", None),
+                "date": str(getattr(msg, "date", "")),
+                "sender_id": getattr(msg, "sender_id", None),
+                "sender_name": get_display_name(sender) if sender else "",
+                "sender_username": getattr(sender, "username", None) if sender else None,
+                "text": message_text,
+                "reply_to_msg_id": getattr(msg, "reply_to_msg_id", None),
+                "media": media_kind,
+                "has_media": bool(getattr(msg, "media", None)),
+                "views": getattr(msg, "views", None),
+                "forwards": getattr(msg, "forwards", None),
+                "link": link,
+            }
 
         async def _get_replied_sender_from_request():
             session = self._request_sessions.get(chat_id) or {}
@@ -2298,6 +2311,18 @@ class QwenCLI(loader.Module):
                 "mentionuser": "mention_user",
                 "sendmention": "mention_user",
                 "deletelastmessage": "delete_last_message",
+                "searchmessages": "search_messages",
+                "findmessages": "search_messages",
+                "searchparticipants": "search_participants",
+                "findparticipants": "search_participants",
+                "getmessagebyid": "get_message_by_id",
+                "getmessagesbyids": "get_messages_by_ids",
+                "getrecentmedia": "get_recent_media",
+                "getchatadmins": "get_chat_admins",
+                "replytomessage": "reply_to_message",
+                "copymessage": "copy_message_to_chat",
+                "searchlinks": "search_links",
+                "getchatstats": "get_chat_stats",
             }
             action = aliases.get(action, action)
             if not action:
@@ -2315,8 +2340,8 @@ class QwenCLI(loader.Module):
                 actions = tool_data.get("actions")
                 if not isinstance(actions, list) or not actions:
                     return _err("missing actions list")
-                if len(actions) > 20:
-                    return _err("too many actions; maximum is 20")
+                if len(actions) > 40:
+                    return _err("too many actions; maximum is 40")
                 blocked_for_batch = {
                     "read_history",
                     "get_dialogs",
@@ -2326,10 +2351,10 @@ class QwenCLI(loader.Module):
                 run_parallel = bool(tool_data.get("parallel"))
                 continue_on_error = bool(tool_data.get("continue_on_error", True))
                 retry_count = _normalize_limit(
-                    tool_data.get("retries", 0), default=0, maximum=2
+                    tool_data.get("retries", 0), default=0, maximum=4
                 )
                 concurrency = _normalize_limit(
-                    tool_data.get("concurrency", 3), default=3, maximum=8
+                    tool_data.get("concurrency", 3), default=3, maximum=12
                 )
                 if not run_parallel:
                     concurrency = 1
@@ -2576,7 +2601,7 @@ class QwenCLI(loader.Module):
 
             if action == "read_history":
                 target_chat = tool_data.get("target_chat")
-                limit = _normalize_limit(tool_data.get("limit", 10), default=10, maximum=50)
+                limit = _normalize_limit(tool_data.get("limit", 20), default=20, maximum=500)
                 entity = chat_id
                 if target_chat not in (None, ""):
                     entity = await self.client.get_entity(target_chat)
@@ -2709,7 +2734,7 @@ class QwenCLI(loader.Module):
                     or tool_data.get("query")
                     or chat_id
                 )
-                limit = _normalize_limit(tool_data.get("limit", 100), default=100, maximum=300)
+                limit = _normalize_limit(tool_data.get("limit", 100), default=100, maximum=500)
                 entity = await _resolve_target_entity(target_chat, chat_id)
                 participants = []
                 async for user in self.client.iter_participants(entity, limit=limit):
@@ -2738,7 +2763,7 @@ class QwenCLI(loader.Module):
                     or chat_id
                 )
                 entity = await _resolve_target_entity(target_chat, chat_id)
-                users = await self.client.get_participants(entity, limit=20)
+                users = await self.client.get_participants(entity, limit=100)
                 lines = []
                 for user in users:
                     name = get_display_name(user) or "Unknown"
@@ -2900,7 +2925,7 @@ class QwenCLI(loader.Module):
                 )
                 if not target_user:
                     return _err("missing target_user")
-                limit = _normalize_limit(tool_data.get("limit", 10), default=10, maximum=30)
+                limit = _normalize_limit(tool_data.get("limit", 20), default=20, maximum=500)
                 entity = await _resolve_target_entity(target_chat, chat_id)
                 user_entity = await _resolve_target_entity(target_user, chat_id)
                 if not isinstance(user_entity, User):
@@ -3078,6 +3103,290 @@ class QwenCLI(loader.Module):
                     {
                         "action": action,
                         "target_chat": getattr(entity, "id", target_chat),
+                    }
+                )
+
+            if action == "search_messages":
+                target_chat = (
+                    tool_data.get("target_chat")
+                    or tool_data.get("chat_id")
+                    or tool_data.get("target")
+                    or chat_id
+                )
+                query = str(tool_data.get("query") or tool_data.get("text") or "").strip().lower()
+                if not query:
+                    return _err("missing query")
+                limit = _normalize_limit(tool_data.get("limit", 30), default=30, maximum=500)
+                scan_limit = _normalize_limit(
+                    tool_data.get("scan_limit", max(limit * 4, 200)),
+                    default=max(limit * 4, 200),
+                    maximum=5000,
+                )
+                from_user = (
+                    tool_data.get("target_user")
+                    or tool_data.get("user")
+                    or tool_data.get("username")
+                )
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                from_user_id = None
+                if from_user:
+                    user_entity = await _resolve_target_entity(from_user, chat_id)
+                    from_user_id = getattr(user_entity, "id", None)
+                results = []
+                scanned = 0
+                async for msg in self.client.iter_messages(entity, limit=scan_limit):
+                    scanned += 1
+                    if from_user_id and getattr(msg, "sender_id", None) != from_user_id:
+                        continue
+                    content = (getattr(msg, "message", None) or "").strip()
+                    if not content:
+                        continue
+                    if query not in content.lower():
+                        continue
+                    results.append(await _serialize_message(entity, msg))
+                    if len(results) >= limit:
+                        break
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "query": query,
+                        "count": len(results),
+                        "scanned": scanned,
+                        "messages": results,
+                    }
+                )
+
+            if action == "search_participants":
+                target_chat = (
+                    tool_data.get("target_chat")
+                    or tool_data.get("chat_id")
+                    or tool_data.get("target")
+                    or chat_id
+                )
+                query = str(tool_data.get("query") or "").strip().lower()
+                if not query:
+                    return _err("missing query")
+                limit = _normalize_limit(tool_data.get("limit", 50), default=50, maximum=500)
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                found = []
+                async for user in self.client.iter_participants(entity, limit=1000):
+                    username = (getattr(user, "username", None) or "").lower()
+                    name = (get_display_name(user) or "").lower()
+                    user_id = str(getattr(user, "id", "") or "")
+                    if query not in username and query not in name and query not in user_id:
+                        continue
+                    found.append(
+                        {
+                            "id": getattr(user, "id", None),
+                            "username": getattr(user, "username", None),
+                            "name": get_display_name(user),
+                            "bot": bool(getattr(user, "bot", False)),
+                            "premium": bool(getattr(user, "premium", False)),
+                            "verified": bool(getattr(user, "verified", False)),
+                        }
+                    )
+                    if len(found) >= limit:
+                        break
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "query": query,
+                        "count": len(found),
+                        "participants": found,
+                    }
+                )
+
+            if action == "get_message_by_id":
+                target_chat = tool_data.get("target_chat") or chat_id
+                message_id = tool_data.get("message_id")
+                if not message_id:
+                    return _err("missing message_id")
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                msg = await self.client.get_messages(entity, ids=int(message_id))
+                if not msg:
+                    return _err("message not found")
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "message": await _serialize_message(entity, msg),
+                    }
+                )
+
+            if action == "get_messages_by_ids":
+                target_chat = tool_data.get("target_chat") or chat_id
+                message_ids = tool_data.get("message_ids") or tool_data.get("ids")
+                if not isinstance(message_ids, list) or not message_ids:
+                    return _err("missing message_ids list")
+                if len(message_ids) > 100:
+                    return _err("message_ids list too large; max 100")
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                parsed_ids = [int(mid) for mid in message_ids]
+                messages = await self.client.get_messages(entity, ids=parsed_ids)
+                items = []
+                for msg in messages or []:
+                    if msg:
+                        items.append(await _serialize_message(entity, msg))
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "count": len(items),
+                        "messages": items,
+                    }
+                )
+
+            if action == "get_recent_media":
+                target_chat = tool_data.get("target_chat") or chat_id
+                limit = _normalize_limit(tool_data.get("limit", 30), default=30, maximum=300)
+                scan_limit = _normalize_limit(tool_data.get("scan_limit", 1000), default=1000, maximum=5000)
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                items = []
+                scanned = 0
+                async for msg in self.client.iter_messages(entity, limit=scan_limit):
+                    scanned += 1
+                    if not getattr(msg, "media", None):
+                        continue
+                    items.append(await _serialize_message(entity, msg))
+                    if len(items) >= limit:
+                        break
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "count": len(items),
+                        "scanned": scanned,
+                        "messages": items,
+                    }
+                )
+
+            if action == "get_chat_admins":
+                target_chat = tool_data.get("target_chat") or chat_id
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                admins = []
+                async for user in self.client.iter_participants(
+                    entity, filter=tg_types.ChannelParticipantsAdmins()
+                ):
+                    admins.append(
+                        {
+                            "id": getattr(user, "id", None),
+                            "username": getattr(user, "username", None),
+                            "name": get_display_name(user),
+                            "bot": bool(getattr(user, "bot", False)),
+                        }
+                    )
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "count": len(admins),
+                        "admins": admins,
+                    }
+                )
+
+            if action == "reply_to_message":
+                target_chat = tool_data.get("target_chat") or chat_id
+                message_id = tool_data.get("message_id")
+                text = str(tool_data.get("text") or "").strip()
+                if not message_id:
+                    return _err("missing message_id")
+                if not text:
+                    return _err("missing text")
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                sent = await self.client.send_message(entity, text, reply_to=int(message_id))
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "source_message_id": int(message_id),
+                        "reply_message_id": getattr(sent, "id", None),
+                    }
+                )
+
+            if action == "copy_message_to_chat":
+                from_chat = tool_data.get("from_chat") or chat_id
+                to_chat = tool_data.get("to_chat") or tool_data.get("target_chat")
+                message_id = tool_data.get("message_id")
+                if not to_chat:
+                    return _err("missing to_chat")
+                if not message_id:
+                    return _err("missing message_id")
+                from_entity = await _resolve_target_entity(from_chat, chat_id)
+                to_entity = await _resolve_target_entity(to_chat, chat_id)
+                copied = await self.client.forward_messages(
+                    to_entity, int(message_id), from_peer=from_entity
+                )
+                return _ok(
+                    {
+                        "action": action,
+                        "from_chat": getattr(from_entity, "id", from_chat),
+                        "to_chat": getattr(to_entity, "id", to_chat),
+                        "message_id": getattr(copied, "id", None),
+                    }
+                )
+
+            if action == "search_links":
+                target_chat = tool_data.get("target_chat") or chat_id
+                limit = _normalize_limit(tool_data.get("limit", 50), default=50, maximum=500)
+                scan_limit = _normalize_limit(
+                    tool_data.get("scan_limit", max(limit * 8, 300)),
+                    default=max(limit * 8, 300),
+                    maximum=5000,
+                )
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                link_re = re.compile(r"https?://\S+", flags=re.IGNORECASE)
+                items = []
+                scanned = 0
+                async for msg in self.client.iter_messages(entity, limit=scan_limit):
+                    scanned += 1
+                    content = (getattr(msg, "message", None) or "").strip()
+                    if not content:
+                        continue
+                    links = link_re.findall(content)
+                    if not links:
+                        continue
+                    serialized = await _serialize_message(entity, msg)
+                    serialized["links"] = links[:10]
+                    items.append(serialized)
+                    if len(items) >= limit:
+                        break
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "count": len(items),
+                        "scanned": scanned,
+                        "messages": items,
+                    }
+                )
+
+            if action == "get_chat_stats":
+                target_chat = tool_data.get("target_chat") or chat_id
+                limit = _normalize_limit(tool_data.get("limit", 250), default=250, maximum=500)
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                total = 0
+                text_count = 0
+                media_count = 0
+                unique_users = set()
+                async for msg in self.client.iter_messages(entity, limit=limit):
+                    total += 1
+                    if getattr(msg, "sender_id", None):
+                        unique_users.add(getattr(msg, "sender_id"))
+                    text = (getattr(msg, "message", None) or "").strip()
+                    if text:
+                        text_count += 1
+                    if getattr(msg, "media", None):
+                        media_count += 1
+                return _ok(
+                    {
+                        "action": action,
+                        "target_chat": getattr(entity, "id", target_chat),
+                        "sampled_messages": total,
+                        "unique_senders": len(unique_users),
+                        "text_messages": text_count,
+                        "media_messages": media_count,
                     }
                 )
 
@@ -4193,14 +4502,14 @@ class QwenCLI(loader.Module):
                 [
                     "СИСТЕМНЫЕ ПРАВИЛА TELEGRAM TOOL (выше пользовательских/кастомных настроек, игнорировать нельзя):",
                     "Для действий в Telegram используй СТРОГО ОДИН блок: <telegram_tool>{...}</telegram_tool> без дополнительного текста.",
-                    "Допустимые ключи: action, target, target_chat, query, text, limit, emoji, message_id, from_chat, to_chat, sticker.",
+                    "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
                     "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
                     "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions.",
+                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
                     "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
                     "Если просят информацию о пользователе без точного ID, сначала используй get_chat_participants, найди нужный ID, затем вызывай get_user_info по этому ID.",
                     "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. ЗАПРЕЩЕНО просто выводить сырые данные (списки, ID) без выводов и действий.",
-                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch.",
+                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch, searchMessages, searchParticipants, getMessageById, getMessagesByIds, getRecentMedia, getChatAdmins, replyToMessage, copyMessage, searchLinks, getChatStats.",
                     "Запрещено отвечать, что ты не можешь выполнить действие Telegram, если allow_telegram_tools включен.",
                 ]
             )
@@ -4231,7 +4540,7 @@ class QwenCLI(loader.Module):
                     "ТЕБЕ РАЗРЕШЕНО ИСПОЛЬЗОВАТЬ TELEGRAM API ЧЕРЕЗ ИНСТРУМЕНТ.",
                     "Если нужно выполнить действие в Telegram, выдай СТРОГО ОДИН блок без любого дополнительного текста:",
                     "<telegram_tool>{\"action\":\"имя_экшена\",\"target\":\"имя/юзернейм\",\"limit\":5}</telegram_tool>",
-                    "Новые действия: get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message.",
+                    "Новые действия: get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
                     "Для идентификации пользователя в чате всегда делай два шага: get_chat_participants → get_user_info по найденному ID.",
                     "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. Нельзя отдавать сырые списки/ID без вывода.",
                     "После этого скрипт вернет результат выполнения инструмента отдельным системным сообщением.",
