@@ -31,6 +31,7 @@ __version__ = (1, 0, 8)
 
 import asyncio
 import contextlib
+import html
 import io
 import json
 import logging
@@ -92,6 +93,8 @@ from .. import loader, utils
 from ..inline.types import InlineCall
 
 logger = logging.getLogger(__name__)
+
+TELEGRAM_TOOL_TAG_PATTERN = r"(?:telegram_tool|trlegram_tool|telegarm_tool|telegramtool)"
 
 DB_HISTORY_KEY = "qwencli_conversations_v1\u200b"
 DB_GAUTO_HISTORY_KEY = "qwencli_auto_conversations_v1\u200b"
@@ -1596,13 +1599,13 @@ class QwenCLI(loader.Module):
                 tool_match = None
                 if self.config["allow_telegram_tools"] and not impersonation_mode:
                     tool_match = re.search(
-                        r"<telegram_tool>(.*?)</telegram_tool>",
+                        rf"<{TELEGRAM_TOOL_TAG_PATTERN}>(.*?)</{TELEGRAM_TOOL_TAG_PATTERN}>",
                         raw_result_text,
                         flags=re.IGNORECASE | re.DOTALL,
                     )
                 if not tool_match:
                     candidate_text = re.sub(
-                        r"<telegram_tool>.*?</telegram_tool>",
+                        rf"<{TELEGRAM_TOOL_TAG_PATTERN}>.*?</{TELEGRAM_TOOL_TAG_PATTERN}>",
                         "",
                         raw_result_text,
                         flags=re.IGNORECASE | re.DOTALL,
@@ -2136,12 +2139,120 @@ class QwenCLI(loader.Module):
                 "name": (get_display_name(sender) or "").lower(),
             }
 
+        def _unwrap_fenced_json(raw_text: str) -> str:
+            text = str(raw_text or "").strip()
+            if text.startswith("```"):
+                lines = text.splitlines()
+                if lines:
+                    lines = lines[1:]
+                while lines and lines[-1].strip().startswith("```"):
+                    lines.pop()
+                text = "\n".join(lines).strip()
+            return text
+
+        def _extract_json_object(raw_text: str):
+            text = _unwrap_fenced_json(html.unescape(str(raw_text or "").strip()))
+            candidates = [text]
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                candidates.append(text[start : end + 1].strip())
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                with contextlib.suppress(Exception):
+                    loaded = json.loads(candidate)
+                    if isinstance(loaded, dict):
+                        return loaded
+            return None
+
+        def _coerce_dict(value):
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, str):
+                return _extract_json_object(value)
+            return None
+
+        def _normalize_tool_payload(raw_payload: dict):
+            if not isinstance(raw_payload, dict):
+                return None
+            payload = dict(raw_payload)
+            telegram_wrappers = {
+                "telegram_tool",
+                "trlegram_tool",
+                "telegarm_tool",
+                "telegramtool",
+                "telegram-tool",
+                "telegram tool",
+            }
+
+            nested = None
+            if isinstance(payload.get("telegram_tool"), dict):
+                nested = payload.get("telegram_tool")
+            if not nested and isinstance(payload.get("trlegram_tool"), dict):
+                nested = payload.get("trlegram_tool")
+            if not nested:
+                for key in ("arguments", "args", "payload", "tool_input", "input"):
+                    nested = _coerce_dict(payload.get(key))
+                    if nested:
+                        break
+
+            action = (payload.get("action") or "").strip().lower()
+            name = (payload.get("name") or "").strip().lower()
+            tool_name = (payload.get("tool") or payload.get("tool_name") or "").strip().lower()
+
+            if (
+                action in telegram_wrappers
+                or name in telegram_wrappers
+                or tool_name in telegram_wrappers
+            ):
+                merged = {}
+                if nested:
+                    merged.update(nested)
+                for key, value in payload.items():
+                    if key in {
+                        "arguments",
+                        "args",
+                        "payload",
+                        "tool_input",
+                        "input",
+                        "telegram_tool",
+                        "trlegram_tool",
+                    }:
+                        continue
+                    merged.setdefault(key, value)
+                resolved_action = (
+                    merged.get("action")
+                    or merged.get("method")
+                    or payload.get("method")
+                    or payload.get("target_action")
+                )
+                if not resolved_action:
+                    resolved_action = (
+                        payload.get("name")
+                        if name not in telegram_wrappers
+                        else payload.get("tool")
+                    )
+                if resolved_action:
+                    merged["action"] = str(resolved_action).strip()
+                return merged
+
+            if nested and not payload.get("action") and nested.get("action"):
+                payload.update(nested)
+
+            return payload
+
         try:
-            tool_data = json.loads(tool_json_str)
+            tool_data = _extract_json_object(tool_json_str)
             if not isinstance(tool_data, dict):
                 return _err("tool payload must be a JSON object")
+            tool_data = _normalize_tool_payload(tool_data) or tool_data
             action = (tool_data.get("action") or "").strip().lower()
             aliases = {
+                "telegram_tool": "telegram_tool",
+                "trlegram_tool": "telegram_tool",
+                "telegarm_tool": "telegram_tool",
+                "telegramtool": "telegram_tool",
                 "sendmessage": "send_message",
                 "send-msg": "send_message",
                 "send": "send_message",
@@ -2191,6 +2302,14 @@ class QwenCLI(loader.Module):
             action = aliases.get(action, action)
             if not action:
                 return _err("missing action")
+            if action == "telegram_tool":
+                nested = _normalize_tool_payload(tool_data)
+                nested_action = (nested.get("action") or "").strip().lower() if isinstance(nested, dict) else ""
+                nested_action = aliases.get(nested_action, nested_action)
+                if not nested_action or nested_action == "telegram_tool":
+                    return _err("telegram_tool wrapper missing nested action")
+                tool_data = nested
+                action = nested_action
 
             if action == "batch_actions":
                 actions = tool_data.get("actions")
