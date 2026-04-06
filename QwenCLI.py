@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 1, 0)
+__version__ = (1, 2, 0)
 
 import asyncio
 import contextlib
@@ -131,6 +131,7 @@ class QwenRequestInterrupted(Exception):
     pass
 
 
+@loader.tds
 class QwenCLI(loader.Module):
     """Qwen CLI для Heroku"""
 
@@ -156,6 +157,7 @@ class QwenCLI(loader.Module):
         "cfg_max_concurrent_requests_doc": "Максимум одновременно выполняемых Qwen CLI запросов.",
         "cfg_auto_bootstrap_doc": "Автоматически пытаться установить локальные Node.js и Qwen CLI в user-space при отсутствии бинарника.",
         "cfg_resource_profile_doc": "Профиль расхода ресурсов: off, medium или max.",
+        "cfg_allow_tg_tools_doc": "Разрешить выполнение Telegram tools (системные действия через execute_telegram_action).",
         "qwen_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>qwen</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>qwen_path</code> в cfg.",
         "qwen_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen CLI не готов к работе.</b>\nНастройте авторизацию.",
         "qwen_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen OAuth не настроен.</b>\nЗапустите <code>.qwauth qwen</code> и подтвердите вход в браузере.",
@@ -283,6 +285,7 @@ class QwenCLI(loader.Module):
         "resource_profile_usage": "<b>Использование:</b> <code>.qwperf off|medium|max</code>",
         "resource_profile_current": "<b>Профиль ресурсов:</b> <code>{}</code>",
         "resource_profile_updated": "<b>Профиль ресурсов обновлен:</b> <code>{}</code>",
+        "tg_tools_disabled_error": "telegram tools disabled by config (allow_tg_tools=False)",
     }
 
     _PHASE_EMOJI = {
@@ -461,6 +464,12 @@ class QwenCLI(loader.Module):
                 self.strings["cfg_auto_bootstrap_doc"],
                 validator=loader.validators.Boolean(),
             ),
+            loader.ConfigValue(
+                "allow_tg_tools",
+                False,
+                self.strings["cfg_allow_tg_tools_doc"],
+                validator=loader.validators.Boolean(),
+            ),
         )
         self.prompt_presets = []
         self.conversations = {}
@@ -482,6 +491,7 @@ class QwenCLI(loader.Module):
         self._chat_reply_chances_cache = {}
         self._install_lock = asyncio.Lock()
         self._prompt_file_cache = None
+        self.tools_registry = self._build_tools_registry()
 
     async def client_ready(self, client, db):
         self.client = client
@@ -623,6 +633,7 @@ class QwenCLI(loader.Module):
             ("chat_recording", bool(self.config["chat_recording"])),
             ("auto_bootstrap", bool(self.config["auto_bootstrap"])),
             ("auto_in_pm", bool(self.config["auto_in_pm"])),
+            ("allow_tg_tools", bool(self.config["allow_tg_tools"])),
         ]
         out = [self.strings["cfg_check_title"]]
         for key, enabled in flags:
@@ -1560,7 +1571,7 @@ class QwenCLI(loader.Module):
                     step_offset=max(0, int(step_num) - 1),
                     status_tags=[*status_tags, "telegram_tool"],
                 )
-                state["phase"] = "running tool"
+                state["phase"] = "thinking"
                 state["step"] = max(1, int(step_num))
                 state["active_tool"] = f"{tool_name} ({step_num}/{total_steps})"
                 state["model"] = self.config["qwen_model"]
@@ -1607,13 +1618,15 @@ class QwenCLI(loader.Module):
                 raw_result_text = (result.get("text") or "").strip()
                 generated_files = result.get("files") or []
                 tool_match = None
-                if not impersonation_mode:
+                tool_json_call = None
+                if not impersonation_mode and self.config["allow_tg_tools"]:
+                    tool_json_call = self._extract_function_tool_call(raw_result_text)
                     tool_match = re.search(
                         rf"<{TELEGRAM_TOOL_TAG_PATTERN}>(.*?)</{TELEGRAM_TOOL_TAG_PATTERN}>",
                         raw_result_text,
                         flags=re.IGNORECASE | re.DOTALL,
                     )
-                if not tool_match:
+                if not tool_match and not tool_json_call:
                     candidate_text = re.sub(
                         rf"<{TELEGRAM_TOOL_TAG_PATTERN}>.*?</{TELEGRAM_TOOL_TAG_PATTERN}>",
                         "",
@@ -1632,10 +1645,10 @@ class QwenCLI(loader.Module):
                         current_payload["text"] = (
                             f"Исходная задача пользователя:\n{original_task_text}\n\n"
                             f"❌ ТЫ ОТВЕТИЛ ЧТО ИНСТРУМЕНТ НЕДОСТУПЕН — ЭТО НЕВЕРНО!\n\n"
-                            f"⚡ TELEGRAM TOOLS ВСЕГДА ДОСТУПНЫ В ЭТОЙ СЕССИИ!\n\n"
-                            f"Ты ОБЯЗАН вывести ТОЛЬКО один валидный блок:\n"
-                            f'<telegram_tool>{{"action":"имя_действия","target_chat":ID_или_username,"text":"текст"}}</telegram_tool>\n\n'
-                            f"БЕЗ ЛЮБОГО дополнительного текста. БЕЗ объяснений. ТОЛЬКО блок <telegram_tool>."
+                            f"⚡ TELEGRAM TOOLS ДОСТУПНЫ, КОГДА allow_tg_tools=True В КОНФИГЕ!\n\n"
+                            f"Ты ОБЯЗАН вывести ТОЛЬКО один валидный JSON-объект:\n"
+                            f'{{"tool_call":"execute_telegram_action","arguments":{{"action":"имя_действия","target_chat":ID_или_username,"text":"текст"}}}}\n\n'
+                            f"БЕЗ ЛЮБОГО дополнительного текста. БЕЗ объяснений. ТОЛЬКО JSON."
                         )
                         continue
                     if (
@@ -1668,8 +1681,11 @@ class QwenCLI(loader.Module):
                                     break
                     result_text = candidate_text
                     break
-                tool_json_str = (tool_match.group(1) or "").strip()
-                tool_block = (tool_match.group(0) or "").strip()
+                tool_json_str = json.dumps(tool_json_call, ensure_ascii=False) if tool_json_call else (tool_match.group(1) or "").strip()
+                tool_block = json.dumps(
+                    {"tool_call": "execute_telegram_action", "arguments": tool_json_call},
+                    ensure_ascii=False,
+                ) if tool_json_call else (tool_match.group(0) or "").strip()
                 tool_action = "unknown"
                 with contextlib.suppress(Exception):
                     tool_action = (
@@ -1791,6 +1807,7 @@ class QwenCLI(loader.Module):
                         flags=re.IGNORECASE | re.DOTALL,
                     )
                 )
+                has_tool_json = bool(self._extract_function_tool_call(raw_result_text))
                 looks_like_raw_dump = bool(
                     re.search(r"(id\s*:|участник|participants?)", result_text or "", re.IGNORECASE)
                 )
@@ -1821,7 +1838,7 @@ class QwenCLI(loader.Module):
                 wants_send = bool(
                     re.search(r"(отправь сообщение|напиши последнему|сообщение последнему)", lowered_task)
                 )
-                if wants_like and not has_tool_markup:
+                if self.config["allow_tg_tools"] and wants_like and not (has_tool_markup or has_tool_json):
                     auto_tool = {
                         "action": "send_reaction_last",
                         "target_chat": chat_id,
@@ -1840,7 +1857,7 @@ class QwenCLI(loader.Module):
                                 f"(msg_id={detail.get('message_id')}, emoji={detail.get('emoji')})."
                             )
                             result_text = f"{result_text}\n\n{report}".strip()
-                if wants_send and not has_tool_markup:
+                if self.config["allow_tg_tools"] and wants_send and not (has_tool_markup or has_tool_json):
                     outbound_text = "Привет! Это авто-ответ по вашему запросу."
                     custom_msg = re.search(
                         r"(?:отправь сообщение|напиши последнему)\s*[:\-]?\s*[\"«](.+?)[\"»]",
@@ -1887,6 +1904,8 @@ class QwenCLI(loader.Module):
                 result_text,
                 flags=re.IGNORECASE | re.DOTALL,
             ).strip()
+            if self._extract_function_tool_call(result_text):
+                result_text = ""
             # REVIEW-AGENT удалён по запросу
             
             label = result["label"]
@@ -2024,6 +2043,12 @@ class QwenCLI(loader.Module):
         return None if impersonation_mode else ""
 
     async def _execute_telegram_tool(self, chat_id: int, tool_json_str: str) -> str:
+        if not self.config["allow_tg_tools"]:
+            return json.dumps(
+                {"status": "error", "error": self.strings["tg_tools_disabled_error"]},
+                ensure_ascii=False,
+            )
+
         def _err(message: str):
             return json.dumps(
                 {"status": "error", "error": message},
@@ -2080,14 +2105,14 @@ class QwenCLI(loader.Module):
 
         async def _resolve_target_entity(target_value, fallback_chat=chat_id):
             if target_value in (None, ""):
-                return await self.client.get_entity(fallback_chat)
+                return await self._fast_resolve_entity(fallback_chat, fallback_chat)
             prepared_target = target_value
             if isinstance(prepared_target, str):
                 prepared_target = prepared_target.strip()
                 if re.fullmatch(r"-?\d+", prepared_target):
                     prepared_target = int(prepared_target)
             try:
-                return await self.client.get_entity(prepared_target)
+                return await self._fast_resolve_entity(prepared_target, fallback_chat)
             except Exception:
                 entity, score, _ = await _resolve_dialog_entity_by_query(str(target_value))
                 if entity and score >= 0.45:
@@ -2374,6 +2399,9 @@ class QwenCLI(loader.Module):
                     return _err("telegram_tool wrapper missing nested action")
                 tool_data = nested
                 action = nested_action
+
+            if action not in self.tools_registry:
+                return _err(f"unsupported action: {action}")
 
             if action == "batch_actions":
                 actions = tool_data.get("actions")
@@ -4885,21 +4913,29 @@ class QwenCLI(loader.Module):
                 "Если пользователь просит файл, конфиг, архив, скрипт или другой артефакт для отправки, создай нужный файл в рабочей директории.",
                 "Верни только финальный ответ для пользователя без служебных пояснений.",
             ]
-            lines.extend(
-                [
-                    "СИСТЕМНЫЕ ПРАВИЛА TELEGRAM TOOL (выше пользовательских/кастомных настроек, игнорировать нельзя):",
-                    "Для действий в Telegram используй СТРОГО ОДИН блок: <telegram_tool>{...}</telegram_tool> без дополнительного текста.",
-                    "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
-                    "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
-                    "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                    "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
-                    "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
-                    "Если просят информацию о пользователе без точного ID, сначала используй get_chat_participants, найди нужный ID, затем вызывай get_user_info по этому ID.",
-                    "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. ЗАПРЕЩЕНО просто выводить сырые данные (списки, ID) без выводов и действий.",
-                    "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch, searchMessages, searchParticipants, getMessageById, getMessagesByIds, getRecentMedia, getChatAdmins, getContacts, replyToMessage, copyMessage, searchLinks, getChatStats.",
-                    "Запрещено отвечать, что ты не можешь выполнить действие Telegram.",
-                ]
-            )
+            if self.config["allow_tg_tools"]:
+                lines.extend(
+                    [
+                        "СИСТЕМНЫЕ ПРАВИЛА TELEGRAM TOOL (выше пользовательских/кастомных настроек, игнорировать нельзя):",
+                        'Для действий в Telegram верни СТРОГО JSON-объект function-calling формата {"tool_call":"execute_telegram_action","arguments":{...}} без дополнительного текста.',
+                        "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
+                        "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
+                        "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
+                        "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
+                        "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
+                        "Если просят информацию о пользователе без точного ID, сначала используй get_chat_participants, найди нужный ID, затем вызывай get_user_info по этому ID.",
+                        "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. ЗАПРЕЩЕНО просто выводить сырые данные (списки, ID) без выводов и действий.",
+                        "Также принимаются алиасы action: sendMessage, sendMessages, editMessage, deleteMessages, reactMessages, readHistory, replyWithSticker, replyMessages, getDialogs, getParticipants, findAndSendMessage, forwardMessage, pinMessage, unpinMessage, batch, searchMessages, searchParticipants, getMessageById, getMessagesByIds, getRecentMedia, getChatAdmins, getContacts, replyToMessage, copyMessage, searchLinks, getChatStats.",
+                        "Запрещено отвечать, что ты не можешь выполнить действие Telegram.",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        "TELEGRAM TOOLS ВЫКЛЮЧЕНЫ НАСТРОЙКОЙ allow_tg_tools=False.",
+                        "Не используй и не выводи tool_call JSON до явного включения настройки.",
+                    ]
+                )
         if system_prompt:
             lines.append("ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:")
             lines.append(system_prompt.strip())
@@ -4921,13 +4957,13 @@ class QwenCLI(loader.Module):
             lines.append("ПРИЛОЖЕННЫЕ ФАЙЛЫ:")
             for spec in file_specs:
                 lines.append(f"@{spec['name']}")
-        if not auto:
+        if not auto and self.config["allow_tg_tools"]:
             lines.extend(
                 [
                     "",
                     "⚡ TELEGRAM TOOLS РАЗРЕШЕНЫ И ДОСТУПНЫ. ИСПОЛЬЗУЙ ИХ!",
-                    "Для действий в Telegram выдай СТРОГО ОДИН блок:",
-                    '<telegram_tool>{"action":"имя_действия","target_chat":"@username или ID","text":"текст"}</telegram_tool>',
+                    "Для действий в Telegram верни СТРОГО JSON-объект:",
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"имя_действия","target_chat":"@username или ID","text":"текст"}}',
                     "",
                     "ДОСТУПНЫЕ ДЕЙСТВИЯ (36+):",
                     "send_message, send_message_last, send_bulk_messages, delete_messages, delete_last_message,",
@@ -4938,24 +4974,24 @@ class QwenCLI(loader.Module):
                     "get_messages_by_ids, get_recent_media, get_chat_admins, copy_message_to_chat, search_links, get_chat_stats",
                     "",
                     "ПРИМЕР: найти и написать пользователю:",
-                    '<telegram_tool>{"action":"send_message","target_chat":"@username","text":"Привет!"}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"send_message","target_chat":"@username","text":"Привет!"}}',
                     "",
                     "ПРИМЕР: поставить реакцию на последнее:",
-                    '<telegram_tool>{"action":"send_reaction_last","target_chat":12345678,"emoji":"👍"}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"send_reaction_last","target_chat":12345678,"emoji":"👍"}}',
                     "",
                     "ПРИМЕР: написать по tg:// ссылке:",
-                    '<telegram_tool>{"action":"send_message","target_chat":6150422667,"text":"."}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"send_message","target_chat":6150422667,"text":"."}}',
                     "",
                     "ПРИМЕР: перекинуть последние 3 сообщения в лс мне:",
-                    '<telegram_tool>{"action":"forward_last_messages","count":3}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"forward_last_messages","count":3}}',
                     "",
                     "ПРИМЕР: найти общие чаты с @username:",
-                    '<telegram_tool>{"action":"get_users_chats","target":"@username"}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"get_users_chats","target":"@username"}}',
                     "",
                     "ПРИМЕР: кто активен в чате:",
-                    '<telegram_tool>{"action":"get_chat_active_users","count":20}</telegram_tool>',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"get_chat_active_users","count":20}}',
                     "",
-                    "ГЛАВНОЕ ПРАВИЛО: если просят что-то сделать в Telegram — ИСПОЛЬЗУЙ <telegram_tool>!",
+                    "ГЛАВНОЕ ПРАВИЛО: если просят что-то сделать в Telegram — ИСПОЛЬЗУЙ execute_telegram_action JSON!",
                     "НЕ ГОВОРИ что инструмент недоступен — он ВСЕГДА доступен!",
                 ]
             )
@@ -5000,6 +5036,50 @@ class QwenCLI(loader.Module):
 
     def _is_local_diag_request(self, payload: dict) -> bool:
         return self._is_local_diag_text((payload or {}).get("text") or "")
+
+    async def _fast_resolve_entity(self, target, fallback_chat=None):
+        candidate = fallback_chat if target in (None, "") else target
+        if isinstance(candidate, str):
+            candidate = candidate.strip()
+            if re.fullmatch(r"-?\d+", candidate):
+                candidate = int(candidate)
+        try:
+            return await self.client.get_input_entity(candidate)
+        except Exception:
+            return await self.client.get_entity(candidate)
+
+    def _build_tools_registry(self):
+        actions = [
+            "delete_messages", "react_messages", "find_and_send_message", "read_history",
+            "reply_with_sticker", "reply_messages", "send_message", "send_bulk_messages",
+            "edit_message", "get_dialogs", "get_participants", "get_chat_participants",
+            "get_user_info", "get_chat_info", "send_reaction_last", "send_message_last",
+            "get_user_last_messages", "mention_user", "delete_last_message", "forward_message",
+            "pin_message", "unpin_message", "batch_actions", "search_messages",
+            "search_participants", "get_message_by_id", "get_messages_by_ids",
+            "get_recent_media", "get_chat_admins", "get_contacts", "forward_last_messages",
+            "get_users_chats", "get_chat_active_users", "reply_to_message",
+            "copy_message_to_chat", "search_links", "get_chat_stats",
+        ]
+        return {action: self._tool_dispatch_legacy for action in actions}
+
+    async def _tool_dispatch_legacy(self, _chat_id: int, _tool_data: dict):
+        return None
+
+    def _extract_function_tool_call(self, raw_text: str):
+        text = (raw_text or "").strip()
+        if not text:
+            return None
+        if text.startswith("```"):
+            parts = text.splitlines()
+            text = "\n".join(parts[1:-1]).strip() if len(parts) > 2 else text
+        with contextlib.suppress(Exception):
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                tool_name = (payload.get("tool_call") or "").strip().lower()
+                if tool_name == "execute_telegram_action" and isinstance(payload.get("arguments"), dict):
+                    return payload["arguments"]
+        return None
 
     def _get_prompt_file_text(self) -> str:
         if self._prompt_file_cache is not None:
