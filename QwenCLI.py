@@ -2372,6 +2372,9 @@ class QwenCLI(loader.Module):
                 "copymessage": "copy_message_to_chat",
                 "searchlinks": "search_links",
                 "getchatstats": "get_chat_stats",
+                "smartflow": "smart_flow",
+                "orchestrate": "smart_flow",
+                "autopipeline": "smart_flow",
             }
             action = aliases.get(action, action)
             if not action:
@@ -2387,6 +2390,99 @@ class QwenCLI(loader.Module):
 
             if action not in self.tools_registry:
                 return _err(f"unsupported action: {action}")
+
+            if action == "smart_flow":
+                flow = tool_data.get("flow")
+                if not isinstance(flow, dict):
+                    flow = tool_data
+                chat_query = (
+                    flow.get("chat_query")
+                    or flow.get("chat_name")
+                    or flow.get("target_chat_name")
+                    or tool_data.get("target_chat")
+                )
+                target_username = (
+                    flow.get("username")
+                    or flow.get("target_user")
+                    or flow.get("nick")
+                    or tool_data.get("target_user")
+                )
+                msg_limit = _normalize_limit(
+                    flow.get("message_limit", flow.get("limit", 5)),
+                    default=5,
+                    maximum=20,
+                )
+                replies = flow.get("replies") or flow.get("reply_texts") or []
+                if isinstance(replies, str):
+                    replies = [replies]
+                if not chat_query:
+                    return _err("smart_flow requires chat_query")
+                if not target_username:
+                    return _err("smart_flow requires target username")
+                if not replies:
+                    replies = ["Принято.", "Ок.", "Сделано.", "Понял.", "👍"]
+
+                target_entity, score, chat_name = await _resolve_dialog_entity_by_query(
+                    str(chat_query)
+                )
+                if not target_entity or score < 0.35:
+                    return _err(f"chat not found by query: {chat_query}")
+
+                target_user = None
+                target_username_norm = str(target_username).strip().lower().lstrip("@")
+                async for p in self.client.iter_participants(target_entity, limit=400):
+                    pu = (getattr(p, "username", None) or "").lower().lstrip("@")
+                    if pu == target_username_norm:
+                        target_user = p
+                        break
+                if not target_user:
+                    return _err(f"user @{target_username_norm} not found in chat")
+
+                found_messages = []
+                async for msg in self.client.iter_messages(target_entity, limit=200):
+                    if getattr(msg, "sender_id", None) == getattr(target_user, "id", None):
+                        found_messages.append(msg)
+                    if len(found_messages) >= msg_limit:
+                        break
+                if not found_messages:
+                    return _ok(
+                        {
+                            "action": "smart_flow",
+                            "chat": chat_name,
+                            "chat_id": getattr(target_entity, "id", None),
+                            "target_user": getattr(target_user, "id", None),
+                            "replied": 0,
+                            "note": "no target messages found",
+                        }
+                    )
+
+                sent = []
+                for idx, one_msg in enumerate(found_messages):
+                    text = str(replies[idx % len(replies)]).strip() or "✅"
+                    out = await self.client.send_message(
+                        target_entity,
+                        text,
+                        reply_to=getattr(one_msg, "id", None),
+                    )
+                    sent.append(
+                        {
+                            "reply_to": getattr(one_msg, "id", None),
+                            "message_id": getattr(out, "id", None),
+                            "text": text,
+                        }
+                    )
+
+                return _ok(
+                    {
+                        "action": "smart_flow",
+                        "chat": chat_name,
+                        "chat_id": getattr(target_entity, "id", None),
+                        "target_user": getattr(target_user, "id", None),
+                        "source_messages": [getattr(m, "id", None) for m in found_messages],
+                        "replied": len(sent),
+                        "sent_messages": sent,
+                    }
+                )
 
             if action == "batch_actions":
                 actions = tool_data.get("actions")
@@ -4906,8 +5002,9 @@ class QwenCLI(loader.Module):
                         "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
                         "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
                         "Если пользователь просит действие в стороннем чате (по имени/описанию), сначала получи список через get_dialogs, выбери точный chat_id, затем выполняй действие.",
+                        "Для многоуровневых сценариев можешь выбрать либо последовательность batch_actions, либо один smart_flow (когда нужно сделать всё за один вызов).",
                         "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
-                        "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
+                        "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats, smart_flow.",
                         "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
                         "Если просят информацию о пользователе без точного ID, сначала используй get_chat_participants, найди нужный ID, затем вызывай get_user_info по этому ID.",
                         "ГЛАВНОЕ ПРАВИЛО: Получил данные через инструмент → ПРОАНАЛИЗИРУЙ ИХ → Дай конкретный ответ на вопрос пользователя. ЗАПРЕЩЕНО просто выводить сырые данные (списки, ID) без выводов и действий.",
@@ -4956,7 +5053,7 @@ class QwenCLI(loader.Module):
                     "edit_message, forward_message, forward_last_messages, pin_message, unpin_message, react_messages, send_reaction_last,",
                     "reply_messages, reply_to_message, reply_with_sticker, mention_user, read_history, get_dialogs,",
                     "get_participants, get_chat_participants, get_user_info, get_chat_info, get_user_last_messages,",
-                    "get_contacts, get_users_chats, get_chat_active_users, batch_actions, search_messages, search_participants, get_message_by_id,",
+                    "get_contacts, get_users_chats, get_chat_active_users, batch_actions, search_messages, search_participants, get_message_by_id, smart_flow,",
                     "get_messages_by_ids, get_recent_media, get_chat_admins, copy_message_to_chat, search_links, get_chat_stats",
                     "",
                     "ПРИМЕР: найти и написать пользователю:",
@@ -5088,7 +5185,7 @@ class QwenCLI(loader.Module):
             "search_participants", "get_message_by_id", "get_messages_by_ids",
             "get_recent_media", "get_chat_admins", "get_contacts", "forward_last_messages",
             "get_users_chats", "get_chat_active_users", "reply_to_message",
-            "copy_message_to_chat", "search_links", "get_chat_stats",
+            "copy_message_to_chat", "search_links", "get_chat_stats", "smart_flow",
         ]
         return {action: self._tool_dispatch_legacy for action in actions}
 
