@@ -2395,6 +2395,147 @@ class QwenCLI(loader.Module):
                 flow = tool_data.get("flow")
                 if not isinstance(flow, dict):
                     flow = tool_data
+                steps = flow.get("steps")
+                if isinstance(steps, list) and steps:
+                    if len(steps) > 40:
+                        return _err("smart_flow: too many steps (max 40)")
+                    context = {
+                        "input": dict(flow),
+                        "chat_id": chat_id,
+                        "results": {},
+                    }
+                    trace = []
+
+                    def _ctx_get(path, default=None):
+                        if not path:
+                            return default
+                        cur = context
+                        for part in str(path).split("."):
+                            if isinstance(cur, dict):
+                                cur = cur.get(part)
+                            elif isinstance(cur, list) and part.isdigit():
+                                idx = int(part)
+                                cur = cur[idx] if 0 <= idx < len(cur) else default
+                            else:
+                                return default
+                        return cur if cur is not None else default
+
+                    def _render_templates(value):
+                        if isinstance(value, str):
+                            def _sub(match):
+                                ref = (match.group(1) or "").strip()
+                                resolved = _ctx_get(ref, "")
+                                if isinstance(resolved, (dict, list)):
+                                    return json.dumps(resolved, ensure_ascii=False)
+                                return str(resolved)
+                            return re.sub(r"\{\{\s*([^}]+)\s*\}\}", _sub, value)
+                        if isinstance(value, dict):
+                            return {k: _render_templates(v) for k, v in value.items()}
+                        if isinstance(value, list):
+                            return [_render_templates(v) for v in value]
+                        return value
+
+                    def _check_condition(cond):
+                        if not isinstance(cond, dict):
+                            return True
+                        left = _ctx_get(cond.get("path"), None)
+                        if "exists" in cond:
+                            return (left is not None) == bool(cond.get("exists"))
+                        if "eq" in cond:
+                            return str(left) == str(_render_templates(cond.get("eq")))
+                        if "ne" in cond:
+                            return str(left) != str(_render_templates(cond.get("ne")))
+                        if "contains" in cond:
+                            needle = str(_render_templates(cond.get("contains"))).lower()
+                            return needle in str(left).lower()
+                        return True
+
+                    async def _run_single_payload(step_payload):
+                        one_action = (step_payload.get("action") or "").strip().lower()
+                        if not one_action:
+                            return {"status": "error", "error": "missing action"}
+                        if one_action == "smart_flow":
+                            return {"status": "error", "error": "nested smart_flow is not allowed"}
+                        raw = await self._execute_telegram_tool(
+                            chat_id,
+                            json.dumps(step_payload, ensure_ascii=False),
+                        )
+                        with contextlib.suppress(Exception):
+                            parsed = json.loads(raw)
+                            if isinstance(parsed, dict):
+                                return parsed
+                        return {"status": "error", "error": raw[:500]}
+
+                    for idx, step in enumerate(steps, start=1):
+                        if not isinstance(step, dict):
+                            trace.append({"step": idx, "status": "error", "error": "step must be object"})
+                            break
+                        if not _check_condition(step.get("if")):
+                            trace.append({"step": idx, "status": "skipped", "reason": "condition_failed"})
+                            continue
+                        save_as = (step.get("save_as") or step.get("var") or "").strip()
+                        foreach_path = step.get("foreach")
+                        if foreach_path:
+                            items = _ctx_get(foreach_path, [])
+                            if not isinstance(items, list):
+                                trace.append({"step": idx, "status": "error", "error": "foreach path is not a list"})
+                                break
+                            if len(items) > 50:
+                                trace.append({"step": idx, "status": "error", "error": "foreach max items is 50"})
+                                break
+                            template = step.get("do") or {}
+                            loop_results = []
+                            for loop_idx, item in enumerate(items):
+                                context["_item"] = item
+                                context["_index"] = loop_idx
+                                payload = _render_templates(template)
+                                if not isinstance(payload, dict):
+                                    loop_results.append({"status": "error", "error": "foreach do must be object"})
+                                    continue
+                                if not payload.get("action") and step.get("action"):
+                                    payload["action"] = step.get("action")
+                                result_obj = await _run_single_payload(payload)
+                                loop_results.append(result_obj)
+                            context.pop("_item", None)
+                            context.pop("_index", None)
+                            if save_as:
+                                context["results"][save_as] = loop_results
+                            trace.append({"step": idx, "status": "success", "foreach": len(loop_results), "save_as": save_as or None})
+                            continue
+
+                        payload = _render_templates(
+                            {
+                                k: v
+                                for k, v in step.items()
+                                if k not in {"if", "save_as", "var", "foreach", "do"}
+                            }
+                        )
+                        if "action" not in payload and flow.get("default_action"):
+                            payload["action"] = flow.get("default_action")
+                        result_obj = await _run_single_payload(payload)
+                        if save_as:
+                            context["results"][save_as] = result_obj
+                        trace.append(
+                            {
+                                "step": idx,
+                                "status": result_obj.get("status", "unknown"),
+                                "action": payload.get("action"),
+                                "save_as": save_as or None,
+                                "error": result_obj.get("error"),
+                            }
+                        )
+                        if result_obj.get("status") == "error" and not bool(step.get("continue_on_error", flow.get("continue_on_error", False))):
+                            break
+
+                    return _ok(
+                        {
+                            "action": "smart_flow",
+                            "steps_total": len(steps),
+                            "trace": trace,
+                            "results": context.get("results", {}),
+                        }
+                    )
+
                 chat_query = (
                     flow.get("chat_query")
                     or flow.get("chat_name")
@@ -5003,6 +5144,7 @@ class QwenCLI(loader.Module):
                         "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
                         "Если пользователь просит действие в стороннем чате (по имени/описанию), сначала получи список через get_dialogs, выбери точный chat_id, затем выполняй действие.",
                         "Для многоуровневых сценариев можешь выбрать либо последовательность batch_actions, либо один smart_flow (когда нужно сделать всё за один вызов).",
+                        "smart_flow может принимать steps: [{action, if, foreach, do, save_as}] и шаблоны {{results.some_step.details.chat_id}} для построения сложных ветвлений.",
                         "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
                         "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats, smart_flow.",
                         "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
