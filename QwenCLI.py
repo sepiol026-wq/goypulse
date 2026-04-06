@@ -492,6 +492,8 @@ class QwenCLI(loader.Module):
         self._install_lock = asyncio.Lock()
         self._prompt_file_cache = None
         self.tools_registry = self._build_tools_registry()
+        self._dialogs_cache_ts = 0.0
+        self._dialogs_cache_items = []
 
     async def client_ready(self, client, db):
         self.client = client
@@ -2080,28 +2082,7 @@ class QwenCLI(loader.Module):
             return SequenceMatcher(None, query, target).ratio()
 
         async def _resolve_dialog_entity_by_query(query_text: str):
-            query = (query_text or "").strip().lstrip("@")
-            if not query:
-                return None, 0.0, ""
-            best_dialog = None
-            best_score = 0.0
-            best_name = ""
-            async for dialog in self.client.iter_dialogs():
-                entity = dialog.entity
-                candidates = [
-                    getattr(dialog, "title", None) or "",
-                    get_display_name(entity) if entity else "",
-                    getattr(entity, "username", None) or "",
-                    str(getattr(entity, "id", None) or ""),
-                ]
-                score = max(_entity_score(query, candidate) for candidate in candidates)
-                if score > best_score:
-                    best_dialog = dialog
-                    best_score = score
-                    best_name = candidates[0] or candidates[1] or candidates[2]
-            if not best_dialog:
-                return None, 0.0, ""
-            return best_dialog.entity, best_score, (best_name or "Unknown")
+            return await self._lookup_dialog_entity(query_text)
 
         async def _resolve_target_entity(target_value, fallback_chat=chat_id):
             if target_value in (None, ""):
@@ -2111,6 +2092,10 @@ class QwenCLI(loader.Module):
                 prepared_target = prepared_target.strip()
                 if re.fullmatch(r"-?\d+", prepared_target):
                     prepared_target = int(prepared_target)
+                else:
+                    entity, score, _ = await _resolve_dialog_entity_by_query(prepared_target)
+                    if entity and score >= 0.45:
+                        return entity
             try:
                 return await self._fast_resolve_entity(prepared_target, fallback_chat)
             except Exception:
@@ -4920,6 +4905,7 @@ class QwenCLI(loader.Module):
                         'Для действий в Telegram верни СТРОГО JSON-объект function-calling формата {"tool_call":"execute_telegram_action","arguments":{...}} без дополнительного текста.',
                         "Допустимые ключи: action, target, target_chat, query, text, limit, scan_limit, emoji, message_id, message_ids, from_chat, to_chat, sticker, target_user, user, ids.",
                         "Если пользователь пишет 'в чате' / 'в этой группе' / 'здесь' и не дал target_chat, используй текущий chat_id команды.",
+                        "Если пользователь просит действие в стороннем чате (по имени/описанию), сначала получи список через get_dialogs, выбери точный chat_id, затем выполняй действие.",
                         "Если команда вызвана reply-сообщением и target не указан, target берется из автора replied-сообщения автоматически.",
                         "Поддерживаемые action: delete_messages, react_messages, find_and_send_message, read_history, reply_with_sticker, reply_messages, send_message, send_bulk_messages, edit_message, get_dialogs, get_participants, get_chat_participants, get_user_info, get_chat_info, send_reaction_last, send_message_last, get_user_last_messages, mention_user, delete_last_message, forward_message, pin_message, unpin_message, batch_actions, search_messages, search_participants, get_message_by_id, get_messages_by_ids, get_recent_media, get_chat_admins, get_contacts, reply_to_message, copy_message_to_chat, search_links, get_chat_stats.",
                         "batch_actions принимает массив actions и подходит для массовых/комбинированных операций записи; не используй его для read_history/get_dialogs/find_and_send_message.",
@@ -5047,6 +5033,49 @@ class QwenCLI(loader.Module):
             return await self.client.get_input_entity(candidate)
         except Exception:
             return await self.client.get_entity(candidate)
+
+    async def _lookup_dialog_entity(self, query_text: str, refresh_ttl: int = 45):
+        query = (query_text or "").strip().lower().lstrip("@")
+        if not query:
+            return None, 0.0, ""
+        now = asyncio.get_running_loop().time()
+        if (now - float(self._dialogs_cache_ts or 0.0)) > refresh_ttl or not self._dialogs_cache_items:
+            items = []
+            async for dialog in self.client.iter_dialogs():
+                entity = dialog.entity
+                items.append(
+                    (
+                        entity,
+                        (
+                            getattr(dialog, "title", None) or "",
+                            get_display_name(entity) if entity else "",
+                            getattr(entity, "username", None) or "",
+                            str(getattr(entity, "id", None) or ""),
+                        ),
+                    )
+                )
+            self._dialogs_cache_items = items
+            self._dialogs_cache_ts = now
+        best_entity = None
+        best_score = 0.0
+        best_name = ""
+        for entity, candidates in self._dialogs_cache_items:
+            score = 0.0
+            for candidate in candidates:
+                c = (candidate or "").strip().lower()
+                if not c:
+                    continue
+                if query == c:
+                    score = max(score, 1.0)
+                elif query in c:
+                    score = max(score, 0.92)
+                else:
+                    score = max(score, SequenceMatcher(None, query, c).ratio())
+            if score > best_score:
+                best_score = score
+                best_entity = entity
+                best_name = candidates[0] or candidates[1] or candidates[2] or "Unknown"
+        return best_entity, best_score, best_name
 
     def _build_tools_registry(self):
         actions = [
