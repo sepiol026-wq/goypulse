@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 0)
+__version__ = (1, 2, 1)
 
 import asyncio
 import contextlib
@@ -209,18 +209,18 @@ class QwenCLI(loader.Module):
         "response_too_long": "Ответ был слишком длинным и отправлен файлом.",
         "qwen_files_only": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Qwen создал файлы. Отправляю их ниже.</b>",
         "qwen_file_caption": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Файл от Qwen:</b> <code>{}</code>",
-        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen active</b>{} · {}",
+        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen в работе</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
-        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> step <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}s</code>",
-        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> modes: {}",
-        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
-        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <code>{}</code>{}",
-        "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> trace: <code>{}</code> → <code>{}</code> · events <code>{}</code>",
-        "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> now: <code>{}</code>",
-        "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> stream: chars <code>{}</code> · tools <code>{}</code>",
-        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> thought: <code>{}</code>",
-        "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> action: <code>{}</code>",
-        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> error: <code>{}</code>",
+        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}с</code>",
+        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> режимы: {}",
+        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> токены: in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
+        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> инструмент: <code>{}</code>{}",
+        "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
+        "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> активность: <code>{}</code>",
+        "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> поток: символов <code>{}</code> · tools <code>{}</code>",
+        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> мысли: <code>{}</code>",
+        "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> действие: <code>{}</code>",
+        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> ошибка: <code>{}</code>",
         "qwclear_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwclear [auto]</code>",
         "qwreset_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwreset [auto]</code>",
         "qwsend_usage": "ℹ️ Использование: .qwsend <@username/id> <текст>",
@@ -6835,12 +6835,16 @@ class QwenCLI(loader.Module):
                     "callback": self._clear_callback,
                     "args": (chat_id,),
                     "icon_custom_emoji_id": "6007942490076745785",
+                    "color": "yellow",
+                    "style": "warning",
                 },
                 {
                     "text": self.strings["btn_regenerate"],
                     "callback": self._regenerate_callback,
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5404857686477015710",
+                    "color": "blue",
+                    "style": "primary",
                 },
             ]
         ]
