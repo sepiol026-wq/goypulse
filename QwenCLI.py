@@ -2,7 +2,7 @@
 # meta developer: @qwertyiisme @samsepi0l_ovf
 # authors: @goy_ai
 # tester: @Fiftarir
-# Description: QwenCLI v2 — форк с AI-агентами, get_contacts, reviewer chain, авто-анализом и 33+ Telegram действиями.
+# Description: Qwen CLI для Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 #
 # --------------------------------------------------------------------------
@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 0)
+__version__ = (1, 2, 5)
 
 import asyncio
 import contextlib
@@ -48,27 +48,16 @@ import tempfile
 import uuid
 import zipfile
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from hashlib import sha256
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
-try:
-    import pytz
-except ImportError:
-    pytz = None
-
-try:
-    from markdown_it import MarkdownIt
-except ImportError:
-    MarkdownIt = None
-
-try:
-    import psutil
-except ImportError:
-    psutil = None
+import pytz
+from markdown_it import MarkdownIt
+import psutil
 
 from telethon import types as tg_types
 from telethon.errors.rpcerrorlist import (
@@ -77,6 +66,8 @@ from telethon.errors.rpcerrorlist import (
     UserNotParticipantError,
 )
 from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest, LeaveChannelRequest
+from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
 from telethon.tl.functions.messages import SendReactionRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import (
@@ -102,10 +93,14 @@ DB_GAUTO_HISTORY_KEY = "qwencli_auto_conversations_v1\u200b"
 DB_IMPERSONATION_KEY = "qwencli_impersonation_chats"
 DB_PRESETS_KEY = "qwencli_prompt_presets"
 DB_MEMORY_DISABLED_KEY = "qwencli_memory_disabled_chats"
+DB_AUTOMOD_CHATS_KEY = "qwencli_automod_chats"
+DB_AUTOMOD_RULES_KEY = "qwencli_automod_rules"
 
 QWEN_TIMEOUT = 300
 QWEN_STARTUP_TIMEOUT = 20
 QWEN_STREAM_BUFFER_LIMIT = 120
+QWEN_STATUS_UPDATE_INTERVAL_DEFAULT = 2.0
+QWEN_STATUS_UPDATE_INTERVAL_STREAMING = 1.25
 QWEN_MAX_HISTORY_MESSAGES = 16
 QWEN_MAX_HISTORY_ENTRY_CHARS = 1200
 QWEN_MAX_PROMPT_TEXT_CHARS = 12000
@@ -158,6 +153,8 @@ class QwenCLI(loader.Module):
         "cfg_auto_bootstrap_doc": "Автоматически пытаться установить локальные Node.js и Qwen CLI в user-space при отсутствии бинарника.",
         "cfg_resource_profile_doc": "Профиль расхода ресурсов: off, medium или max.",
         "cfg_allow_tg_tools_doc": "Разрешить выполнение Telegram tools (системные действия через execute_telegram_action).",
+        "cfg_tool_action_budget_doc": "Макс. число tool-действий в рамках одного активного запроса чата.",
+        "cfg_tool_destructive_guard_doc": "Требовать confirm=true для опасных действий (ban/delete/purge/block и т.п.).",
         "qwen_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>qwen</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>qwen_path</code> в cfg.",
         "qwen_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen CLI не готов к работе.</b>\nНастройте авторизацию.",
         "qwen_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen OAuth не настроен.</b>\nЗапустите <code>.qwauth qwen</code> и подтвердите вход в браузере.",
@@ -209,13 +206,18 @@ class QwenCLI(loader.Module):
         "response_too_long": "Ответ был слишком длинным и отправлен файлом.",
         "qwen_files_only": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Qwen создал файлы. Отправляю их ниже.</b>",
         "qwen_file_caption": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Файл от Qwen:</b> <code>{}</code>",
-        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen active</b>{} · {}",
+        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen в работе</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
-        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> step <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}s</code>",
-        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> modes: {}",
-        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
-        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <code>{}</code>{}",
-        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> error: <code>{}</code>",
+        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}с</code>",
+        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> режимы: {}",
+        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> токены: in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
+        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> инструмент: <code>{}</code>{}",
+        "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
+        "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> активность: <code>{}</code>",
+        "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> поток: символов <code>{}</code> · tools <code>{}</code>",
+        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> мысли: <code>{}</code>",
+        "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> действие: <code>{}</code>",
+        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> ошибка: <code>{}</code>",
         "qwclear_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwclear [auto]</code>",
         "qwreset_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwreset [auto]</code>",
         "qwsend_usage": "ℹ️ Использование: .qwsend <@username/id> <текст>",
@@ -275,6 +277,16 @@ class QwenCLI(loader.Module):
         "status_missing": "не настроен",
         "status_ready": "готов",
         "status_not_ready": "не готов",
+        "prod_status_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI production status</b>",
+        "prod_status_line": "• {}: <code>{}</code>",
+        "automod_usage": "<b>Использование:</b> <code>.qwamod on|off|status|rules &lt;текст&gt;|clear</code>",
+        "automod_only_groups": "⚠️ Automod работает только в группах/супергруппах.",
+        "automod_enabled": "✅ AI-модератор включен в этом чате.",
+        "automod_disabled": "✅ AI-модератор выключен в этом чате.",
+        "automod_rules_updated": "✅ Правила AI-модератора сохранены.",
+        "automod_rules_cleared": "✅ Правила AI-модератора очищены.",
+        "automod_status_on": "🛡 Automod: <b>ON</b>\nПравила:\n<blockquote>{}</blockquote>",
+        "automod_status_off": "🛡 Automod: <b>OFF</b>",
         "cfg_check_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI cfg-check</b>",
         "qwen_models_note": (
             "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Быстрый список моделей:</b>\n"
@@ -470,6 +482,18 @@ class QwenCLI(loader.Module):
                 self.strings["cfg_allow_tg_tools_doc"],
                 validator=loader.validators.Boolean(),
             ),
+            loader.ConfigValue(
+                "tool_action_budget",
+                40,
+                self.strings["cfg_tool_action_budget_doc"],
+                validator=loader.validators.Integer(minimum=5, maximum=500),
+            ),
+            loader.ConfigValue(
+                "tool_destructive_guard",
+                True,
+                self.strings["cfg_tool_destructive_guard_doc"],
+                validator=loader.validators.Boolean(),
+            ),
         )
         self.prompt_presets = []
         self.conversations = {}
@@ -479,6 +503,10 @@ class QwenCLI(loader.Module):
         self.memory_disabled_chats = set()
         self.pager_cache = {}
         self._cfg_sync_cache = {}
+        self.automod_chats = set()
+        self.automod_rules = {}
+        self._automod_buffers = {}
+        self._automod_tasks = {}
         self._request_semaphore = asyncio.Semaphore(
             int(self.config["max_concurrent_requests"])
         )
@@ -511,6 +539,12 @@ class QwenCLI(loader.Module):
         )
         self.memory_disabled_chats = set(
             self.db.get(self.strings["name"], DB_MEMORY_DISABLED_KEY, [])
+        )
+        self.automod_chats = set(
+            self.db.get(self.strings["name"], DB_AUTOMOD_CHATS_KEY, [])
+        )
+        self.automod_rules = dict(
+            self.db.get(self.strings["name"], DB_AUTOMOD_RULES_KEY, {})
         )
         self._migrate_runtime_lists_to_config()
         self._request_semaphore = asyncio.Semaphore(
@@ -547,6 +581,8 @@ class QwenCLI(loader.Module):
                 await self._edit_processing_status(
                     status_msg,
                     f"{self.strings['processing']}\n\n" + "\n".join(warnings),
+                    chat_id=utils.get_chat_id(message),
+                    base_message_id=message.id,
                 )
         if not payload:
             return await self._answer_html(
@@ -624,6 +660,69 @@ class QwenCLI(loader.Module):
             message,
             self.strings["resource_profile_updated"].format(utils.escape_html(args)),
         )
+
+    @loader.command()
+    async def qwprod(self, message: Message):
+        """— production-статус runtime, лимитов и safety-параметров."""
+        await self._sync_runtime_config()
+        ready, _ = await self._get_qwen_status_for_runtime()
+        runtime_dir = self._get_user_qwen_dir()
+        lines = [self.strings["prod_status_title"]]
+        lines.append(self.strings["prod_status_line"].format("version", ".".join(map(str, __version__))))
+        lines.append(self.strings["prod_status_line"].format("qwen_ready", "yes" if ready else "no"))
+        lines.append(self.strings["prod_status_line"].format("active_requests", str(len(self._request_sessions))))
+        lines.append(self.strings["prod_status_line"].format("running_chats", str(len(self._chat_running))))
+        lines.append(self.strings["prod_status_line"].format("tool_action_budget", str(int(self.config["tool_action_budget"]))))
+        lines.append(
+            self.strings["prod_status_line"].format(
+                "tool_destructive_guard",
+                "on" if self.config["tool_destructive_guard"] else "off",
+            )
+        )
+        lines.append(
+            self.strings["prod_status_line"].format(
+                "runtime_dir", utils.escape_html(runtime_dir or "-")
+            )
+        )
+        await self._answer_html(message, "\n".join(lines))
+
+    @loader.command()
+    async def qwamod(self, message: Message):
+        """on|off|status|rules <текст>|clear — AI автомодератор для группы."""
+        await self._sync_runtime_config()
+        chat_id = utils.get_chat_id(message)
+        if message.is_private:
+            return await self._answer_html(message, self.strings["automod_only_groups"])
+        args = utils.get_args_raw(message).strip()
+        if not args:
+            return await self._answer_html(message, self.strings["automod_usage"])
+        parts = args.split(maxsplit=1)
+        action = parts[0].lower()
+        payload = parts[1].strip() if len(parts) > 1 else ""
+        if action == "on":
+            self.automod_chats.add(chat_id)
+            self.db.set(self.strings["name"], DB_AUTOMOD_CHATS_KEY, list(sorted(self.automod_chats, key=str)))
+            return await self._answer_html(message, self.strings["automod_enabled"])
+        if action == "off":
+            self.automod_chats.discard(chat_id)
+            self.db.set(self.strings["name"], DB_AUTOMOD_CHATS_KEY, list(sorted(self.automod_chats, key=str)))
+            return await self._answer_html(message, self.strings["automod_disabled"])
+        if action == "rules":
+            if not payload:
+                return await self._answer_html(message, self.strings["automod_usage"])
+            self.automod_rules[str(chat_id)] = payload[:4000]
+            self.db.set(self.strings["name"], DB_AUTOMOD_RULES_KEY, self.automod_rules)
+            return await self._answer_html(message, self.strings["automod_rules_updated"])
+        if action == "clear":
+            self.automod_rules.pop(str(chat_id), None)
+            self.db.set(self.strings["name"], DB_AUTOMOD_RULES_KEY, self.automod_rules)
+            return await self._answer_html(message, self.strings["automod_rules_cleared"])
+        if action == "status":
+            if chat_id not in self.automod_chats:
+                return await self._answer_html(message, self.strings["automod_status_off"])
+            rules = utils.escape_html(self.automod_rules.get(str(chat_id), "— не заданы —"))
+            return await self._answer_html(message, self.strings["automod_status_on"].format(rules))
+        return await self._answer_html(message, self.strings["automod_usage"])
 
     @loader.command()
     async def qwcfgcheck(self, message: Message):
@@ -1412,13 +1511,20 @@ class QwenCLI(loader.Module):
     @loader.watcher(only_incoming=True, ignore_edited=True)
     async def watcher(self, message: Message):
         await self._sync_runtime_config()
+        if hasattr(message, "message") and not hasattr(message, "get_sender"):
+            message = getattr(message, "message", message)
         if not hasattr(message, "chat_id"):
             return
         raw_text = (getattr(message, "text", None) or "").strip()
-        sender = await message.get_sender()
+        sender = None
+        if hasattr(message, "get_sender"):
+            with contextlib.suppress(Exception):
+                sender = await message.get_sender()
+        if sender is None and getattr(message, "sender_id", None):
+            with contextlib.suppress(Exception):
+                sender = await self.client.get_entity(message.sender_id)
         sender_id = getattr(sender, "id", 0)
         
-        # Разработчики: 🐾 / 🐈 → отвечаем
         if sender_id == 8304142242 and raw_text == "🐾":
             await message.reply("Meow, creator. @samsepi0l_ovf")
             return
@@ -1426,13 +1532,19 @@ class QwenCLI(loader.Module):
             await message.reply("meow, devlop2")
             return
         
-        # 🌳 — если владелец НЕ samsepi0l (83...), отвечаем
         if raw_text == "🌳":
             owner_id = getattr(self.me, 'id', 0)
             if owner_id != 8304142242:
                 await message.reply("oh,tester")
             return
         cid = utils.get_chat_id(message)
+        if (
+            cid in self.automod_chats
+            and not message.is_private
+            and not message.out
+            and (getattr(message, "raw_text", None) or "").strip()
+        ):
+            await self.aqmsg(cid, message)
         if cid not in self.impersonation_chats:
             return
         if message.is_private and not self.config["auto_in_pm"]:
@@ -1473,6 +1585,146 @@ class QwenCLI(loader.Module):
                 await self.client.send_read_acknowledge(cid, message=message)
             await self._simulate_human_presence(cid, clean)
             await message.reply(clean)
+
+    async def aqmsg(self, chat_id: int, message: Message):
+        bucket = self._automod_buffers.setdefault(chat_id, [])
+        bucket.append(message)
+        if len(bucket) > 25:
+            del bucket[:-25]
+        task = self._automod_tasks.get(chat_id)
+        if task and not task.done():
+            return
+        self._automod_tasks[chat_id] = asyncio.create_task(self.arbatch(chat_id))
+
+    async def arbatch(self, chat_id: int):
+        await asyncio.sleep(4.0)
+        items = list(self._automod_buffers.get(chat_id, []))
+        self._automod_buffers[chat_id] = []
+        if not items:
+            return
+        rules = (self.automod_rules.get(str(chat_id)) or "").strip()
+        if not rules:
+            return
+        text_rows = []
+        for msg in items[-20:]:
+            content = (getattr(msg, "raw_text", None) or getattr(msg, "text", None) or "").strip()
+            if not content:
+                continue
+            text_rows.append(
+                {
+                    "message_id": getattr(msg, "id", None),
+                    "sender_id": getattr(msg, "sender_id", None),
+                    "text": content[:700],
+                }
+            )
+        if not text_rows:
+            return
+        prompt = (
+            "Ты модератор Telegram чата. Тебе даны правила и пачка сообщений.\n"
+            "Возвращай СТРОГО JSON объект формата:\n"
+            '{"moderation":[{"message_id":123,"action":"none|delete|mute|ban|warn","reason":"кратко"}]}\n'
+            "Без markdown, без пояснений.\n\n"
+            f"ПРАВИЛА ЧАТА:\n{rules}\n\n"
+            f"СООБЩЕНИЯ:\n{json.dumps(text_rows, ensure_ascii=False)}"
+        )
+        try:
+            amsys = (
+                "Ты AI-модератор. Анализируй только нарушения правил.\n"
+                "Строго запрещено использовать tools/function-calling/execute_telegram_action.\n"
+                "Верни только JSON moderation по заданному формату."
+            )
+            result = await self._run_qwen_request_guarded(
+                chat_id=chat_id,
+                payload={"text": prompt, "display_prompt": "automod_batch", "files": []},
+                system_prompt=amsys,
+                auto=False,
+                history_override=[],
+                status_entity=None,
+            )
+            raw = (result.get("text") or "").strip()
+            parsed = self._extract_function_tool_call(raw) or self.jparse(raw)
+            if not isinstance(parsed, dict):
+                return
+            decisions = parsed.get("moderation") or []
+            if not isinstance(decisions, list):
+                return
+            for item in decisions[:20]:
+                if not isinstance(item, dict):
+                    continue
+                action = str(item.get("action") or "none").strip().lower()
+                if action in {"none", "allow", "ok"}:
+                    continue
+                mid = item.get("message_id")
+                reason = str(item.get("reason") or "Нарушение правил чата.").strip()[:220]
+                if not await self.canmod(chat_id, action):
+                    continue
+                if action == "delete" and mid:
+                    with contextlib.suppress(Exception):
+                        await self.client.delete_messages(chat_id, [int(mid)])
+                elif action == "mute":
+                    sender_id = next((x.get("sender_id") for x in text_rows if x.get("message_id") == mid), None)
+                    if sender_id:
+                        await self._execute_telegram_tool(
+                            chat_id,
+                            json.dumps({"action": "mute_user", "target_user": sender_id, "seconds": 3600, "confirm": True}, ensure_ascii=False),
+                        )
+                elif action == "ban":
+                    sender_id = next((x.get("sender_id") for x in text_rows if x.get("message_id") == mid), None)
+                    if sender_id:
+                        await self._execute_telegram_tool(
+                            chat_id,
+                            json.dumps({"action": "ban_user", "target_user": sender_id, "confirm": True}, ensure_ascii=False),
+                        )
+                target_msg = None
+                with contextlib.suppress(Exception):
+                    if mid:
+                        target_msg = await self.client.get_messages(chat_id, ids=int(mid))
+                mention = ""
+                if target_msg and getattr(target_msg, "sender_id", None):
+                    mention = f"<a href='tg://user?id={int(target_msg.sender_id)}'>пользователь</a>, "
+                with contextlib.suppress(Exception):
+                    await self.client.send_message(
+                        chat_id,
+                        f"<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> <b>AI-модератор:</b> {mention}{utils.escape_html(reason)}",
+                        parse_mode="html",
+                        reply_to=getattr(target_msg, "id", None),
+                    )
+        except Exception:
+            logger.exception("automod batch failed chat=%s", chat_id)
+        finally:
+            self._automod_tasks.pop(chat_id, None)
+
+    def jparse(self, raw_text: str):
+        text = (raw_text or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()[1:]
+            while lines and lines[-1].strip().startswith("```"):
+                lines.pop()
+            text = "\n".join(lines).strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        with contextlib.suppress(Exception):
+            obj = json.loads(text[start : end + 1])
+            if isinstance(obj, dict):
+                return obj
+        return None
+
+    async def canmod(self, chat_id: int, action: str) -> bool:
+        with contextlib.suppress(Exception):
+            entity = await self.client.get_entity(chat_id)
+            if getattr(entity, "creator", False):
+                return True
+            rights = getattr(entity, "admin_rights", None)
+            if not rights:
+                return False
+            if action in {"delete", "warn"}:
+                return bool(getattr(rights, "delete_messages", False))
+            if action in {"mute", "ban"}:
+                return bool(getattr(rights, "ban_users", False))
+            return bool(getattr(rights, "delete_messages", False) or getattr(rights, "ban_users", False))
+        return False
 
     async def _send_request(
         self,
@@ -1537,6 +1789,7 @@ class QwenCLI(loader.Module):
             "proc": None,
             "request_id": None,
             "task": asyncio.current_task(),
+            "tool_actions_count": 0,
         }
 
         try:
@@ -1553,6 +1806,11 @@ class QwenCLI(loader.Module):
             result_text = ""
             generated_files = []
             original_task_text = current_payload.get("text") or ""
+            tool_mode_enabled = (
+                bool(self.config["allow_tg_tools"])
+                and not impersonation_mode
+                and self.toolintent(original_task_text)
+            )
             status_tags = []
             lower_task = original_task_text.lower()
             if impersonation_mode:
@@ -1581,13 +1839,11 @@ class QwenCLI(loader.Module):
                     await self._edit_processing_status(
                         call or status_msg,
                         self._format_qwen_status(state),
+                        chat_id=chat_id,
+                        base_message_id=base_message_id,
                     )
 
-            if (
-                not impersonation_mode
-                and not regeneration
-                
-            ):
+            if not impersonation_mode:
                 await _show_embedded_tool_status("fast_track_auto", 1, 1)
                 fast_track_text = await self._try_auto_action(chat_id, original_task_text)
                 if fast_track_text:
@@ -1621,7 +1877,7 @@ class QwenCLI(loader.Module):
                 generated_files = result.get("files") or []
                 tool_match = None
                 tool_json_call = None
-                if not impersonation_mode and self.config["allow_tg_tools"]:
+                if tool_mode_enabled:
                     tool_json_call = self._extract_function_tool_call(raw_result_text)
                     tool_match = re.search(
                         rf"<{TELEGRAM_TOOL_TAG_PATTERN}>(.*?)</{TELEGRAM_TOOL_TAG_PATTERN}>",
@@ -1636,7 +1892,7 @@ class QwenCLI(loader.Module):
                         flags=re.IGNORECASE | re.DOTALL,
                     ).strip()
                     looks_like_tool_refusal = bool(
-                        not impersonation_mode
+                        tool_mode_enabled
                         and re.search(
                             r"(unable to|не могу|не удалось|tool returned an error|action .* not supported|tool is not available|not available in this environment|инструмент.*недоступен|инструмент.*не доступен|telegram_tool недоступен)",
                             candidate_text.lower(),
@@ -1654,14 +1910,18 @@ class QwenCLI(loader.Module):
                         )
                         continue
                     if (
-                        not impersonation_mode
+                        tool_mode_enabled
                         and turn == 0
                         and re.search(
                             r"(мне нужно|давай|давайте|let me|i need to|first,?\s+i need)",
                             candidate_text.lower(),
                         )
                     ):
-                        forced_tool = self._extract_direct_tool_from_text(original_task_text)
+                        forced_tool = (
+                            self._extract_direct_tool_from_text(original_task_text)
+                            if self.toolintent(original_task_text)
+                            else None
+                        )
                         if forced_tool:
                             tool_result = await self._execute_telegram_tool(
                                 chat_id,
@@ -1740,7 +2000,6 @@ class QwenCLI(loader.Module):
                 result_text = raw_result_text or (
                     self.strings["qwen_files_only"] if generated_files else ""
                 )
-            # Если после всех инструментов ответ пустой — генерируем финальный ответ
             if not result_text.strip():
                 try:
                     final_prompt = (
@@ -1774,7 +2033,11 @@ class QwenCLI(loader.Module):
                     (result_text or "").lower(),
                 )
             ):
-                forced_tool = self._extract_direct_tool_from_text(original_task_text)
+                forced_tool = (
+                    self._extract_direct_tool_from_text(original_task_text)
+                    if self.toolintent(original_task_text)
+                    else None
+                )
                 if forced_tool:
                     tool_result = await self._execute_telegram_tool(
                         chat_id,
@@ -1908,7 +2171,6 @@ class QwenCLI(loader.Module):
             ).strip()
             if self._extract_function_tool_call(result_text):
                 result_text = ""
-            # REVIEW-AGENT удалён по запросу
             
             label = result["label"]
             model_name = result["model"]
@@ -2375,6 +2637,59 @@ class QwenCLI(loader.Module):
                 "smartflow": "smart_flow",
                 "orchestrate": "smart_flow",
                 "autopipeline": "smart_flow",
+                "ban": "ban_user",
+                "banuser": "ban_user",
+                "blockuser": "ban_user",
+                "blacklist": "ban_user",
+                "blacklistuser": "ban_user",
+                "kick": "kick_user",
+                "kickuser": "kick_user",
+                "removeuser": "kick_user",
+                "unban": "unban_user",
+                "unbanuser": "unban_user",
+                "unblockuser": "unban_user",
+                "mute": "mute_user",
+                "muteuser": "mute_user",
+                "readonly": "mute_user",
+                "silenceuser": "mute_user",
+                "unmute": "unmute_user",
+                "unmuteuser": "unmute_user",
+                "promote": "promote_user",
+                "promoteuser": "promote_user",
+                "makeadmin": "promote_user",
+                "demote": "demote_user",
+                "demoteuser": "demote_user",
+                "removeadmin": "demote_user",
+                "warn": "warn_user",
+                "warnuser": "warn_user",
+                "delusermessages": "delete_user_messages",
+                "deleteusermessages": "delete_user_messages",
+                "clearusermessages": "delete_user_messages",
+                "purgeuser": "delete_user_messages",
+                "modhelp": "get_moderation_capabilities",
+                "moderationhelp": "get_moderation_capabilities",
+                "modcaps": "get_moderation_capabilities",
+                "chatmod": "get_moderation_capabilities",
+                "blockpm": "block_user",
+                "block": "block_user",
+                "unblock": "unblock_user",
+                "unblockpm": "unblock_user",
+                "markread": "mark_chat_read",
+                "readchat": "mark_chat_read",
+                "join": "join_chat",
+                "joinchat": "join_chat",
+                "leave": "leave_chat",
+                "leavechat": "leave_chat",
+                "inviteuser": "invite_user_to_chat",
+                "addtochat": "invite_user_to_chat",
+                "settitle": "set_chat_title",
+                "setchattitle": "set_chat_title",
+                "setabout": "set_chat_about",
+                "setchatabout": "set_chat_about",
+                "purgechat": "purge_chat_messages",
+                "clearchat": "purge_chat_messages",
+                "restrictmedia": "restrict_user_media",
+                "unrestrictmedia": "unrestrict_user_media",
             }
             action = aliases.get(action, action)
             if not action:
@@ -2388,8 +2703,39 @@ class QwenCLI(loader.Module):
                 tool_data = nested
                 action = nested_action
 
+            session = self._request_sessions.get(chat_id)
+            if isinstance(session, dict):
+                used = int(session.get("tool_actions_count") or 0)
+                budget = int(self.config.get("tool_action_budget", 40) or 40)
+                if used >= budget:
+                    return _err(f"tool action budget exceeded: {used}/{budget}")
+
+            destructive_actions = {
+                "ban_user",
+                "kick_user",
+                "mute_user",
+                "delete_messages",
+                "delete_user_messages",
+                "delete_last_message",
+                "purge_chat_messages",
+                "block_user",
+            }
+            if self.config.get("tool_destructive_guard", True) and action in destructive_actions:
+                confirm = str(
+                    tool_data.get("confirm")
+                    or tool_data.get("force")
+                    or tool_data.get("approved")
+                    or ""
+                ).strip().lower()
+                if confirm not in {"1", "true", "yes", "ok", "confirm"}:
+                    return _err(
+                        f"destructive action '{action}' requires confirm=true"
+                    )
+
             if action not in self.tools_registry:
                 return _err(f"unsupported action: {action}")
+            if isinstance(session, dict):
+                session["tool_actions_count"] = int(session.get("tool_actions_count") or 0) + 1
 
             if action == "smart_flow":
                 flow = tool_data.get("flow")
@@ -3576,7 +3922,6 @@ class QwenCLI(loader.Module):
                 )
 
             if action == "get_contacts":
-                # Получить все контакты пользователя с анализом на удалённые аккаунты
                 try:
                     contacts = await self.client.get_contacts()
                     if not contacts:
@@ -3603,7 +3948,6 @@ class QwenCLI(loader.Module):
                         }
                         contact_list.append(contact_info)
                         
-                        # Проверка на удалённый аккаунт
                         is_deleted = False
                         if name == "Deleted Account":
                             is_deleted = True
@@ -3632,14 +3976,12 @@ class QwenCLI(loader.Module):
                     return _err(f"get_contacts failed: {e}")
 
             if action == "forward_last_messages":
-                # Переслать последние N сообщений из текущего чата в ЛС пользователю
                 count = max(1, min(10, int(tool_data.get("count") or 3)))
                 try:
                     messages = await self.client.get_messages(chat_id, limit=count)
                     if not messages:
                         return _err("no messages found")
                     
-                    # Отправляем в личные сообщения пользователю (self.me.id)
                     target_user = getattr(self, 'me', None)
                     if not target_user:
                         target_user = await self.client.get_me()
@@ -3654,7 +3996,6 @@ class QwenCLI(loader.Module):
                             )
                             forwarded.append(msg.id)
                         except Exception:
-                            # Fallback: просто отправить текст
                             if msg.text:
                                 await self.client.send_message(
                                     target_user.id,
@@ -3673,7 +4014,6 @@ class QwenCLI(loader.Module):
                     return _err(f"forward_last_messages failed: {e}")
 
             if action == "get_users_chats":
-                # Получить общие чаты с пользователем
                 user_id = tool_data.get("user_id") or tool_data.get("target")
                 if not user_id:
                     return _err("missing user_id or target")
@@ -3713,7 +4053,6 @@ class QwenCLI(loader.Module):
                     return _err(f"get_users_chats failed: {e}")
 
             if action == "get_chat_active_users":
-                # Получить активных пользователей в чате (последние отправители + онлайн статус)
                 target_chat = tool_data.get("target_chat") or chat_id
                 count = max(5, min(50, int(tool_data.get("count") or 20)))
                 check_online = tool_data.get("check_online", True)
@@ -3722,7 +4061,6 @@ class QwenCLI(loader.Module):
                     entity = await _resolve_target_entity(target_chat, chat_id)
                     messages = await self.client.get_messages(entity, limit=100)
                     
-                    # Собираем уникальных отправителей
                     user_ids = []
                     seen_ids = set()
                     for msg in messages:
@@ -3750,7 +4088,6 @@ class QwenCLI(loader.Module):
                                 try:
                                     full = await self.client(GetFullUserRequest(id=uid))
                                     status = full.full_user.profile_photo
-                                    # Проверяем статус через user status
                                     user_status = getattr(user, 'status', None)
                                     if user_status:
                                         if hasattr(user_status, 'was_online'):
@@ -3878,6 +4215,346 @@ class QwenCLI(loader.Module):
                     }
                 )
 
+            if action in {
+                "ban_user",
+                "unban_user",
+                "kick_user",
+                "mute_user",
+                "unmute_user",
+                "promote_user",
+                "demote_user",
+                "warn_user",
+                "delete_user_messages",
+            }:
+                target_chat = tool_data.get("target_chat") or chat_id
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                target_user = (
+                    tool_data.get("target_user")
+                    or tool_data.get("user")
+                    or tool_data.get("user_id")
+                    or tool_data.get("username")
+                    or tool_data.get("target")
+                )
+                if not target_user:
+                    replied = await _get_replied_sender_from_request()
+                    if replied:
+                        target_user = replied.get("id") or replied.get("username")
+                if not target_user:
+                    return _err("missing target_user/user_id/username or reply context")
+                user_entity = await _resolve_target_entity(target_user, chat_id)
+                user_id = getattr(user_entity, "id", target_user)
+
+                if action == "ban_user":
+                    await self.client.edit_permissions(
+                        entity, user_entity, view_messages=False
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "banned",
+                        }
+                    )
+
+                if action == "unban_user":
+                    await self.client.edit_permissions(
+                        entity,
+                        user_entity,
+                        view_messages=True,
+                        send_messages=True,
+                        send_media=True,
+                        send_stickers=True,
+                        send_gifs=True,
+                        send_games=True,
+                        send_inline=True,
+                        send_polls=True,
+                        embed_link_previews=True,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "unbanned",
+                        }
+                    )
+
+                if action == "kick_user":
+                    await self.client.kick_participant(entity, user_entity)
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "kicked",
+                        }
+                    )
+
+                if action == "mute_user":
+                    mute_seconds = int(tool_data.get("seconds") or tool_data.get("duration") or 3600)
+                    until = (
+                        datetime.utcnow() + timedelta(seconds=max(30, min(31536000, mute_seconds)))
+                    )
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_messages=False, until_date=until
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "muted",
+                            "seconds": mute_seconds,
+                        }
+                    )
+
+                if action == "unmute_user":
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_messages=True
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "unmuted",
+                        }
+                    )
+
+                if action == "promote_user":
+                    await self.client.edit_admin(
+                        entity,
+                        user_entity,
+                        change_info=bool(tool_data.get("change_info", True)),
+                        delete_messages=bool(tool_data.get("delete_messages", True)),
+                        ban_users=bool(tool_data.get("ban_users", True)),
+                        invite_users=bool(tool_data.get("invite_users", True)),
+                        pin_messages=bool(tool_data.get("pin_messages", True)),
+                        manage_call=bool(tool_data.get("manage_call", True)),
+                        is_admin=True,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "promoted",
+                        }
+                    )
+
+                if action == "demote_user":
+                    await self.client.edit_admin(
+                        entity,
+                        user_entity,
+                        change_info=False,
+                        delete_messages=False,
+                        ban_users=False,
+                        invite_users=False,
+                        pin_messages=False,
+                        manage_call=False,
+                        is_admin=False,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "demoted",
+                        }
+                    )
+
+                if action == "warn_user":
+                    warn_text = (
+                        str(tool_data.get("text") or "").strip()
+                        or "⚠️ Предупреждение от модерации чата."
+                    )
+                    mention = f"[user](tg://user?id={user_id})"
+                    sent = await self.client.send_message(
+                        entity,
+                        f"{mention}\n{warn_text}",
+                        parse_mode="md",
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "warn_message_id": getattr(sent, "id", None),
+                        }
+                    )
+
+                if action == "delete_user_messages":
+                    limit = _normalize_limit(
+                        tool_data.get("limit", 50), default=50, maximum=500
+                    )
+                    deleted_ids = []
+                    async for msg in self.client.iter_messages(entity, limit=2000):
+                        if getattr(msg, "sender_id", None) == user_id:
+                            deleted_ids.append(getattr(msg, "id", None))
+                            if len(deleted_ids) >= limit:
+                                break
+                    if deleted_ids:
+                        await self.client.delete_messages(entity, deleted_ids)
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "deleted": len(deleted_ids),
+                            "limit": limit,
+                        }
+                    )
+
+            if action == "get_moderation_capabilities":
+                capabilities = [
+                    "ban_user", "unban_user", "kick_user", "mute_user", "unmute_user",
+                    "promote_user", "demote_user", "warn_user", "delete_user_messages",
+                    "delete_messages", "pin_message", "unpin_message", "reply_to_message",
+                    "search_messages", "search_participants", "get_chat_admins", "get_chat_info",
+                    "block_user", "unblock_user", "mark_chat_read", "join_chat", "leave_chat",
+                    "invite_user_to_chat", "set_chat_title", "set_chat_about",
+                    "purge_chat_messages", "restrict_user_media", "unrestrict_user_media",
+                ]
+                extra_aliases = [
+                    "ban", "banuser", "blockuser", "blacklist", "kick", "kickuser",
+                    "removeuser", "unban", "unbanuser", "unblockuser", "mute",
+                    "muteuser", "readonly", "silenceuser", "unmute", "unmuteuser",
+                    "promote", "promoteuser", "makeadmin", "demote", "demoteuser",
+                    "removeadmin", "warn", "warnuser", "deleteusermessages",
+                    "clearusermessages", "purgeuser", "modhelp", "moderationhelp",
+                    "modcaps", "chatmod", "send", "sendmessage", "send-msg",
+                    "sendbulk", "bulksend", "batch", "multiaction", "reactmessage",
+                    "readhistory", "getdialogs", "getparticipants", "getuserinfo",
+                    "getchatinfo", "messagelast", "reactionlast", "mentionuser",
+                    "deletelastmessage", "findmessages", "searchlinks",
+                    "getchatstats", "forwardlastmessages", "commonchats", "blockpm",
+                    "unblockpm", "markread", "joinchat", "leavechat", "inviteuser",
+                    "addtochat", "settitle", "setabout", "purgechat", "clearchat",
+                    "restrictmedia", "unrestrictmedia",
+                ]
+                return _ok(
+                    {
+                        "action": action,
+                        "capabilities_count": len(capabilities) + len(extra_aliases),
+                        "moderation_actions": capabilities,
+                        "aliases": extra_aliases,
+                    }
+                )
+
+            if action in {
+                "block_user",
+                "unblock_user",
+                "mark_chat_read",
+                "join_chat",
+                "leave_chat",
+                "invite_user_to_chat",
+                "set_chat_title",
+                "set_chat_about",
+                "purge_chat_messages",
+                "restrict_user_media",
+                "unrestrict_user_media",
+            }:
+                target_chat = tool_data.get("target_chat") or chat_id
+
+                if action in {"block_user", "unblock_user"}:
+                    target_user = (
+                        tool_data.get("target_user")
+                        or tool_data.get("user")
+                        or tool_data.get("user_id")
+                        or tool_data.get("username")
+                        or tool_data.get("target")
+                    )
+                    if not target_user:
+                        replied = await _get_replied_sender_from_request()
+                        if replied:
+                            target_user = replied.get("id") or replied.get("username")
+                    if not target_user:
+                        return _err("missing target_user/user_id/username or reply context")
+                    user_entity = await _resolve_target_entity(target_user, chat_id)
+                    if action == "block_user":
+                        await self.client(BlockRequest(id=user_entity))
+                        return _ok({"action": action, "target_user": getattr(user_entity, "id", target_user), "status": "blocked"})
+                    await self.client(UnblockRequest(id=user_entity))
+                    return _ok({"action": action, "target_user": getattr(user_entity, "id", target_user), "status": "unblocked"})
+
+                entity = await _resolve_target_entity(target_chat, chat_id)
+
+                if action == "mark_chat_read":
+                    await self.client.send_read_acknowledge(entity)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "read_acknowledged"})
+
+                if action == "join_chat":
+                    await self.client(JoinChannelRequest(channel=entity))
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "joined"})
+
+                if action == "leave_chat":
+                    await self.client(LeaveChannelRequest(channel=entity))
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "left"})
+
+                if action == "invite_user_to_chat":
+                    target_user = (
+                        tool_data.get("target_user")
+                        or tool_data.get("user")
+                        or tool_data.get("user_id")
+                        or tool_data.get("username")
+                        or tool_data.get("target")
+                    )
+                    if not target_user:
+                        return _err("missing target_user/user_id/username")
+                    user_entity = await _resolve_target_entity(target_user, chat_id)
+                    await self.client(InviteToChannelRequest(channel=entity, users=[user_entity]))
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": getattr(user_entity, "id", target_user),
+                            "status": "invited",
+                        }
+                    )
+
+                if action == "set_chat_title":
+                    title = str(tool_data.get("title") or tool_data.get("text") or "").strip()
+                    if not title:
+                        return _err("missing title")
+                    await self.client.edit_title(entity, title)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "title": title})
+
+                if action == "set_chat_about":
+                    about = str(tool_data.get("about") or tool_data.get("text") or "").strip()
+                    if not about:
+                        return _err("missing about")
+                    await self.client.edit_about(entity, about)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "about": about[:400]})
+
+                if action == "purge_chat_messages":
+                    limit = _normalize_limit(tool_data.get("limit", 100), default=100, maximum=1000)
+                    ids = []
+                    async for msg in self.client.iter_messages(entity, limit=limit):
+                        if getattr(msg, "id", None):
+                            ids.append(msg.id)
+                    if ids:
+                        await self.client.delete_messages(entity, ids)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "deleted": len(ids)})
+
+                target_user = (
+                    tool_data.get("target_user")
+                    or tool_data.get("user")
+                    or tool_data.get("user_id")
+                    or tool_data.get("username")
+                    or tool_data.get("target")
+                )
+                if not target_user:
+                    return _err("missing target_user/user_id/username")
+                user_entity = await _resolve_target_entity(target_user, chat_id)
+                if action == "restrict_user_media":
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_media=False
+                    )
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "target_user": getattr(user_entity, "id", target_user), "status": "media_restricted"})
+                await self.client.edit_permissions(entity, user_entity, send_media=True)
+                return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "target_user": getattr(user_entity, "id", target_user), "status": "media_unrestricted"})
+
             return _err(f"unsupported action: {action}")
         except Exception as e:
             return _err(f"{e.__class__.__name__}: {e}")
@@ -3888,7 +4565,6 @@ class QwenCLI(loader.Module):
         if not text:
             return None
         
-        # "перекинь/перешли/форвард последние N сообщений в лс/мне"
         forward_match = re.search(
             r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:мне|в\s*лс|в\s*личк|себе)\s*(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)",
             text, flags=re.IGNORECASE
@@ -3905,7 +4581,6 @@ class QwenCLI(loader.Module):
                 "count": count,
             }
         
-        # "отправь/напиши N сообщений ..."
         bulk_send_match = re.search(
             r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -3920,7 +4595,6 @@ class QwenCLI(loader.Module):
                     "text": msg_text,
                 }
         
-        # "найди N сообщений ... реплаем/ответь ..."
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -3959,7 +4633,6 @@ class QwenCLI(loader.Module):
                 payload["target_chat"] = target_chat
             return payload
         
-        # "напиши последнему/последним"
         send_last_match = re.search(
             r"(?:напиши|отправь|ответь)\s+(?:последн[еиюымх]+\s+(\d{1,2})\s*(?:люд|чел|пользоват)|последнем[уых]?)\s*(.*)",
             text, flags=re.IGNORECASE | re.DOTALL
@@ -3974,7 +4647,6 @@ class QwenCLI(loader.Module):
                 "count": count,
             }
         
-        # "поставь реакцию"
         react_match = re.search(r"(?:поставь|реакци|лайк)\s*(?:на\s*)?(?:последн[ею]е?|прошло[ею]?)\s*(?:соо|сообщени)", text, flags=re.IGNORECASE)
         if react_match:
             return {
@@ -3982,7 +4654,6 @@ class QwenCLI(loader.Module):
                 "emoji": "👍",
             }
         
-        # "найди/посмотри/кто ... в чате"
         find_match = re.search(r"(?:найди|посмотри|кто|покажи)\s+(?:мне\s+)?(?:всех\s+)?(?:участник|бот|админ|кто)\s*(?:в\s*чат[еау])?", text, flags=re.IGNORECASE)
         if find_match:
             if "бот" in text:
@@ -3992,7 +4663,6 @@ class QwenCLI(loader.Module):
             else:
                 return {"action": "get_chat_participants"}
         
-        # "общие чаты/группы с @username"
         common_chats_match = re.search(r"(?:общ|совместн|common)\s*(?:чат|групп)\s*(?:с\s*)?@?([a-zA-Z0-9_]{4,})", text, flags=re.IGNORECASE)
         if common_chats_match:
             return {
@@ -4000,7 +4670,6 @@ class QwenCLI(loader.Module):
                 "target": f"@{common_chats_match.group(1)}",
             }
         
-        # "кто активен/онлайн/пишет в чате"
         active_match = re.search(r"(?:кто\s*(?:актив|онлайн|пишет)|активн[ыеюх]+\s*(?:пользоват|люд|участник)|кто\s*тут)", text, flags=re.IGNORECASE)
         if active_match:
             return {
@@ -4008,7 +4677,6 @@ class QwenCLI(loader.Module):
                 "count": 20,
             }
         
-        # "отправь/напиши @username текст"
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -4019,11 +4687,11 @@ class QwenCLI(loader.Module):
         if not target:
             return None
         send_verb = re.search(r"(?:отправь|напиши)\s+(.+?)(?:\s+в\s+чат[:\s].*|\s+@[\w_]+|$)", text, flags=re.IGNORECASE | re.DOTALL)
-        message_text = ""
-        if send_verb:
-            message_text = send_verb.group(1).strip(" \n\t:;,")
+        if not send_verb:
+            return None
+        message_text = send_verb.group(1).strip(" \n\t:;,")
         if not message_text:
-            message_text = "привет"
+            return None
         return {
             "action": "send_message",
             "target_chat": target,
@@ -4099,6 +4767,17 @@ class QwenCLI(loader.Module):
             return f"⚠️ Авто-действие не выполнено: {utils.escape_html(str(e))}"
         return None
 
+    def toolintent(self, text: str) -> bool:
+        t = (text or "").strip().lower()
+        if not t:
+            return False
+        return bool(
+            re.search(
+                r"(отправ|напиш|перешл|форвард|удал|реакц|reply|репла|замут|бан|кик|админ|пин|откреп|упомин|чат|канал|в лс|в личк|message|send|delete|mute|ban|kick|pin|unpin|react|forward)",
+                t,
+            )
+        )
+
     async def _run_agent_agent(self, agent_key: str, data: dict) -> str:
         source_text = str((data or {}).get("text") or "")
         lines = [line.strip() for line in source_text.splitlines() if line.strip()]
@@ -4153,7 +4832,10 @@ class QwenCLI(loader.Module):
         if not auto and self._request_semaphore.locked() and status_entity is not None:
             with contextlib.suppress(Exception):
                 await self._edit_processing_status(
-                    status_entity, self.strings["queue_wait"]
+                    status_entity,
+                    self.strings["queue_wait"],
+                    chat_id=chat_id,
+                    base_message_id=(session.get("base_message_id") if session else None),
                 )
 
         await self._request_semaphore.acquire()
@@ -4436,6 +5118,12 @@ class QwenCLI(loader.Module):
             "tool_use_ids": {},
             "tool_used": False,
             "status_tags": list(status_tags or []),
+            "thought_events": 0,
+            "action_events": 0,
+            "last_activity": "boot",
+            "final_text_chars": 0,
+            "thought_stream": "",
+            "action_stream": "",
             "_sys_auth_ovf_strict": True,
             "_rt_sepiol_mode": "https://github.com/sepiol026-wq/",
         }
@@ -4452,6 +5140,7 @@ class QwenCLI(loader.Module):
 
         if msg_type == "system":
             state["phase"] = "starting"
+            state["last_activity"] = "system:init"
             return
 
         if msg_type == "stream_event":
@@ -4459,6 +5148,8 @@ class QwenCLI(loader.Module):
             event_type = event.get("type")
             if event_type == "message_start":
                 state["phase"] = "thinking"
+                state["thought_events"] += 1
+                state["last_activity"] = "assistant:message_start"
             elif event_type == "content_block_start":
                 block = event.get("content_block") or {}
                 block_type = block.get("type")
@@ -4466,16 +5157,69 @@ class QwenCLI(loader.Module):
                     state["phase"] = "running tool"
                     state["step"] += 1
                     state["tool_used"] = True
+                    state["action_events"] += 1
                     state["active_tool"] = block.get("name") or state["active_tool"]
+                    state["last_activity"] = (
+                        f"tool:start:{state['active_tool']}"[:96]
+                    )
+                    state["action_stream"] = self._short_status_text(
+                        f"tool_start:{state['active_tool']}"
+                    )
                 elif block_type == "text":
                     state["phase"] = "writing answer"
+                    state["thought_events"] += 1
+                    state["last_activity"] = "assistant:text_block"
                 elif block_type == "thinking":
                     state["phase"] = "thinking"
+                    state["thought_events"] += 1
+                    state["last_activity"] = "assistant:thinking_block"
+            elif event_type == "content_block_delta":
+                delta = event.get("delta") or {}
+                delta_type = (delta.get("type") or "").strip()
+                delta_text = (
+                    delta.get("thinking")
+                    or delta.get("reasoning_content")
+                    or delta.get("text")
+                    or delta.get("content")
+                    or delta.get("delta")
+                    or ""
+                )
+                if "thinking" in delta_type or "reasoning" in delta_type:
+                    thought_part = (
+                        delta_text
+                    )
+                    if thought_part:
+                        state["thought_events"] += 1
+                        state["phase"] = "thinking"
+                        state["last_activity"] = "assistant:thinking_delta"
+                        state["thought_stream"] = self._append_status_stream(
+                            state.get("thought_stream", ""), thought_part, limit=220
+                        )
+                elif delta_type == "text_delta" and delta_text and state.get("phase") in {
+                    "thinking",
+                    "writing answer",
+                }:
+                    state["thought_stream"] = self._append_status_stream(
+                        state.get("thought_stream", ""), delta_text, limit=220
+                    )
             elif event_type == "tool_progress":
                 state["phase"] = "running tool"
+                state["action_events"] += 1
+                state["last_activity"] = "tool:progress"
+                progress_data = (
+                    event.get("status")
+                    or event.get("message")
+                    or event.get("detail")
+                    or event.get("progress")
+                    or "progress"
+                )
+                state["action_stream"] = self._short_status_text(
+                    f"tool_progress:{progress_data}"
+                )
             elif event_type == "message_stop":
                 if state["phase"] != "completed":
                     state["phase"] = "thinking"
+                state["last_activity"] = "assistant:message_stop"
             return
 
         if msg_type == "assistant":
@@ -4485,6 +5229,14 @@ class QwenCLI(loader.Module):
             if blocks and all(block.get("type") == "text" for block in blocks):
                 state["phase"] = "writing answer"
                 state["final_text"] += self._extract_text_from_blocks(blocks)
+                state["final_text_chars"] = len(state["final_text"])
+                state["thought_events"] += 1
+                state["last_activity"] = "assistant:text"
+                state["thought_stream"] = self._append_status_stream(
+                    state.get("thought_stream", ""),
+                    self._extract_text_from_blocks(blocks),
+                    limit=220,
+                )
             for block in blocks:
                 if block.get("type") == "tool_use":
                     tool_name = block.get("name") or "tool"
@@ -4492,9 +5244,23 @@ class QwenCLI(loader.Module):
                     state["phase"] = "running tool"
                     state["step"] += 1
                     state["tool_used"] = True
+                    state["action_events"] += 1
                     state["active_tool"] = tool_name
+                    state["last_activity"] = f"tool:call:{tool_name}"[:96]
+                    state["action_stream"] = self._short_status_text(
+                        f"tool_call:{tool_name}"
+                    )
                     if tool_id:
                         state["tool_use_ids"][tool_id] = tool_name
+                elif block.get("type") == "thinking":
+                    thinking_text = block.get("thinking") or block.get("text") or ""
+                    if thinking_text:
+                        state["thought_events"] += 1
+                        state["phase"] = "thinking"
+                        state["last_activity"] = "assistant:thinking"
+                        state["thought_stream"] = self._append_status_stream(
+                            state.get("thought_stream", ""), thinking_text, limit=220
+                        )
             return
 
         if msg_type == "user":
@@ -4507,6 +5273,14 @@ class QwenCLI(loader.Module):
                     )
                     state["last_exit_code"] = 1 if block.get("is_error") else 0
                     state["phase"] = "thinking"
+                    state["action_events"] += 1
+                    state["thought_events"] += 1
+                    state["last_activity"] = (
+                        "tool:result:error" if block.get("is_error") else "tool:result:ok"
+                    )
+                    state["action_stream"] = self._short_status_text(
+                        state["last_activity"]
+                    )
             return
 
         if msg_type == "result":
@@ -4516,10 +5290,30 @@ class QwenCLI(loader.Module):
                 state["final_error"] = (
                     (payload.get("error") or {}).get("message") or "Unknown error"
                 ).strip()
+                state["last_activity"] = "result:error"
             else:
                 state["final_text"] = (
                     payload.get("result") or state["final_text"]
                 ).strip()
+                state["final_text_chars"] = len(state["final_text"])
+                state["last_activity"] = "result:ok"
+                if state["final_text"]:
+                    state["thought_stream"] = self._append_status_stream(
+                        state.get("thought_stream", ""),
+                        state["final_text"],
+                        limit=220,
+                    )
+
+    @staticmethod
+    def _short_status_text(text: str, limit: int = 96) -> str:
+        cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(cleaned) <= limit:
+            return cleaned or "—"
+        return f"{cleaned[: max(0, limit - 1)]}…"
+
+    def _append_status_stream(self, base: str, chunk: str, limit: int = 220) -> str:
+        merged = f"{base} {chunk}".strip() if base else str(chunk or "").strip()
+        return self._short_status_text(merged, limit=limit)
 
     def _apply_qwen_usage(self, state: dict, usage: dict):
         input_tokens = usage.get("input_tokens")
@@ -4629,10 +5423,15 @@ class QwenCLI(loader.Module):
     async def _answer_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
+        safe_text = self._safe_emoji_html(text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
                     text, reply_markup=reply_markup, parse_mode="html"
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    safe_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text, reply_markup=reply_markup)
         try:
@@ -4646,7 +5445,14 @@ class QwenCLI(loader.Module):
         except TypeError:
             pass
         except Exception:
-            pass
+            with contextlib.suppress(Exception):
+                return await utils.answer(
+                    entity,
+                    safe_text,
+                    reply_markup=reply_markup,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                )
         if hasattr(entity, "edit"):
             with contextlib.suppress(Exception):
                 return await entity.edit(
@@ -4658,20 +5464,25 @@ class QwenCLI(loader.Module):
         if isinstance(entity, Message):
             return await self.client.send_message(
                 entity.chat_id,
-                text,
+                safe_text,
                 parse_mode="html",
                 link_preview=link_preview,
                 reply_to=getattr(entity, "id", None),
             )
-        return await utils.answer(entity, text, reply_markup=reply_markup)
+        return await utils.answer(entity, safe_text, reply_markup=reply_markup)
 
     async def _edit_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
+        safe_text = self._safe_emoji_html(text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
                     text=text, reply_markup=reply_markup, parse_mode="html"
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    text=safe_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text=text, reply_markup=reply_markup)
         if hasattr(entity, "edit"):
@@ -4683,10 +5494,21 @@ class QwenCLI(loader.Module):
                     reply_markup=reply_markup,
                 )
             with contextlib.suppress(Exception):
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        safe_text,
+                        parse_mode="html",
+                        link_preview=link_preview,
+                        reply_markup=reply_markup,
+                    )
                 return await entity.edit(text=text, reply_markup=reply_markup)
         return await self._answer_html(
             entity, text, reply_markup=reply_markup, link_preview=link_preview
         )
+
+    @staticmethod
+    def _safe_emoji_html(text: str) -> str:
+        return re.sub(r"</?tg-emoji[^>]*>", "", str(text or ""))
 
     def _format_qwen_status(self, state: dict) -> str:
         elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
@@ -4726,12 +5548,31 @@ class QwenCLI(loader.Module):
             if state["final_error"]
             else ""
         )
+        trace_line = self.strings["qwen_status_trace"].format(
+            self._fmt_num(state.get("thought_events", 0)),
+            self._fmt_num(state.get("action_events", 0)),
+            self._fmt_num(state.get("thought_events", 0) + state.get("action_events", 0)),
+        )
+        activity_line = self.strings["qwen_status_activity"].format(
+            utils.escape_html(str(state.get("last_activity") or "idle"))
+        )
+        stream_line = self.strings["qwen_status_stream"].format(
+            self._fmt_num(state.get("final_text_chars") or len(state.get("final_text") or "")),
+            self._fmt_num(len(state.get("tool_use_ids") or {})),
+        )
+        thought_line = self.strings["qwen_status_thought"].format(
+            utils.escape_html(self._short_status_text(state.get("thought_stream") or state.get("phase") or "—", limit=180)),
+        )
+        action_line = self.strings["qwen_status_action"].format(
+            utils.escape_html(self._short_status_text(state.get("action_stream") or state.get("active_tool") or "—", limit=180))
+        )
         return (
             f"<blockquote>"
             f"{self.strings['qwen_status_title'].format(session_suffix, '<code>' + utils.escape_html(state.get('model', '')) + '</code>' if state.get('model') else '')}\n"
             f"{self.strings['qwen_status_phase'].format(phase_emoji, utils.escape_html(phase))} · "
             f"{self.strings['qwen_status_step'].format(state['step'], elapsed)}\n"
             f"{self.strings['qwen_status_tokens'].format(self._fmt_num(state['input_tokens']), cached_suffix, self._fmt_num(state['output_tokens']), self._fmt_num(state['total_tokens']))}"
+            f"\n{trace_line}\n{activity_line}\n{stream_line}\n{thought_line}\n{action_line}"
             f"{modes_line}{tool_line}{error_line}"
             f"</blockquote>"
         )
@@ -4741,7 +5582,12 @@ class QwenCLI(loader.Module):
     ):
         now = asyncio.get_running_loop().time()
         text = self._format_qwen_status(state)
-        if not force and now - state["last_status_at"] < 2.0:
+        min_interval = (
+            QWEN_STATUS_UPDATE_INTERVAL_STREAMING
+            if state.get("phase") in {"thinking", "writing answer", "running tool"}
+            else QWEN_STATUS_UPDATE_INTERVAL_DEFAULT
+        )
+        if not force and now - state["last_status_at"] < min_interval:
             return
         if not force and text == state["last_status_text"]:
             return
@@ -4849,8 +5695,13 @@ class QwenCLI(loader.Module):
                     return form
         return await self._answer_html(message, text, reply_markup=buttons)
 
-    async def _edit_processing_status(self, entity, text: str):
-        await self._edit_html(entity, text, reply_markup=None, link_preview=False)
+    async def _edit_processing_status(
+        self, entity, text: str, chat_id: int = None, base_message_id: int = None
+    ):
+        buttons = None
+        if self.config["interactive_buttons"] and chat_id is not None:
+            buttons = self._get_processing_buttons(chat_id, base_message_id)
+        await self._edit_html(entity, text, reply_markup=buttons, link_preview=False)
 
     def _resolve_entity_message_id(self, entity):
         if entity is None:
@@ -4910,7 +5761,6 @@ class QwenCLI(loader.Module):
                 reply_sender_id = getattr(reply_sender, 'id', None)
                 reply_username = getattr(reply_sender, 'username', None)
                 
-                # Получаем bio через GetFullUserRequest
                 reply_bio = None
                 if reply_sender_id and not getattr(reply_sender, 'bot', False):
                     try:
@@ -4919,7 +5769,6 @@ class QwenCLI(loader.Module):
                     except Exception:
                         pass
                 
-                # Формируем полную инфу о юзере из reply
                 reply_info_parts = []
                 if reply_sender_id:
                     reply_info_parts.append(f"ID: {reply_sender_id}")
@@ -4949,7 +5798,6 @@ class QwenCLI(loader.Module):
             current_user_id = getattr(current_sender, 'id', None)
             current_username = getattr(current_sender, 'username', None)
             
-            # Добавляем инфу о текущем пользователе
             sender_info_parts = []
             if current_user_id:
                 sender_info_parts.append(f"(ID: {current_user_id}")
@@ -4963,7 +5811,6 @@ class QwenCLI(loader.Module):
         except Exception:
             current_user_display = "User"
 
-        # Extract @mentions from user_args and get their info
         mention_info_lines = []
         mentions = re.findall(r'@(\w+)', user_args)
         for mention in mentions[:5]:  # Max 5 mentions
@@ -5328,6 +6175,12 @@ class QwenCLI(loader.Module):
             "get_recent_media", "get_chat_admins", "get_contacts", "forward_last_messages",
             "get_users_chats", "get_chat_active_users", "reply_to_message",
             "copy_message_to_chat", "search_links", "get_chat_stats", "smart_flow",
+            "ban_user", "unban_user", "kick_user", "mute_user", "unmute_user",
+            "promote_user", "demote_user", "warn_user", "delete_user_messages",
+            "get_moderation_capabilities", "block_user", "unblock_user",
+            "mark_chat_read", "join_chat", "leave_chat", "invite_user_to_chat",
+            "set_chat_title", "set_chat_about", "purge_chat_messages",
+            "restrict_user_media", "unrestrict_user_media",
         ]
         return {action: self._tool_dispatch_legacy for action in actions}
 
@@ -5367,7 +6220,30 @@ class QwenCLI(loader.Module):
         custom_prompt = (self.config["system_instruction"] or "").strip()
         if custom_prompt:
             parts.append(custom_prompt)
+        parts.append(
+            "БАЗОВЫЕ ПРАВИЛА ОТВЕТА:\n"
+            "1) Если пользователь просит обычный ответ/объяснение/анализ — отвечай текстом, БЕЗ tools.\n"
+            "2) execute_telegram_action используй только когда пользователь просит СДЕЛАТЬ действие в Telegram.\n"
+            "3) Если не уверен, что нужно действие — не запускай tools.\n"
+            "4) Никогда не отправляй сообщения в избранное/ЛС/другие чаты без явной просьбы."
+        )
+        if self.config["allow_tg_tools"]:
+            parts.append(self.toolsref())
+        else:
+            parts.append("Telegram tools отключены: никаких tool-call.")
         return "\n\n".join(part for part in parts if part).strip() or None
+
+    def toolsref(self) -> str:
+        actions = sorted(self.tools_registry.keys())
+        chunks = ", ".join(actions)
+        return (
+            "TELEGRAM TOOL ACTIONS (актуальный список):\n"
+            f"{chunks}\n"
+            "Используй tools ТОЛЬКО если пользователь просит действие в Telegram.\n"
+            "Если запрос аналитический/обычный текстовый — tools не используй.\n"
+            "Для обычного вопроса всегда приоритет у текстового ответа.\n"
+            "Для опасных действий передавай confirm=true."
+        )
 
     async def _compose_impersonation_system_prompt(self, chat_id: int) -> str:
         my_name = get_display_name(self.me)
@@ -6708,12 +7584,16 @@ class QwenCLI(loader.Module):
                     "callback": self._clear_callback,
                     "args": (chat_id,),
                     "icon_custom_emoji_id": "6007942490076745785",
+                    "color": "green",
+                    "style": "success",
                 },
                 {
                     "text": self.strings["btn_regenerate"],
                     "callback": self._regenerate_callback,
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5404857686477015710",
+                    "color": "blue",
+                    "style": "primary",
                 },
             ]
         ]
@@ -6728,6 +7608,8 @@ class QwenCLI(loader.Module):
                     "callback": self._stop_request_callback,
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5350470691701407492",
+                    "color": "red",
+                    "style": "danger",
                 }
             ]
         ]
