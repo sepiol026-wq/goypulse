@@ -657,7 +657,7 @@ class QwenCLI(loader.Module):
         """— production-статус runtime, лимитов и safety-параметров."""
         await self._sync_runtime_config()
         ready, _ = await self._get_qwen_status_for_runtime()
-        runtime = await self._resolve_runtime_paths()
+        runtime_dir = self._get_user_qwen_dir()
         lines = [self.strings["prod_status_title"]]
         lines.append(self.strings["prod_status_line"].format("version", ".".join(map(str, __version__))))
         lines.append(self.strings["prod_status_line"].format("qwen_ready", "yes" if ready else "no"))
@@ -672,7 +672,7 @@ class QwenCLI(loader.Module):
         )
         lines.append(
             self.strings["prod_status_line"].format(
-                "runtime_dir", utils.escape_html(runtime.get("qwen_home") or "-")
+                "runtime_dir", utils.escape_html(runtime_dir or "-")
             )
         )
         await self._answer_html(message, "\n".join(lines))
