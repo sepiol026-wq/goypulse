@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 1)
+__version__ = (1, 2, 2)
 
 import asyncio
 import contextlib
@@ -106,6 +106,8 @@ DB_MEMORY_DISABLED_KEY = "qwencli_memory_disabled_chats"
 QWEN_TIMEOUT = 300
 QWEN_STARTUP_TIMEOUT = 20
 QWEN_STREAM_BUFFER_LIMIT = 120
+QWEN_STATUS_UPDATE_INTERVAL_DEFAULT = 2.0
+QWEN_STATUS_UPDATE_INTERVAL_STREAMING = 1.25
 QWEN_MAX_HISTORY_MESSAGES = 16
 QWEN_MAX_HISTORY_ENTRY_CHARS = 1200
 QWEN_MAX_PROMPT_TEXT_CHARS = 12000
@@ -1592,11 +1594,7 @@ class QwenCLI(loader.Module):
                         base_message_id=base_message_id,
                     )
 
-            if (
-                not impersonation_mode
-                and not regeneration
-                
-            ):
+            if not impersonation_mode:
                 await _show_embedded_tool_status("fast_track_auto", 1, 1)
                 fast_track_text = await self._try_auto_action(chat_id, original_task_text)
                 if fast_track_text:
@@ -4506,12 +4504,17 @@ class QwenCLI(loader.Module):
             elif event_type == "content_block_delta":
                 delta = event.get("delta") or {}
                 delta_type = (delta.get("type") or "").strip()
-                if "thinking" in delta_type:
+                delta_text = (
+                    delta.get("thinking")
+                    or delta.get("reasoning_content")
+                    or delta.get("text")
+                    or delta.get("content")
+                    or delta.get("delta")
+                    or ""
+                )
+                if "thinking" in delta_type or "reasoning" in delta_type:
                     thought_part = (
-                        delta.get("thinking")
-                        or delta.get("text")
-                        or delta.get("delta")
-                        or ""
+                        delta_text
                     )
                     if thought_part:
                         state["thought_events"] += 1
@@ -4520,6 +4523,13 @@ class QwenCLI(loader.Module):
                         state["thought_stream"] = self._append_status_stream(
                             state.get("thought_stream", ""), thought_part, limit=220
                         )
+                elif delta_type == "text_delta" and delta_text and state.get("phase") in {
+                    "thinking",
+                    "writing answer",
+                }:
+                    state["thought_stream"] = self._append_status_stream(
+                        state.get("thought_stream", ""), delta_text, limit=220
+                    )
             elif event_type == "tool_progress":
                 state["phase"] = "running tool"
                 state["action_events"] += 1
@@ -4570,6 +4580,15 @@ class QwenCLI(loader.Module):
                     )
                     if tool_id:
                         state["tool_use_ids"][tool_id] = tool_name
+                elif block.get("type") == "thinking":
+                    thinking_text = block.get("thinking") or block.get("text") or ""
+                    if thinking_text:
+                        state["thought_events"] += 1
+                        state["phase"] = "thinking"
+                        state["last_activity"] = "assistant:thinking"
+                        state["thought_stream"] = self._append_status_stream(
+                            state.get("thought_stream", ""), thinking_text, limit=220
+                        )
             return
 
         if msg_type == "user":
@@ -4863,7 +4882,12 @@ class QwenCLI(loader.Module):
     ):
         now = asyncio.get_running_loop().time()
         text = self._format_qwen_status(state)
-        if not force and now - state["last_status_at"] < 2.0:
+        min_interval = (
+            QWEN_STATUS_UPDATE_INTERVAL_STREAMING
+            if state.get("phase") in {"thinking", "writing answer", "running tool"}
+            else QWEN_STATUS_UPDATE_INTERVAL_DEFAULT
+        )
+        if not force and now - state["last_status_at"] < min_interval:
             return
         if not force and text == state["last_status_text"]:
             return
