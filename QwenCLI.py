@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 0)
+__version__ = (1, 2, 2)
 
 import asyncio
 import contextlib
@@ -106,6 +106,8 @@ DB_MEMORY_DISABLED_KEY = "qwencli_memory_disabled_chats"
 QWEN_TIMEOUT = 300
 QWEN_STARTUP_TIMEOUT = 20
 QWEN_STREAM_BUFFER_LIMIT = 120
+QWEN_STATUS_UPDATE_INTERVAL_DEFAULT = 2.0
+QWEN_STATUS_UPDATE_INTERVAL_STREAMING = 1.25
 QWEN_MAX_HISTORY_MESSAGES = 16
 QWEN_MAX_HISTORY_ENTRY_CHARS = 1200
 QWEN_MAX_PROMPT_TEXT_CHARS = 12000
@@ -209,13 +211,18 @@ class QwenCLI(loader.Module):
         "response_too_long": "Ответ был слишком длинным и отправлен файлом.",
         "qwen_files_only": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Qwen создал файлы. Отправляю их ниже.</b>",
         "qwen_file_caption": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Файл от Qwen:</b> <code>{}</code>",
-        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen active</b>{} · {}",
+        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen в работе</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
-        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> step <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}s</code>",
-        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> modes: {}",
-        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
-        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <code>{}</code>{}",
-        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> error: <code>{}</code>",
+        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}с</code>",
+        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> режимы: {}",
+        "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> токены: in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
+        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> инструмент: <code>{}</code>{}",
+        "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
+        "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> активность: <code>{}</code>",
+        "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> поток: символов <code>{}</code> · tools <code>{}</code>",
+        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> мысли: <code>{}</code>",
+        "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> действие: <code>{}</code>",
+        "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> ошибка: <code>{}</code>",
         "qwclear_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwclear [auto]</code>",
         "qwreset_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwreset [auto]</code>",
         "qwsend_usage": "ℹ️ Использование: .qwsend <@username/id> <текст>",
@@ -547,6 +554,8 @@ class QwenCLI(loader.Module):
                 await self._edit_processing_status(
                     status_msg,
                     f"{self.strings['processing']}\n\n" + "\n".join(warnings),
+                    chat_id=utils.get_chat_id(message),
+                    base_message_id=message.id,
                 )
         if not payload:
             return await self._answer_html(
@@ -1581,13 +1590,11 @@ class QwenCLI(loader.Module):
                     await self._edit_processing_status(
                         call or status_msg,
                         self._format_qwen_status(state),
+                        chat_id=chat_id,
+                        base_message_id=base_message_id,
                     )
 
-            if (
-                not impersonation_mode
-                and not regeneration
-                
-            ):
+            if not impersonation_mode:
                 await _show_embedded_tool_status("fast_track_auto", 1, 1)
                 fast_track_text = await self._try_auto_action(chat_id, original_task_text)
                 if fast_track_text:
@@ -4153,7 +4160,10 @@ class QwenCLI(loader.Module):
         if not auto and self._request_semaphore.locked() and status_entity is not None:
             with contextlib.suppress(Exception):
                 await self._edit_processing_status(
-                    status_entity, self.strings["queue_wait"]
+                    status_entity,
+                    self.strings["queue_wait"],
+                    chat_id=chat_id,
+                    base_message_id=(session.get("base_message_id") if session else None),
                 )
 
         await self._request_semaphore.acquire()
@@ -4436,6 +4446,12 @@ class QwenCLI(loader.Module):
             "tool_use_ids": {},
             "tool_used": False,
             "status_tags": list(status_tags or []),
+            "thought_events": 0,
+            "action_events": 0,
+            "last_activity": "boot",
+            "final_text_chars": 0,
+            "thought_stream": "",
+            "action_stream": "",
             "_sys_auth_ovf_strict": True,
             "_rt_sepiol_mode": "https://github.com/sepiol026-wq/",
         }
@@ -4452,6 +4468,7 @@ class QwenCLI(loader.Module):
 
         if msg_type == "system":
             state["phase"] = "starting"
+            state["last_activity"] = "system:init"
             return
 
         if msg_type == "stream_event":
@@ -4459,6 +4476,8 @@ class QwenCLI(loader.Module):
             event_type = event.get("type")
             if event_type == "message_start":
                 state["phase"] = "thinking"
+                state["thought_events"] += 1
+                state["last_activity"] = "assistant:message_start"
             elif event_type == "content_block_start":
                 block = event.get("content_block") or {}
                 block_type = block.get("type")
@@ -4466,16 +4485,69 @@ class QwenCLI(loader.Module):
                     state["phase"] = "running tool"
                     state["step"] += 1
                     state["tool_used"] = True
+                    state["action_events"] += 1
                     state["active_tool"] = block.get("name") or state["active_tool"]
+                    state["last_activity"] = (
+                        f"tool:start:{state['active_tool']}"[:96]
+                    )
+                    state["action_stream"] = self._short_status_text(
+                        f"tool_start:{state['active_tool']}"
+                    )
                 elif block_type == "text":
                     state["phase"] = "writing answer"
+                    state["thought_events"] += 1
+                    state["last_activity"] = "assistant:text_block"
                 elif block_type == "thinking":
                     state["phase"] = "thinking"
+                    state["thought_events"] += 1
+                    state["last_activity"] = "assistant:thinking_block"
+            elif event_type == "content_block_delta":
+                delta = event.get("delta") or {}
+                delta_type = (delta.get("type") or "").strip()
+                delta_text = (
+                    delta.get("thinking")
+                    or delta.get("reasoning_content")
+                    or delta.get("text")
+                    or delta.get("content")
+                    or delta.get("delta")
+                    or ""
+                )
+                if "thinking" in delta_type or "reasoning" in delta_type:
+                    thought_part = (
+                        delta_text
+                    )
+                    if thought_part:
+                        state["thought_events"] += 1
+                        state["phase"] = "thinking"
+                        state["last_activity"] = "assistant:thinking_delta"
+                        state["thought_stream"] = self._append_status_stream(
+                            state.get("thought_stream", ""), thought_part, limit=220
+                        )
+                elif delta_type == "text_delta" and delta_text and state.get("phase") in {
+                    "thinking",
+                    "writing answer",
+                }:
+                    state["thought_stream"] = self._append_status_stream(
+                        state.get("thought_stream", ""), delta_text, limit=220
+                    )
             elif event_type == "tool_progress":
                 state["phase"] = "running tool"
+                state["action_events"] += 1
+                state["last_activity"] = "tool:progress"
+                progress_data = (
+                    event.get("status")
+                    or event.get("message")
+                    or event.get("detail")
+                    or event.get("progress")
+                    or "progress"
+                )
+                state["action_stream"] = self._short_status_text(
+                    f"tool_progress:{progress_data}"
+                )
             elif event_type == "message_stop":
                 if state["phase"] != "completed":
                     state["phase"] = "thinking"
+                state["last_activity"] = "assistant:message_stop"
             return
 
         if msg_type == "assistant":
@@ -4485,6 +4557,14 @@ class QwenCLI(loader.Module):
             if blocks and all(block.get("type") == "text" for block in blocks):
                 state["phase"] = "writing answer"
                 state["final_text"] += self._extract_text_from_blocks(blocks)
+                state["final_text_chars"] = len(state["final_text"])
+                state["thought_events"] += 1
+                state["last_activity"] = "assistant:text"
+                state["thought_stream"] = self._append_status_stream(
+                    state.get("thought_stream", ""),
+                    self._extract_text_from_blocks(blocks),
+                    limit=220,
+                )
             for block in blocks:
                 if block.get("type") == "tool_use":
                     tool_name = block.get("name") or "tool"
@@ -4492,9 +4572,23 @@ class QwenCLI(loader.Module):
                     state["phase"] = "running tool"
                     state["step"] += 1
                     state["tool_used"] = True
+                    state["action_events"] += 1
                     state["active_tool"] = tool_name
+                    state["last_activity"] = f"tool:call:{tool_name}"[:96]
+                    state["action_stream"] = self._short_status_text(
+                        f"tool_call:{tool_name}"
+                    )
                     if tool_id:
                         state["tool_use_ids"][tool_id] = tool_name
+                elif block.get("type") == "thinking":
+                    thinking_text = block.get("thinking") or block.get("text") or ""
+                    if thinking_text:
+                        state["thought_events"] += 1
+                        state["phase"] = "thinking"
+                        state["last_activity"] = "assistant:thinking"
+                        state["thought_stream"] = self._append_status_stream(
+                            state.get("thought_stream", ""), thinking_text, limit=220
+                        )
             return
 
         if msg_type == "user":
@@ -4507,6 +4601,14 @@ class QwenCLI(loader.Module):
                     )
                     state["last_exit_code"] = 1 if block.get("is_error") else 0
                     state["phase"] = "thinking"
+                    state["action_events"] += 1
+                    state["thought_events"] += 1
+                    state["last_activity"] = (
+                        "tool:result:error" if block.get("is_error") else "tool:result:ok"
+                    )
+                    state["action_stream"] = self._short_status_text(
+                        state["last_activity"]
+                    )
             return
 
         if msg_type == "result":
@@ -4516,10 +4618,30 @@ class QwenCLI(loader.Module):
                 state["final_error"] = (
                     (payload.get("error") or {}).get("message") or "Unknown error"
                 ).strip()
+                state["last_activity"] = "result:error"
             else:
                 state["final_text"] = (
                     payload.get("result") or state["final_text"]
                 ).strip()
+                state["final_text_chars"] = len(state["final_text"])
+                state["last_activity"] = "result:ok"
+                if state["final_text"]:
+                    state["thought_stream"] = self._append_status_stream(
+                        state.get("thought_stream", ""),
+                        state["final_text"],
+                        limit=220,
+                    )
+
+    @staticmethod
+    def _short_status_text(text: str, limit: int = 96) -> str:
+        cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(cleaned) <= limit:
+            return cleaned or "—"
+        return f"{cleaned[: max(0, limit - 1)]}…"
+
+    def _append_status_stream(self, base: str, chunk: str, limit: int = 220) -> str:
+        merged = f"{base} {chunk}".strip() if base else str(chunk or "").strip()
+        return self._short_status_text(merged, limit=limit)
 
     def _apply_qwen_usage(self, state: dict, usage: dict):
         input_tokens = usage.get("input_tokens")
@@ -4726,12 +4848,31 @@ class QwenCLI(loader.Module):
             if state["final_error"]
             else ""
         )
+        trace_line = self.strings["qwen_status_trace"].format(
+            self._fmt_num(state.get("thought_events", 0)),
+            self._fmt_num(state.get("action_events", 0)),
+            self._fmt_num(state.get("thought_events", 0) + state.get("action_events", 0)),
+        )
+        activity_line = self.strings["qwen_status_activity"].format(
+            utils.escape_html(str(state.get("last_activity") or "idle"))
+        )
+        stream_line = self.strings["qwen_status_stream"].format(
+            self._fmt_num(state.get("final_text_chars") or len(state.get("final_text") or "")),
+            self._fmt_num(len(state.get("tool_use_ids") or {})),
+        )
+        thought_line = self.strings["qwen_status_thought"].format(
+            utils.escape_html(self._short_status_text(state.get("thought_stream") or state.get("phase") or "—", limit=180)),
+        )
+        action_line = self.strings["qwen_status_action"].format(
+            utils.escape_html(self._short_status_text(state.get("action_stream") or state.get("active_tool") or "—", limit=180))
+        )
         return (
             f"<blockquote>"
             f"{self.strings['qwen_status_title'].format(session_suffix, '<code>' + utils.escape_html(state.get('model', '')) + '</code>' if state.get('model') else '')}\n"
             f"{self.strings['qwen_status_phase'].format(phase_emoji, utils.escape_html(phase))} · "
             f"{self.strings['qwen_status_step'].format(state['step'], elapsed)}\n"
             f"{self.strings['qwen_status_tokens'].format(self._fmt_num(state['input_tokens']), cached_suffix, self._fmt_num(state['output_tokens']), self._fmt_num(state['total_tokens']))}"
+            f"\n{trace_line}\n{activity_line}\n{stream_line}\n{thought_line}\n{action_line}"
             f"{modes_line}{tool_line}{error_line}"
             f"</blockquote>"
         )
@@ -4741,7 +4882,12 @@ class QwenCLI(loader.Module):
     ):
         now = asyncio.get_running_loop().time()
         text = self._format_qwen_status(state)
-        if not force and now - state["last_status_at"] < 2.0:
+        min_interval = (
+            QWEN_STATUS_UPDATE_INTERVAL_STREAMING
+            if state.get("phase") in {"thinking", "writing answer", "running tool"}
+            else QWEN_STATUS_UPDATE_INTERVAL_DEFAULT
+        )
+        if not force and now - state["last_status_at"] < min_interval:
             return
         if not force and text == state["last_status_text"]:
             return
@@ -4849,8 +4995,13 @@ class QwenCLI(loader.Module):
                     return form
         return await self._answer_html(message, text, reply_markup=buttons)
 
-    async def _edit_processing_status(self, entity, text: str):
-        await self._edit_html(entity, text, reply_markup=None, link_preview=False)
+    async def _edit_processing_status(
+        self, entity, text: str, chat_id: int = None, base_message_id: int = None
+    ):
+        buttons = None
+        if self.config["interactive_buttons"] and chat_id is not None:
+            buttons = self._get_processing_buttons(chat_id, base_message_id)
+        await self._edit_html(entity, text, reply_markup=buttons, link_preview=False)
 
     def _resolve_entity_message_id(self, entity):
         if entity is None:
@@ -6708,12 +6859,16 @@ class QwenCLI(loader.Module):
                     "callback": self._clear_callback,
                     "args": (chat_id,),
                     "icon_custom_emoji_id": "6007942490076745785",
+                    "color": "green",
+                    "style": "success",
                 },
                 {
                     "text": self.strings["btn_regenerate"],
                     "callback": self._regenerate_callback,
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5404857686477015710",
+                    "color": "blue",
+                    "style": "primary",
                 },
             ]
         ]
@@ -6728,6 +6883,8 @@ class QwenCLI(loader.Module):
                     "callback": self._stop_request_callback,
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5350470691701407492",
+                    "color": "red",
+                    "style": "danger",
                 }
             ]
         ]
