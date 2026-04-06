@@ -2,7 +2,7 @@
 # meta developer: @qwertyiisme @samsepi0l_ovf
 # authors: @goy_ai
 # tester: @Fiftarir
-# Description: QwenCLI v2 — форк с AI-агентами, get_contacts, reviewer chain, авто-анализом и 33+ Telegram действиями.
+# Description: Qwen CLI для Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 #
 # --------------------------------------------------------------------------
@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 3)
+__version__ = (1, 2, 4)
 
 import asyncio
 import contextlib
@@ -104,6 +104,8 @@ DB_GAUTO_HISTORY_KEY = "qwencli_auto_conversations_v1\u200b"
 DB_IMPERSONATION_KEY = "qwencli_impersonation_chats"
 DB_PRESETS_KEY = "qwencli_prompt_presets"
 DB_MEMORY_DISABLED_KEY = "qwencli_memory_disabled_chats"
+DB_AUTOMOD_CHATS_KEY = "qwencli_automod_chats"
+DB_AUTOMOD_RULES_KEY = "qwencli_automod_rules"
 
 QWEN_TIMEOUT = 300
 QWEN_STARTUP_TIMEOUT = 20
@@ -288,6 +290,14 @@ class QwenCLI(loader.Module):
         "status_not_ready": "не готов",
         "prod_status_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI production status</b>",
         "prod_status_line": "• {}: <code>{}</code>",
+        "automod_usage": "<b>Использование:</b> <code>.qwamod on|off|status|rules &lt;текст&gt;|clear</code>",
+        "automod_only_groups": "⚠️ Automod работает только в группах/супергруппах.",
+        "automod_enabled": "✅ AI-модератор включен в этом чате.",
+        "automod_disabled": "✅ AI-модератор выключен в этом чате.",
+        "automod_rules_updated": "✅ Правила AI-модератора сохранены.",
+        "automod_rules_cleared": "✅ Правила AI-модератора очищены.",
+        "automod_status_on": "🛡 Automod: <b>ON</b>\nПравила:\n<blockquote>{}</blockquote>",
+        "automod_status_off": "🛡 Automod: <b>OFF</b>",
         "cfg_check_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI cfg-check</b>",
         "qwen_models_note": (
             "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Быстрый список моделей:</b>\n"
@@ -504,6 +514,10 @@ class QwenCLI(loader.Module):
         self.memory_disabled_chats = set()
         self.pager_cache = {}
         self._cfg_sync_cache = {}
+        self.automod_chats = set()
+        self.automod_rules = {}
+        self._automod_buffers = {}
+        self._automod_tasks = {}
         self._request_semaphore = asyncio.Semaphore(
             int(self.config["max_concurrent_requests"])
         )
@@ -536,6 +550,12 @@ class QwenCLI(loader.Module):
         )
         self.memory_disabled_chats = set(
             self.db.get(self.strings["name"], DB_MEMORY_DISABLED_KEY, [])
+        )
+        self.automod_chats = set(
+            self.db.get(self.strings["name"], DB_AUTOMOD_CHATS_KEY, [])
+        )
+        self.automod_rules = dict(
+            self.db.get(self.strings["name"], DB_AUTOMOD_RULES_KEY, {})
         )
         self._migrate_runtime_lists_to_config()
         self._request_semaphore = asyncio.Semaphore(
@@ -676,6 +696,44 @@ class QwenCLI(loader.Module):
             )
         )
         await self._answer_html(message, "\n".join(lines))
+
+    @loader.command()
+    async def qwamod(self, message: Message):
+        """on|off|status|rules <текст>|clear — AI автомодератор для группы."""
+        await self._sync_runtime_config()
+        chat_id = utils.get_chat_id(message)
+        if message.is_private:
+            return await self._answer_html(message, self.strings["automod_only_groups"])
+        args = utils.get_args_raw(message).strip()
+        if not args:
+            return await self._answer_html(message, self.strings["automod_usage"])
+        parts = args.split(maxsplit=1)
+        action = parts[0].lower()
+        payload = parts[1].strip() if len(parts) > 1 else ""
+        if action == "on":
+            self.automod_chats.add(chat_id)
+            self.db.set(self.strings["name"], DB_AUTOMOD_CHATS_KEY, list(sorted(self.automod_chats, key=str)))
+            return await self._answer_html(message, self.strings["automod_enabled"])
+        if action == "off":
+            self.automod_chats.discard(chat_id)
+            self.db.set(self.strings["name"], DB_AUTOMOD_CHATS_KEY, list(sorted(self.automod_chats, key=str)))
+            return await self._answer_html(message, self.strings["automod_disabled"])
+        if action == "rules":
+            if not payload:
+                return await self._answer_html(message, self.strings["automod_usage"])
+            self.automod_rules[str(chat_id)] = payload[:4000]
+            self.db.set(self.strings["name"], DB_AUTOMOD_RULES_KEY, self.automod_rules)
+            return await self._answer_html(message, self.strings["automod_rules_updated"])
+        if action == "clear":
+            self.automod_rules.pop(str(chat_id), None)
+            self.db.set(self.strings["name"], DB_AUTOMOD_RULES_KEY, self.automod_rules)
+            return await self._answer_html(message, self.strings["automod_rules_cleared"])
+        if action == "status":
+            if chat_id not in self.automod_chats:
+                return await self._answer_html(message, self.strings["automod_status_off"])
+            rules = utils.escape_html(self.automod_rules.get(str(chat_id), "— не заданы —"))
+            return await self._answer_html(message, self.strings["automod_status_on"].format(rules))
+        return await self._answer_html(message, self.strings["automod_usage"])
 
     @loader.command()
     async def qwcfgcheck(self, message: Message):
@@ -1483,6 +1541,13 @@ class QwenCLI(loader.Module):
                 await message.reply("oh,tester")
             return
         cid = utils.get_chat_id(message)
+        if (
+            cid in self.automod_chats
+            and not message.is_private
+            and not message.out
+            and (getattr(message, "raw_text", None) or "").strip()
+        ):
+            await self._enqueue_automod_message(cid, message)
         if cid not in self.impersonation_chats:
             return
         if message.is_private and not self.config["auto_in_pm"]:
@@ -1523,6 +1588,143 @@ class QwenCLI(loader.Module):
                 await self.client.send_read_acknowledge(cid, message=message)
             await self._simulate_human_presence(cid, clean)
             await message.reply(clean)
+
+    async def _enqueue_automod_message(self, chat_id: int, message: Message):
+        bucket = self._automod_buffers.setdefault(chat_id, [])
+        bucket.append(message)
+        if len(bucket) > 25:
+            del bucket[:-25]
+        task = self._automod_tasks.get(chat_id)
+        if task and not task.done():
+            return
+        self._automod_tasks[chat_id] = asyncio.create_task(
+            self._run_automod_batch(chat_id)
+        )
+
+    async def _run_automod_batch(self, chat_id: int):
+        await asyncio.sleep(4.0)
+        items = list(self._automod_buffers.get(chat_id, []))
+        self._automod_buffers[chat_id] = []
+        if not items:
+            return
+        rules = (self.automod_rules.get(str(chat_id)) or "").strip()
+        if not rules:
+            return
+        text_rows = []
+        for msg in items[-20:]:
+            content = (getattr(msg, "raw_text", None) or getattr(msg, "text", None) or "").strip()
+            if not content:
+                continue
+            text_rows.append(
+                {
+                    "message_id": getattr(msg, "id", None),
+                    "sender_id": getattr(msg, "sender_id", None),
+                    "text": content[:700],
+                }
+            )
+        if not text_rows:
+            return
+        prompt = (
+            "Ты модератор Telegram чата. Тебе даны правила и пачка сообщений.\n"
+            "Возвращай СТРОГО JSON объект формата:\n"
+            '{"moderation":[{"message_id":123,"action":"none|delete|mute|ban|warn","reason":"кратко"}]}\n'
+            "Без markdown, без пояснений.\n\n"
+            f"ПРАВИЛА ЧАТА:\n{rules}\n\n"
+            f"СООБЩЕНИЯ:\n{json.dumps(text_rows, ensure_ascii=False)}"
+        )
+        try:
+            result = await self._run_qwen_request_guarded(
+                chat_id=chat_id,
+                payload={"text": prompt, "display_prompt": "automod_batch", "files": []},
+                system_prompt=self._compose_regular_system_prompt(),
+                auto=False,
+                history_override=[],
+                status_entity=None,
+            )
+            raw = (result.get("text") or "").strip()
+            parsed = self._extract_function_tool_call(raw) or self._extract_json_object_fallback(raw)
+            if not isinstance(parsed, dict):
+                return
+            decisions = parsed.get("moderation") or []
+            if not isinstance(decisions, list):
+                return
+            for item in decisions[:20]:
+                if not isinstance(item, dict):
+                    continue
+                action = str(item.get("action") or "none").strip().lower()
+                if action in {"none", "allow", "ok"}:
+                    continue
+                mid = item.get("message_id")
+                reason = str(item.get("reason") or "Нарушение правил чата.").strip()[:220]
+                if not await self._can_apply_moderation_action(chat_id, action):
+                    continue
+                if action == "delete" and mid:
+                    with contextlib.suppress(Exception):
+                        await self.client.delete_messages(chat_id, [int(mid)])
+                elif action == "mute":
+                    sender_id = next((x.get("sender_id") for x in text_rows if x.get("message_id") == mid), None)
+                    if sender_id:
+                        await self._execute_telegram_tool(
+                            chat_id,
+                            json.dumps({"action": "mute_user", "target_user": sender_id, "seconds": 3600, "confirm": True}, ensure_ascii=False),
+                        )
+                elif action == "ban":
+                    sender_id = next((x.get("sender_id") for x in text_rows if x.get("message_id") == mid), None)
+                    if sender_id:
+                        await self._execute_telegram_tool(
+                            chat_id,
+                            json.dumps({"action": "ban_user", "target_user": sender_id, "confirm": True}, ensure_ascii=False),
+                        )
+                target_msg = None
+                with contextlib.suppress(Exception):
+                    if mid:
+                        target_msg = await self.client.get_messages(chat_id, ids=int(mid))
+                mention = ""
+                if target_msg and getattr(target_msg, "sender_id", None):
+                    mention = f"<a href='tg://user?id={int(target_msg.sender_id)}'>пользователь</a>, "
+                with contextlib.suppress(Exception):
+                    await self.client.send_message(
+                        chat_id,
+                        f"<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> <b>AI-модератор:</b> {mention}{utils.escape_html(reason)}",
+                        parse_mode="html",
+                        reply_to=getattr(target_msg, "id", None),
+                    )
+        except Exception:
+            logger.exception("automod batch failed chat=%s", chat_id)
+        finally:
+            self._automod_tasks.pop(chat_id, None)
+
+    def _extract_json_object_fallback(self, raw_text: str):
+        text = (raw_text or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()[1:]
+            while lines and lines[-1].strip().startswith("```"):
+                lines.pop()
+            text = "\n".join(lines).strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        with contextlib.suppress(Exception):
+            obj = json.loads(text[start : end + 1])
+            if isinstance(obj, dict):
+                return obj
+        return None
+
+    async def _can_apply_moderation_action(self, chat_id: int, action: str) -> bool:
+        with contextlib.suppress(Exception):
+            entity = await self.client.get_entity(chat_id)
+            if getattr(entity, "creator", False):
+                return True
+            rights = getattr(entity, "admin_rights", None)
+            if not rights:
+                return False
+            if action in {"delete", "warn"}:
+                return bool(getattr(rights, "delete_messages", False))
+            if action in {"mute", "ban"}:
+                return bool(getattr(rights, "ban_users", False))
+            return bool(getattr(rights, "delete_messages", False) or getattr(rights, "ban_users", False))
+        return False
 
     async def _send_request(
         self,
@@ -5966,7 +6168,18 @@ class QwenCLI(loader.Module):
         custom_prompt = (self.config["system_instruction"] or "").strip()
         if custom_prompt:
             parts.append(custom_prompt)
+        if self.config["allow_tg_tools"]:
+            parts.append(self._build_tools_reference_prompt())
         return "\n\n".join(part for part in parts if part).strip() or None
+
+    def _build_tools_reference_prompt(self) -> str:
+        actions = sorted(self.tools_registry.keys())
+        chunks = ", ".join(actions)
+        return (
+            "TELEGRAM TOOL ACTIONS (актуальный список, используй execute_telegram_action):\n"
+            f"{chunks}\n"
+            "Для опасных действий передавай confirm=true."
+        )
 
     async def _compose_impersonation_system_prompt(self, chat_id: int) -> str:
         my_name = get_display_name(self.me)
