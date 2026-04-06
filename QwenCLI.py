@@ -48,7 +48,7 @@ import tempfile
 import uuid
 import zipfile
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from hashlib import sha256
 from urllib import error as urllib_error
@@ -2382,6 +2382,39 @@ class QwenCLI(loader.Module):
                 "smartflow": "smart_flow",
                 "orchestrate": "smart_flow",
                 "autopipeline": "smart_flow",
+                "ban": "ban_user",
+                "banuser": "ban_user",
+                "blockuser": "ban_user",
+                "blacklist": "ban_user",
+                "blacklistuser": "ban_user",
+                "kick": "kick_user",
+                "kickuser": "kick_user",
+                "removeuser": "kick_user",
+                "unban": "unban_user",
+                "unbanuser": "unban_user",
+                "unblockuser": "unban_user",
+                "mute": "mute_user",
+                "muteuser": "mute_user",
+                "readonly": "mute_user",
+                "silenceuser": "mute_user",
+                "unmute": "unmute_user",
+                "unmuteuser": "unmute_user",
+                "promote": "promote_user",
+                "promoteuser": "promote_user",
+                "makeadmin": "promote_user",
+                "demote": "demote_user",
+                "demoteuser": "demote_user",
+                "removeadmin": "demote_user",
+                "warn": "warn_user",
+                "warnuser": "warn_user",
+                "delusermessages": "delete_user_messages",
+                "deleteusermessages": "delete_user_messages",
+                "clearusermessages": "delete_user_messages",
+                "purgeuser": "delete_user_messages",
+                "modhelp": "get_moderation_capabilities",
+                "moderationhelp": "get_moderation_capabilities",
+                "modcaps": "get_moderation_capabilities",
+                "chatmod": "get_moderation_capabilities",
             }
             action = aliases.get(action, action)
             if not action:
@@ -3882,6 +3915,227 @@ class QwenCLI(loader.Module):
                         "unique_senders": len(unique_users),
                         "text_messages": text_count,
                         "media_messages": media_count,
+                    }
+                )
+
+            if action in {
+                "ban_user",
+                "unban_user",
+                "kick_user",
+                "mute_user",
+                "unmute_user",
+                "promote_user",
+                "demote_user",
+                "warn_user",
+                "delete_user_messages",
+            }:
+                target_chat = tool_data.get("target_chat") or chat_id
+                entity = await _resolve_target_entity(target_chat, chat_id)
+                target_user = (
+                    tool_data.get("target_user")
+                    or tool_data.get("user")
+                    or tool_data.get("user_id")
+                    or tool_data.get("username")
+                    or tool_data.get("target")
+                )
+                if not target_user:
+                    replied = await _get_replied_sender_from_request()
+                    if replied:
+                        target_user = replied.get("id") or replied.get("username")
+                if not target_user:
+                    return _err("missing target_user/user_id/username or reply context")
+                user_entity = await _resolve_target_entity(target_user, chat_id)
+                user_id = getattr(user_entity, "id", target_user)
+
+                if action == "ban_user":
+                    await self.client.edit_permissions(
+                        entity, user_entity, view_messages=False
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "banned",
+                        }
+                    )
+
+                if action == "unban_user":
+                    await self.client.edit_permissions(
+                        entity,
+                        user_entity,
+                        view_messages=True,
+                        send_messages=True,
+                        send_media=True,
+                        send_stickers=True,
+                        send_gifs=True,
+                        send_games=True,
+                        send_inline=True,
+                        send_polls=True,
+                        embed_link_previews=True,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "unbanned",
+                        }
+                    )
+
+                if action == "kick_user":
+                    await self.client.kick_participant(entity, user_entity)
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "kicked",
+                        }
+                    )
+
+                if action == "mute_user":
+                    mute_seconds = int(tool_data.get("seconds") or tool_data.get("duration") or 3600)
+                    until = (
+                        datetime.utcnow() + timedelta(seconds=max(30, min(31536000, mute_seconds)))
+                    )
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_messages=False, until_date=until
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "muted",
+                            "seconds": mute_seconds,
+                        }
+                    )
+
+                if action == "unmute_user":
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_messages=True
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "unmuted",
+                        }
+                    )
+
+                if action == "promote_user":
+                    await self.client.edit_admin(
+                        entity,
+                        user_entity,
+                        change_info=bool(tool_data.get("change_info", True)),
+                        delete_messages=bool(tool_data.get("delete_messages", True)),
+                        ban_users=bool(tool_data.get("ban_users", True)),
+                        invite_users=bool(tool_data.get("invite_users", True)),
+                        pin_messages=bool(tool_data.get("pin_messages", True)),
+                        manage_call=bool(tool_data.get("manage_call", True)),
+                        is_admin=True,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "promoted",
+                        }
+                    )
+
+                if action == "demote_user":
+                    await self.client.edit_admin(
+                        entity,
+                        user_entity,
+                        change_info=False,
+                        delete_messages=False,
+                        ban_users=False,
+                        invite_users=False,
+                        pin_messages=False,
+                        manage_call=False,
+                        is_admin=False,
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "status": "demoted",
+                        }
+                    )
+
+                if action == "warn_user":
+                    warn_text = (
+                        str(tool_data.get("text") or "").strip()
+                        or "⚠️ Предупреждение от модерации чата."
+                    )
+                    mention = f"[user](tg://user?id={user_id})"
+                    sent = await self.client.send_message(
+                        entity,
+                        f"{mention}\n{warn_text}",
+                        parse_mode="md",
+                    )
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "warn_message_id": getattr(sent, "id", None),
+                        }
+                    )
+
+                if action == "delete_user_messages":
+                    limit = _normalize_limit(
+                        tool_data.get("limit", 50), default=50, maximum=500
+                    )
+                    deleted_ids = []
+                    async for msg in self.client.iter_messages(entity, limit=2000):
+                        if getattr(msg, "sender_id", None) == user_id:
+                            deleted_ids.append(getattr(msg, "id", None))
+                            if len(deleted_ids) >= limit:
+                                break
+                    if deleted_ids:
+                        await self.client.delete_messages(entity, deleted_ids)
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": user_id,
+                            "deleted": len(deleted_ids),
+                            "limit": limit,
+                        }
+                    )
+
+            if action == "get_moderation_capabilities":
+                capabilities = [
+                    "ban_user", "unban_user", "kick_user", "mute_user", "unmute_user",
+                    "promote_user", "demote_user", "warn_user", "delete_user_messages",
+                    "delete_messages", "pin_message", "unpin_message", "reply_to_message",
+                    "search_messages", "search_participants", "get_chat_admins", "get_chat_info",
+                ]
+                extra_aliases = [
+                    "ban", "banuser", "blockuser", "blacklist", "kick", "kickuser",
+                    "removeuser", "unban", "unbanuser", "unblockuser", "mute",
+                    "muteuser", "readonly", "silenceuser", "unmute", "unmuteuser",
+                    "promote", "promoteuser", "makeadmin", "demote", "demoteuser",
+                    "removeadmin", "warn", "warnuser", "deleteusermessages",
+                    "clearusermessages", "purgeuser", "modhelp", "moderationhelp",
+                    "modcaps", "chatmod", "send", "sendmessage", "send-msg",
+                    "sendbulk", "bulksend", "batch", "multiaction", "reactmessage",
+                    "readhistory", "getdialogs", "getparticipants", "getuserinfo",
+                    "getchatinfo", "messagelast", "reactionlast", "mentionuser",
+                    "deletelastmessage", "findmessages", "searchlinks",
+                    "getchatstats", "forwardlastmessages", "commonchats",
+                ]
+                return _ok(
+                    {
+                        "action": action,
+                        "capabilities_count": len(capabilities) + len(extra_aliases),
+                        "moderation_actions": capabilities,
+                        "aliases": extra_aliases,
                     }
                 )
 
@@ -5479,6 +5733,9 @@ class QwenCLI(loader.Module):
             "get_recent_media", "get_chat_admins", "get_contacts", "forward_last_messages",
             "get_users_chats", "get_chat_active_users", "reply_to_message",
             "copy_message_to_chat", "search_links", "get_chat_stats", "smart_flow",
+            "ban_user", "unban_user", "kick_user", "mute_user", "unmute_user",
+            "promote_user", "demote_user", "warn_user", "delete_user_messages",
+            "get_moderation_capabilities",
         ]
         return {action: self._tool_dispatch_legacy for action in actions}
 
