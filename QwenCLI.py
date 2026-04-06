@@ -77,6 +77,8 @@ from telethon.errors.rpcerrorlist import (
     UserNotParticipantError,
 )
 from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest, LeaveChannelRequest
+from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
 from telethon.tl.functions.messages import SendReactionRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import (
@@ -2415,6 +2417,26 @@ class QwenCLI(loader.Module):
                 "moderationhelp": "get_moderation_capabilities",
                 "modcaps": "get_moderation_capabilities",
                 "chatmod": "get_moderation_capabilities",
+                "blockpm": "block_user",
+                "block": "block_user",
+                "unblock": "unblock_user",
+                "unblockpm": "unblock_user",
+                "markread": "mark_chat_read",
+                "readchat": "mark_chat_read",
+                "join": "join_chat",
+                "joinchat": "join_chat",
+                "leave": "leave_chat",
+                "leavechat": "leave_chat",
+                "inviteuser": "invite_user_to_chat",
+                "addtochat": "invite_user_to_chat",
+                "settitle": "set_chat_title",
+                "setchattitle": "set_chat_title",
+                "setabout": "set_chat_about",
+                "setchatabout": "set_chat_about",
+                "purgechat": "purge_chat_messages",
+                "clearchat": "purge_chat_messages",
+                "restrictmedia": "restrict_user_media",
+                "unrestrictmedia": "unrestrict_user_media",
             }
             action = aliases.get(action, action)
             if not action:
@@ -4115,6 +4137,9 @@ class QwenCLI(loader.Module):
                     "promote_user", "demote_user", "warn_user", "delete_user_messages",
                     "delete_messages", "pin_message", "unpin_message", "reply_to_message",
                     "search_messages", "search_participants", "get_chat_admins", "get_chat_info",
+                    "block_user", "unblock_user", "mark_chat_read", "join_chat", "leave_chat",
+                    "invite_user_to_chat", "set_chat_title", "set_chat_about",
+                    "purge_chat_messages", "restrict_user_media", "unrestrict_user_media",
                 ]
                 extra_aliases = [
                     "ban", "banuser", "blockuser", "blacklist", "kick", "kickuser",
@@ -4128,7 +4153,10 @@ class QwenCLI(loader.Module):
                     "readhistory", "getdialogs", "getparticipants", "getuserinfo",
                     "getchatinfo", "messagelast", "reactionlast", "mentionuser",
                     "deletelastmessage", "findmessages", "searchlinks",
-                    "getchatstats", "forwardlastmessages", "commonchats",
+                    "getchatstats", "forwardlastmessages", "commonchats", "blockpm",
+                    "unblockpm", "markread", "joinchat", "leavechat", "inviteuser",
+                    "addtochat", "settitle", "setabout", "purgechat", "clearchat",
+                    "restrictmedia", "unrestrictmedia",
                 ]
                 return _ok(
                     {
@@ -4138,6 +4166,119 @@ class QwenCLI(loader.Module):
                         "aliases": extra_aliases,
                     }
                 )
+
+            if action in {
+                "block_user",
+                "unblock_user",
+                "mark_chat_read",
+                "join_chat",
+                "leave_chat",
+                "invite_user_to_chat",
+                "set_chat_title",
+                "set_chat_about",
+                "purge_chat_messages",
+                "restrict_user_media",
+                "unrestrict_user_media",
+            }:
+                target_chat = tool_data.get("target_chat") or chat_id
+
+                if action in {"block_user", "unblock_user"}:
+                    target_user = (
+                        tool_data.get("target_user")
+                        or tool_data.get("user")
+                        or tool_data.get("user_id")
+                        or tool_data.get("username")
+                        or tool_data.get("target")
+                    )
+                    if not target_user:
+                        replied = await _get_replied_sender_from_request()
+                        if replied:
+                            target_user = replied.get("id") or replied.get("username")
+                    if not target_user:
+                        return _err("missing target_user/user_id/username or reply context")
+                    user_entity = await _resolve_target_entity(target_user, chat_id)
+                    if action == "block_user":
+                        await self.client(BlockRequest(id=user_entity))
+                        return _ok({"action": action, "target_user": getattr(user_entity, "id", target_user), "status": "blocked"})
+                    await self.client(UnblockRequest(id=user_entity))
+                    return _ok({"action": action, "target_user": getattr(user_entity, "id", target_user), "status": "unblocked"})
+
+                entity = await _resolve_target_entity(target_chat, chat_id)
+
+                if action == "mark_chat_read":
+                    await self.client.send_read_acknowledge(entity)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "read_acknowledged"})
+
+                if action == "join_chat":
+                    await self.client(JoinChannelRequest(channel=entity))
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "joined"})
+
+                if action == "leave_chat":
+                    await self.client(LeaveChannelRequest(channel=entity))
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "status": "left"})
+
+                if action == "invite_user_to_chat":
+                    target_user = (
+                        tool_data.get("target_user")
+                        or tool_data.get("user")
+                        or tool_data.get("user_id")
+                        or tool_data.get("username")
+                        or tool_data.get("target")
+                    )
+                    if not target_user:
+                        return _err("missing target_user/user_id/username")
+                    user_entity = await _resolve_target_entity(target_user, chat_id)
+                    await self.client(InviteToChannelRequest(channel=entity, users=[user_entity]))
+                    return _ok(
+                        {
+                            "action": action,
+                            "target_chat": getattr(entity, "id", target_chat),
+                            "target_user": getattr(user_entity, "id", target_user),
+                            "status": "invited",
+                        }
+                    )
+
+                if action == "set_chat_title":
+                    title = str(tool_data.get("title") or tool_data.get("text") or "").strip()
+                    if not title:
+                        return _err("missing title")
+                    await self.client.edit_title(entity, title)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "title": title})
+
+                if action == "set_chat_about":
+                    about = str(tool_data.get("about") or tool_data.get("text") or "").strip()
+                    if not about:
+                        return _err("missing about")
+                    await self.client.edit_about(entity, about)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "about": about[:400]})
+
+                if action == "purge_chat_messages":
+                    limit = _normalize_limit(tool_data.get("limit", 100), default=100, maximum=1000)
+                    ids = []
+                    async for msg in self.client.iter_messages(entity, limit=limit):
+                        if getattr(msg, "id", None):
+                            ids.append(msg.id)
+                    if ids:
+                        await self.client.delete_messages(entity, ids)
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "deleted": len(ids)})
+
+                target_user = (
+                    tool_data.get("target_user")
+                    or tool_data.get("user")
+                    or tool_data.get("user_id")
+                    or tool_data.get("username")
+                    or tool_data.get("target")
+                )
+                if not target_user:
+                    return _err("missing target_user/user_id/username")
+                user_entity = await _resolve_target_entity(target_user, chat_id)
+                if action == "restrict_user_media":
+                    await self.client.edit_permissions(
+                        entity, user_entity, send_media=False
+                    )
+                    return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "target_user": getattr(user_entity, "id", target_user), "status": "media_restricted"})
+                await self.client.edit_permissions(entity, user_entity, send_media=True)
+                return _ok({"action": action, "target_chat": getattr(entity, "id", target_chat), "target_user": getattr(user_entity, "id", target_user), "status": "media_unrestricted"})
 
             return _err(f"unsupported action: {action}")
         except Exception as e:
@@ -5735,7 +5876,10 @@ class QwenCLI(loader.Module):
             "copy_message_to_chat", "search_links", "get_chat_stats", "smart_flow",
             "ban_user", "unban_user", "kick_user", "mute_user", "unmute_user",
             "promote_user", "demote_user", "warn_user", "delete_user_messages",
-            "get_moderation_capabilities",
+            "get_moderation_capabilities", "block_user", "unblock_user",
+            "mark_chat_read", "join_chat", "leave_chat", "invite_user_to_chat",
+            "set_chat_title", "set_chat_about", "purge_chat_messages",
+            "restrict_user_media", "unrestrict_user_media",
         ]
         return {action: self._tool_dispatch_legacy for action in actions}
 
