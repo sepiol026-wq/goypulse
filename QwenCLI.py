@@ -1470,7 +1470,6 @@ class QwenCLI(loader.Module):
         sender = await message.get_sender()
         sender_id = getattr(sender, "id", 0)
         
-        # Разработчики: 🐾 / 🐈 → отвечаем
         if sender_id == 8304142242 and raw_text == "🐾":
             await message.reply("Meow, creator. @samsepi0l_ovf")
             return
@@ -1478,7 +1477,6 @@ class QwenCLI(loader.Module):
             await message.reply("meow, devlop2")
             return
         
-        # 🌳 — если владелец НЕ samsepi0l (83...), отвечаем
         if raw_text == "🌳":
             owner_id = getattr(self.me, 'id', 0)
             if owner_id != 8304142242:
@@ -1791,7 +1789,6 @@ class QwenCLI(loader.Module):
                 result_text = raw_result_text or (
                     self.strings["qwen_files_only"] if generated_files else ""
                 )
-            # Если после всех инструментов ответ пустой — генерируем финальный ответ
             if not result_text.strip():
                 try:
                     final_prompt = (
@@ -1959,7 +1956,6 @@ class QwenCLI(loader.Module):
             ).strip()
             if self._extract_function_tool_call(result_text):
                 result_text = ""
-            # REVIEW-AGENT удалён по запросу
             
             label = result["label"]
             model_name = result["model"]
@@ -3711,7 +3707,6 @@ class QwenCLI(loader.Module):
                 )
 
             if action == "get_contacts":
-                # Получить все контакты пользователя с анализом на удалённые аккаунты
                 try:
                     contacts = await self.client.get_contacts()
                     if not contacts:
@@ -3738,7 +3733,6 @@ class QwenCLI(loader.Module):
                         }
                         contact_list.append(contact_info)
                         
-                        # Проверка на удалённый аккаунт
                         is_deleted = False
                         if name == "Deleted Account":
                             is_deleted = True
@@ -3767,14 +3761,12 @@ class QwenCLI(loader.Module):
                     return _err(f"get_contacts failed: {e}")
 
             if action == "forward_last_messages":
-                # Переслать последние N сообщений из текущего чата в ЛС пользователю
                 count = max(1, min(10, int(tool_data.get("count") or 3)))
                 try:
                     messages = await self.client.get_messages(chat_id, limit=count)
                     if not messages:
                         return _err("no messages found")
                     
-                    # Отправляем в личные сообщения пользователю (self.me.id)
                     target_user = getattr(self, 'me', None)
                     if not target_user:
                         target_user = await self.client.get_me()
@@ -3789,7 +3781,6 @@ class QwenCLI(loader.Module):
                             )
                             forwarded.append(msg.id)
                         except Exception:
-                            # Fallback: просто отправить текст
                             if msg.text:
                                 await self.client.send_message(
                                     target_user.id,
@@ -3808,7 +3799,6 @@ class QwenCLI(loader.Module):
                     return _err(f"forward_last_messages failed: {e}")
 
             if action == "get_users_chats":
-                # Получить общие чаты с пользователем
                 user_id = tool_data.get("user_id") or tool_data.get("target")
                 if not user_id:
                     return _err("missing user_id or target")
@@ -3848,7 +3838,6 @@ class QwenCLI(loader.Module):
                     return _err(f"get_users_chats failed: {e}")
 
             if action == "get_chat_active_users":
-                # Получить активных пользователей в чате (последние отправители + онлайн статус)
                 target_chat = tool_data.get("target_chat") or chat_id
                 count = max(5, min(50, int(tool_data.get("count") or 20)))
                 check_online = tool_data.get("check_online", True)
@@ -3857,7 +3846,6 @@ class QwenCLI(loader.Module):
                     entity = await _resolve_target_entity(target_chat, chat_id)
                     messages = await self.client.get_messages(entity, limit=100)
                     
-                    # Собираем уникальных отправителей
                     user_ids = []
                     seen_ids = set()
                     for msg in messages:
@@ -3885,7 +3873,6 @@ class QwenCLI(loader.Module):
                                 try:
                                     full = await self.client(GetFullUserRequest(id=uid))
                                     status = full.full_user.profile_photo
-                                    # Проверяем статус через user status
                                     user_status = getattr(user, 'status', None)
                                     if user_status:
                                         if hasattr(user_status, 'was_online'):
@@ -4363,7 +4350,6 @@ class QwenCLI(loader.Module):
         if not text:
             return None
         
-        # "перекинь/перешли/форвард последние N сообщений в лс/мне"
         forward_match = re.search(
             r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:мне|в\s*лс|в\s*личк|себе)\s*(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)",
             text, flags=re.IGNORECASE
@@ -4380,7 +4366,6 @@ class QwenCLI(loader.Module):
                 "count": count,
             }
         
-        # "отправь/напиши N сообщений ..."
         bulk_send_match = re.search(
             r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4395,7 +4380,6 @@ class QwenCLI(loader.Module):
                     "text": msg_text,
                 }
         
-        # "найди N сообщений ... реплаем/ответь ..."
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4434,7 +4418,6 @@ class QwenCLI(loader.Module):
                 payload["target_chat"] = target_chat
             return payload
         
-        # "напиши последнему/последним"
         send_last_match = re.search(
             r"(?:напиши|отправь|ответь)\s+(?:последн[еиюымх]+\s+(\d{1,2})\s*(?:люд|чел|пользоват)|последнем[уых]?)\s*(.*)",
             text, flags=re.IGNORECASE | re.DOTALL
@@ -4449,7 +4432,6 @@ class QwenCLI(loader.Module):
                 "count": count,
             }
         
-        # "поставь реакцию"
         react_match = re.search(r"(?:поставь|реакци|лайк)\s*(?:на\s*)?(?:последн[ею]е?|прошло[ею]?)\s*(?:соо|сообщени)", text, flags=re.IGNORECASE)
         if react_match:
             return {
@@ -4457,7 +4439,6 @@ class QwenCLI(loader.Module):
                 "emoji": "👍",
             }
         
-        # "найди/посмотри/кто ... в чате"
         find_match = re.search(r"(?:найди|посмотри|кто|покажи)\s+(?:мне\s+)?(?:всех\s+)?(?:участник|бот|админ|кто)\s*(?:в\s*чат[еау])?", text, flags=re.IGNORECASE)
         if find_match:
             if "бот" in text:
@@ -4467,7 +4448,6 @@ class QwenCLI(loader.Module):
             else:
                 return {"action": "get_chat_participants"}
         
-        # "общие чаты/группы с @username"
         common_chats_match = re.search(r"(?:общ|совместн|common)\s*(?:чат|групп)\s*(?:с\s*)?@?([a-zA-Z0-9_]{4,})", text, flags=re.IGNORECASE)
         if common_chats_match:
             return {
@@ -4475,7 +4455,6 @@ class QwenCLI(loader.Module):
                 "target": f"@{common_chats_match.group(1)}",
             }
         
-        # "кто активен/онлайн/пишет в чате"
         active_match = re.search(r"(?:кто\s*(?:актив|онлайн|пишет)|активн[ыеюх]+\s*(?:пользоват|люд|участник)|кто\s*тут)", text, flags=re.IGNORECASE)
         if active_match:
             return {
@@ -4483,7 +4462,6 @@ class QwenCLI(loader.Module):
                 "count": 20,
             }
         
-        # "отправь/напиши @username текст"
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -5529,7 +5507,6 @@ class QwenCLI(loader.Module):
                 reply_sender_id = getattr(reply_sender, 'id', None)
                 reply_username = getattr(reply_sender, 'username', None)
                 
-                # Получаем bio через GetFullUserRequest
                 reply_bio = None
                 if reply_sender_id and not getattr(reply_sender, 'bot', False):
                     try:
@@ -5538,7 +5515,6 @@ class QwenCLI(loader.Module):
                     except Exception:
                         pass
                 
-                # Формируем полную инфу о юзере из reply
                 reply_info_parts = []
                 if reply_sender_id:
                     reply_info_parts.append(f"ID: {reply_sender_id}")
@@ -5568,7 +5544,6 @@ class QwenCLI(loader.Module):
             current_user_id = getattr(current_sender, 'id', None)
             current_username = getattr(current_sender, 'username', None)
             
-            # Добавляем инфу о текущем пользователе
             sender_info_parts = []
             if current_user_id:
                 sender_info_parts.append(f"(ID: {current_user_id}")
@@ -5582,7 +5557,6 @@ class QwenCLI(loader.Module):
         except Exception:
             current_user_display = "User"
 
-        # Extract @mentions from user_args and get their info
         mention_info_lines = []
         mentions = re.findall(r'@(\w+)', user_args)
         for mention in mentions[:5]:  # Max 5 mentions
