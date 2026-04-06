@@ -1628,10 +1628,15 @@ class QwenCLI(loader.Module):
             f"СООБЩЕНИЯ:\n{json.dumps(text_rows, ensure_ascii=False)}"
         )
         try:
+            amsys = (
+                "Ты AI-модератор. Анализируй только нарушения правил.\n"
+                "Строго запрещено использовать tools/function-calling/execute_telegram_action.\n"
+                "Верни только JSON moderation по заданному формату."
+            )
             result = await self._run_qwen_request_guarded(
                 chat_id=chat_id,
                 payload={"text": prompt, "display_prompt": "automod_batch", "files": []},
-                system_prompt=self._compose_regular_system_prompt(),
+                system_prompt=amsys,
                 auto=False,
                 history_override=[],
                 status_entity=None,
@@ -6217,6 +6222,8 @@ class QwenCLI(loader.Module):
         return (
             "TELEGRAM TOOL ACTIONS (актуальный список, используй execute_telegram_action):\n"
             f"{chunks}\n"
+            "Используй tools ТОЛЬКО если пользователь просит действие в Telegram.\n"
+            "Если запрос аналитический/обычный текстовый — tools не используй.\n"
             "Для опасных действий передавай confirm=true."
         )
 
