@@ -158,7 +158,6 @@ class QwenCLI(loader.Module):
         "cfg_auto_bootstrap_doc": "Автоматически пытаться установить локальные Node.js и Qwen CLI в user-space при отсутствии бинарника.",
         "cfg_resource_profile_doc": "Профиль расхода ресурсов: off, medium или max.",
         "cfg_allow_tg_tools_doc": "Разрешить выполнение Telegram tools (системные действия через execute_telegram_action).",
-        "cfg_thought_status_limit_doc": "Лимит счётчика мыслей в статусе. 0 — бесконечность (∞).",
         "qwen_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>qwen</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>qwen_path</code> в cfg.",
         "qwen_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen CLI не готов к работе.</b>\nНастройте авторизацию.",
         "qwen_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen OAuth не настроен.</b>\nЗапустите <code>.qwauth qwen</code> и подтвердите вход в браузере.",
@@ -219,7 +218,7 @@ class QwenCLI(loader.Module):
         "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
         "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> активность: <code>{}</code>",
         "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> поток: символов <code>{}</code> · tools <code>{}</code>",
-        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> [{}] мысли: <code>{}</code>",
+        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> мысли: <code>{}</code>",
         "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> действие: <code>{}</code>",
         "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> ошибка: <code>{}</code>",
         "qwclear_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwclear [auto]</code>",
@@ -475,12 +474,6 @@ class QwenCLI(loader.Module):
                 False,
                 self.strings["cfg_allow_tg_tools_doc"],
                 validator=loader.validators.Boolean(),
-            ),
-            loader.ConfigValue(
-                "thought_status_limit",
-                100,
-                self.strings["cfg_thought_status_limit_doc"],
-                validator=loader.validators.Integer(minimum=0, maximum=5000),
             ),
         )
         self.prompt_presets = []
@@ -4849,7 +4842,6 @@ class QwenCLI(loader.Module):
             self._fmt_num(len(state.get("tool_use_ids") or {})),
         )
         thought_line = self.strings["qwen_status_thought"].format(
-            f"{self._fmt_num(state.get('thought_events', 0))}/{self._format_status_limit_value(self.config.get('thought_status_limit', 100))}",
             utils.escape_html(self._short_status_text(state.get("thought_stream") or state.get("phase") or "—", limit=180)),
         )
         action_line = self.strings["qwen_status_action"].format(
@@ -4865,14 +4857,6 @@ class QwenCLI(loader.Module):
             f"{modes_line}{tool_line}{error_line}"
             f"</blockquote>"
         )
-
-    def _format_status_limit_value(self, limit_value) -> str:
-        with contextlib.suppress(Exception):
-            limit_num = int(limit_value)
-            if limit_num <= 0:
-                return "∞"
-            return self._fmt_num(limit_num)
-        return "∞"
 
     async def _update_qwen_status_message(
         self, entity, state: dict, force: bool = False
@@ -6852,6 +6836,7 @@ class QwenCLI(loader.Module):
                     "args": (chat_id,),
                     "icon_custom_emoji_id": "6007942490076745785",
                     "color": "green",
+                    "style": "success",
                 },
                 {
                     "text": self.strings["btn_regenerate"],
@@ -6859,6 +6844,7 @@ class QwenCLI(loader.Module):
                     "args": (base_message_id, chat_id),
                     "icon_custom_emoji_id": "5404857686477015710",
                     "color": "blue",
+                    "style": "primary",
                 },
             ]
         ]
