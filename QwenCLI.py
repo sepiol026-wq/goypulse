@@ -1917,7 +1917,11 @@ class QwenCLI(loader.Module):
                             candidate_text.lower(),
                         )
                     ):
-                        forced_tool = self._extract_direct_tool_from_text(original_task_text)
+                        forced_tool = (
+                            self._extract_direct_tool_from_text(original_task_text)
+                            if self.toolintent(original_task_text)
+                            else None
+                        )
                         if forced_tool:
                             tool_result = await self._execute_telegram_tool(
                                 chat_id,
@@ -2029,7 +2033,11 @@ class QwenCLI(loader.Module):
                     (result_text or "").lower(),
                 )
             ):
-                forced_tool = self._extract_direct_tool_from_text(original_task_text)
+                forced_tool = (
+                    self._extract_direct_tool_from_text(original_task_text)
+                    if self.toolintent(original_task_text)
+                    else None
+                )
                 if forced_tool:
                     tool_result = await self._execute_telegram_tool(
                         chat_id,
@@ -4679,11 +4687,11 @@ class QwenCLI(loader.Module):
         if not target:
             return None
         send_verb = re.search(r"(?:отправь|напиши)\s+(.+?)(?:\s+в\s+чат[:\s].*|\s+@[\w_]+|$)", text, flags=re.IGNORECASE | re.DOTALL)
-        message_text = ""
-        if send_verb:
-            message_text = send_verb.group(1).strip(" \n\t:;,")
+        if not send_verb:
+            return None
+        message_text = send_verb.group(1).strip(" \n\t:;,")
         if not message_text:
-            message_text = "привет"
+            return None
         return {
             "action": "send_message",
             "target_chat": target,
