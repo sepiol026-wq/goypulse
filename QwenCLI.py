@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 5)
+__version__ = (1, 2, 6)
 
 import asyncio
 import contextlib
@@ -128,7 +128,7 @@ class QwenRequestInterrupted(Exception):
 
 @loader.tds
 class QwenCLI(loader.Module):
-    """Qwen CLI для Heroku"""
+    """Qwen CLI for Heroku"""
 
     strings = {
         "name": "QwenCLI",
@@ -298,6 +298,63 @@ class QwenCLI(loader.Module):
         "resource_profile_current": "<b>Профиль ресурсов:</b> <code>{}</code>",
         "resource_profile_updated": "<b>Профиль ресурсов обновлен:</b> <code>{}</code>",
         "tg_tools_disabled_error": "telegram tools disabled by config (allow_tg_tools=False)",
+    }
+
+    strings_en = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332688668102525212>⌛️</tg-emoji> <b>Processing...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Waiting for a free execution slot...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Prompt:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5330529399064266580>✨</tg-emoji> <b>{}:</b>",
+        "qwen_auth_done": "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji> <b>Qwen OAuth authorized successfully.</b>",
+        "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Request canceled.</b>",
+        "memory_cleared": "<tg-emoji emoji-id=6007942490076745785>🧹</tg-emoji> <b>Dialogue memory cleared.</b>",
+    }
+
+    strings_ru = {
+        "name": "QwenCLI",
+    }
+
+    strings_uk = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332688668102525212>⌛️</tg-emoji> <b>Обробка...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Очікую вільний слот виконання...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Запит:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5330529399064266580>✨</tg-emoji> <b>{}:</b>",
+        "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Запит скасовано.</b>",
+    }
+
+    strings_de = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332688668102525212>⌛️</tg-emoji> <b>Verarbeitung...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Warte auf einen freien Ausführungsslot...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Anfrage:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5330529399064266580>✨</tg-emoji> <b>{}:</b>",
+        "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Anfrage abgebrochen.</b>",
+    }
+
+    strings_ja = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332688668102525212>⌛️</tg-emoji> <b>処理中...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>実行スロットの空きを待っています...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>リクエスト:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5330529399064266580>✨</tg-emoji> <b>{}:</b>",
+        "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>リクエストをキャンセルしました。</b>",
+    }
+
+    _PREMIUM_EMOJI_VARIANTS = {
+        "🌘": [("5456469226141288702", "🌘"), ("5456445642475866363", "🌘"), ("5456185569321195566", "🌘"), ("5458390360717824856", "🌘"), ("5458825419430070711", "🌘"), ("5458567764341985638", "🌘"), ("5456217626957091223", "🌘"), ("5456219770145771440", "🌘"), ("5458364749827839005", "🌘")],
+        "💬": [("5312103894875143512", "💬"), ("5348471079482441278", "💬")],
+        "🔘": [("5332615898471627914", "🔘")],
+        "🤔": [("5332655631214088416", "🤔")],
+        "💫": [("5332695273762223342", "💫")],
+        "❤️": [("5332695338186736828", "❤️")],
+        "💣": [("5411192398166396991", "💣")],
+        "🙏": [("5350773074578916842", "🙏")],
+        "✅": [("5330561907671727296", "✅"), ("5350572310627632617", "✅"), ("5350626672028697529", "✅")],
+        "🧠": [("5350445475948414299", "🧠"), ("5350837773966261947", "🛸")],
+        "🔗": [("5350695039318114023", "🔗"), ("5411527152212411235", "🔗")],
+        "⚙️": [("5348412779596365405", "⚙️"), ("5411236022149219263", "⚙️"), ("5409017826159656138", "⚙️"), ("5409076727341154520", "⚙️"), ("5409117246062625941", "⚙️")],
     }
 
     _PHASE_EMOJI = {
@@ -5423,21 +5480,22 @@ class QwenCLI(loader.Module):
     async def _answer_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
-        safe_text = self._safe_emoji_html(text)
+        themed_text = self._apply_premium_emoji_theme(text)
+        safe_text = self._safe_emoji_html(themed_text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
-                    text, reply_markup=reply_markup, parse_mode="html"
+                    themed_text, reply_markup=reply_markup, parse_mode="html"
                 )
             with contextlib.suppress(Exception):
                 return await entity.edit(
                     safe_text, reply_markup=reply_markup, parse_mode="html"
                 )
-            return await entity.edit(text, reply_markup=reply_markup)
+            return await entity.edit(themed_text, reply_markup=reply_markup)
         try:
             return await utils.answer(
                 entity,
-                text,
+                themed_text,
                 reply_markup=reply_markup,
                 parse_mode="html",
                 link_preview=link_preview,
@@ -5456,7 +5514,7 @@ class QwenCLI(loader.Module):
         if hasattr(entity, "edit"):
             with contextlib.suppress(Exception):
                 return await entity.edit(
-                    text,
+                    themed_text,
                     parse_mode="html",
                     link_preview=link_preview,
                     reply_markup=reply_markup,
@@ -5474,21 +5532,22 @@ class QwenCLI(loader.Module):
     async def _edit_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
-        safe_text = self._safe_emoji_html(text)
+        themed_text = self._apply_premium_emoji_theme(text)
+        safe_text = self._safe_emoji_html(themed_text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
-                    text=text, reply_markup=reply_markup, parse_mode="html"
+                    text=themed_text, reply_markup=reply_markup, parse_mode="html"
                 )
             with contextlib.suppress(Exception):
                 return await entity.edit(
                     text=safe_text, reply_markup=reply_markup, parse_mode="html"
                 )
-            return await entity.edit(text=text, reply_markup=reply_markup)
+            return await entity.edit(text=themed_text, reply_markup=reply_markup)
         if hasattr(entity, "edit"):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
-                    text,
+                    themed_text,
                     parse_mode="html",
                     link_preview=link_preview,
                     reply_markup=reply_markup,
@@ -5501,14 +5560,30 @@ class QwenCLI(loader.Module):
                         link_preview=link_preview,
                         reply_markup=reply_markup,
                     )
-                return await entity.edit(text=text, reply_markup=reply_markup)
+                return await entity.edit(text=themed_text, reply_markup=reply_markup)
         return await self._answer_html(
-            entity, text, reply_markup=reply_markup, link_preview=link_preview
+            entity, themed_text, reply_markup=reply_markup, link_preview=link_preview
         )
 
     @staticmethod
     def _safe_emoji_html(text: str) -> str:
         return re.sub(r"</?tg-emoji[^>]*>", "", str(text or ""))
+
+    def _apply_premium_emoji_theme(self, text: str) -> str:
+        def _replace(match: re.Match) -> str:
+            current = match.group(1)
+            variants = self._PREMIUM_EMOJI_VARIANTS.get(current)
+            if not variants:
+                return match.group(0)
+            emoji_id, glyph = random.choice(variants)
+            return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
+
+        return re.sub(
+            r"<tg-emoji[^>]*>(.*?)</tg-emoji>",
+            _replace,
+            str(text or ""),
+            flags=re.DOTALL,
+        )
 
     def _format_qwen_status(self, state: dict) -> str:
         elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
