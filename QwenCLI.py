@@ -28,7 +28,7 @@
 # https://opensource.org/licenses/MIT
 # --------------------------------------------------------------------------
 
-__version__ = (1, 2, 5)
+__version__ = (1, 2, 6)
 
 import asyncio
 import contextlib
@@ -300,8 +300,107 @@ class QwenCLI(loader.Module):
         "tg_tools_disabled_error": "telegram tools disabled by config (allow_tg_tools=False)",
     }
 
+    strings_en = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332695273762223342>💫</tg-emoji> <b>Processing...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Waiting for a free execution slot...</b>",
+        "bootstrap_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Preparing local Qwen CLI runtime...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Request:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5332695338186736828>❤️</tg-emoji> <b>{}:</b>",
+        "memory_status": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> [{}/{}]",
+        "status_title": "<tg-emoji emoji-id=5350695039318114023>🔗</tg-emoji> <b>Module status:</b>",
+        "status_set": "configured",
+        "status_missing": "not configured",
+        "status_ready": "ready",
+        "status_not_ready": "not ready",
+    }
+    strings_ru = {
+        "name": "QwenCLI",
+    }
+    strings_uk = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332695273762223342>💫</tg-emoji> <b>Обробка...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Очікую вільний слот виконання...</b>",
+        "bootstrap_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Підготовлюю локальний Qwen CLI runtime...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Запит:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5332695338186736828>❤️</tg-emoji> <b>{}:</b>",
+        "status_title": "<tg-emoji emoji-id=5350695039318114023>🔗</tg-emoji> <b>Статус модуля:</b>",
+        "status_set": "налаштовано",
+        "status_missing": "не налаштовано",
+        "status_ready": "готово",
+        "status_not_ready": "не готово",
+    }
+    strings_de = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332695273762223342>💫</tg-emoji> <b>Verarbeitung...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Warte auf einen freien Ausführungsslot...</b>",
+        "bootstrap_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>Lokale Qwen-CLI-Laufzeit wird vorbereitet...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>Anfrage:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5332695338186736828>❤️</tg-emoji> <b>{}:</b>",
+        "status_title": "<tg-emoji emoji-id=5350695039318114023>🔗</tg-emoji> <b>Modulstatus:</b>",
+        "status_set": "konfiguriert",
+        "status_missing": "nicht konfiguriert",
+        "status_ready": "bereit",
+        "status_not_ready": "nicht bereit",
+    }
+    strings_ja = {
+        "name": "QwenCLI",
+        "processing": "<tg-emoji emoji-id=5332695273762223342>💫</tg-emoji> <b>処理中...</b>",
+        "queue_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>実行スロットの空きを待機中...</b>",
+        "bootstrap_wait": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji> <b>ローカルQwen CLIランタイムを準備中...</b>",
+        "question_prefix": "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji> <b>リクエスト:</b>",
+        "response_prefix": "<tg-emoji emoji-id=5332695338186736828>❤️</tg-emoji> <b>{}:</b>",
+        "status_title": "<tg-emoji emoji-id=5350695039318114023>🔗</tg-emoji> <b>モジュール状態:</b>",
+        "status_set": "設定済み",
+        "status_missing": "未設定",
+        "status_ready": "準備完了",
+        "status_not_ready": "未準備",
+    }
+
+    _PREMIUM_EMOJI_POOLS = {
+        "🌘": [
+            "<tg-emoji emoji-id=5456469226141288702>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5456445642475866363>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5456185569321195566>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5458390360717824856>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5458825419430070711>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5458567764341985638>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5456217626957091223>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5456219770145771440>🌘</tg-emoji>",
+            "<tg-emoji emoji-id=5458364749827839005>🌘</tg-emoji>",
+        ],
+        "💬": [
+            "<tg-emoji emoji-id=5312103894875143512>💬</tg-emoji>",
+            "<tg-emoji emoji-id=5348471079482441278>💬</tg-emoji>",
+        ],
+        "🔘": ["<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji>"],
+        "🤔": ["<tg-emoji emoji-id=5332655631214088416>🤔</tg-emoji>"],
+        "💫": ["<tg-emoji emoji-id=5332695273762223342>💫</tg-emoji>"],
+        "❤️": ["<tg-emoji emoji-id=5332695338186736828>❤️</tg-emoji>"],
+        "💣": ["<tg-emoji emoji-id=5411192398166396991>💣</tg-emoji>"],
+        "🙏": ["<tg-emoji emoji-id=5350773074578916842>🙏</tg-emoji>"],
+        "✅": [
+            "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji>",
+            "<tg-emoji emoji-id=5350572310627632617>✅</tg-emoji>",
+            "<tg-emoji emoji-id=5350626672028697529>✅</tg-emoji>",
+        ],
+        "🧠": ["<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji>"],
+        "🛸": ["<tg-emoji emoji-id=5350837773966261947>🛸</tg-emoji>"],
+        "🔗": [
+            "<tg-emoji emoji-id=5350695039318114023>🔗</tg-emoji>",
+            "<tg-emoji emoji-id=5411527152212411235>🔗</tg-emoji>",
+        ],
+        "⚙️": [
+            "<tg-emoji emoji-id=5348412779596365405>⚙️</tg-emoji>",
+            "<tg-emoji emoji-id=5411236022149219263>⚙️</tg-emoji>",
+            "<tg-emoji emoji-id=5409017826159656138>⚙️</tg-emoji>",
+            "<tg-emoji emoji-id=5409076727341154520>⚙️</tg-emoji>",
+            "<tg-emoji emoji-id=5409117246062625941>⚙️</tg-emoji>",
+        ],
+    }
+
     _PHASE_EMOJI = {
-        "starting": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji>",
+        "starting": "<tg-emoji emoji-id=5332615898471627914>🔘</tg-emoji>",
         "thinking": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji>",
         "running tool": "⚙️",
         "writing answer": "✍️",
@@ -5423,6 +5522,7 @@ class QwenCLI(loader.Module):
     async def _answer_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
+        text = self._apply_premium_emoji_theme(text)
         safe_text = self._safe_emoji_html(text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
@@ -5474,6 +5574,7 @@ class QwenCLI(loader.Module):
     async def _edit_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
+        text = self._apply_premium_emoji_theme(text)
         safe_text = self._safe_emoji_html(text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
@@ -5509,6 +5610,30 @@ class QwenCLI(loader.Module):
     @staticmethod
     def _safe_emoji_html(text: str) -> str:
         return re.sub(r"</?tg-emoji[^>]*>", "", str(text or ""))
+
+    def _apply_premium_emoji_theme(self, text: str) -> str:
+        if not text:
+            return text
+        rendered = str(text)
+
+        def _replace_tag(match):
+            symbol = match.group(1)
+            pool = self._PREMIUM_EMOJI_POOLS.get(symbol)
+            if not pool:
+                return match.group(0)
+            return random.choice(pool)
+
+        rendered = re.sub(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", _replace_tag, rendered)
+
+        parts = re.split(r"(<[^>]+>)", rendered)
+        for index, part in enumerate(parts):
+            if part.startswith("<") and part.endswith(">"):
+                continue
+            for symbol, pool in self._PREMIUM_EMOJI_POOLS.items():
+                if symbol in part:
+                    part = part.replace(symbol, random.choice(pool))
+            parts[index] = part
+        return "".join(parts)
 
     def _format_qwen_status(self, state: dict) -> str:
         elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
