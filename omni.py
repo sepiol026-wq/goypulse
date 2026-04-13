@@ -1,7 +1,7 @@
 # requires: yt-dlp imageio-ffmpeg
 # meta developer: @samsepi0l_ovf
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-
+__version__ = (1, 1)
 import asyncio
 import contextlib
 import json
@@ -10,6 +10,7 @@ import os
 import shutil
 import tempfile
 import sys
+import time
 from telethon.tl.types import Message, DocumentAttributeAudio, DocumentAttributeVideo
 import imageio_ffmpeg
 from .. import loader, utils
@@ -124,8 +125,8 @@ class OmniLoad(loader.Module):
         
         keyboard = [
             [
-                {"text": "🎬 Video 1080p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=1080]+bestaudio/best", "video", target_chat_id, reply_id)},
-                {"text": "🎬 Video 720p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=720]+bestaudio/best", "video", target_chat_id, reply_id)}
+                {"text": "🎬 Video 1080p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", "video", target_chat_id, reply_id)},
+                {"text": "🎬 Video 720p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", "video", target_chat_id, reply_id)}
             ],
             [
                 {"text": "🎧 Audio MP3", "callback": self._dl_callback, "args": (call_id, "bestaudio/best", "audio", target_chat_id, reply_id)},
@@ -189,8 +190,32 @@ class OmniLoad(loader.Module):
                 return
 
             final_path = os.path.join(dl_dir, target_file)
+            
+            last_edit_time = 0
+            
+            async def upload_progress(current, total):
+                nonlocal last_edit_time
+                now = time.time()
+                if now - last_edit_time > 4:
+                    percent = round((current / total) * 100, 1) if total else 0
+                    with contextlib.suppress(Exception):
+                        text = self.strings("uploading").replace("...", f" {percent}%")
+                        await call.edit(text)
+                    last_edit_time = now
+
             with contextlib.suppress(Exception):
-                await call.edit(self.strings("uploading"))
+                await call.edit(self.strings("uploading").replace("...", " 0%"))
+
+            try:
+                uploaded_file = await self._client.upload_file(
+                    final_path,
+                    part_size_kb=512,
+                    progress_callback=upload_progress
+                )
+            except Exception as e:
+                with contextlib.suppress(Exception):
+                    await call.edit(self.strings("error").format(error=f"Upload Error: {str(e)[:100]}"))
+                return
 
             title = info.get("title", "Unknown")
             author = info.get("uploader", info.get("channel", "Unknown User"))
@@ -227,7 +252,7 @@ class OmniLoad(loader.Module):
 
             upload_kwargs = {
                 "entity": target_chat_id,
-                "file": final_path,
+                "file": uploaded_file,
                 "caption": caption,
                 "reply_to": reply_id
             }
@@ -235,24 +260,20 @@ class OmniLoad(loader.Module):
                 upload_kwargs["attributes"] = attrs
 
             try:
-                
                 try:
                     await self._client.send_file(**upload_kwargs)
                 except Exception as e:
                     if "reply" in str(e).lower():
-                        
                         upload_kwargs.pop("reply_to", None)
                         await self._client.send_file(**upload_kwargs)
                     else:
                         raise e 
                 
-                
                 with contextlib.suppress(Exception):
                     await call.delete()
 
             except Exception as upload_err:
-                
-                err_msg = self.strings("error").format(error=f"TG Upload Error: {upload_err}")
+                err_msg = self.strings("error").format(error=f"TG Send Error: {upload_err}")
                 try:
                     await call.edit(err_msg)
                 except Exception:
