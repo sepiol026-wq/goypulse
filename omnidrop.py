@@ -1,4 +1,4 @@
-# requires: yt-dlp imageio-ffmpeg
+# requires: telethon yt-dlp imageio-ffmpeg
 # meta developer: @samsepi0l_ovf
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 # author: @goy_ai
@@ -13,6 +13,7 @@ import re
 import tempfile
 import urllib.request
 import uuid
+import sys
 from typing import Dict, Optional, Tuple
 
 import imageio_ffmpeg
@@ -92,6 +93,7 @@ class OmniDropXMod(loader.Module):
             ),
         )
         self._jobs: Dict[str, dict] = {}
+        self._dlp_mode: Optional[str] = None
 
     async def _run_proc(self, cmd: list, timeout: int = 180) -> Tuple[int, bytes, bytes]:
         proc = await asyncio.create_subprocess_exec(
@@ -106,6 +108,29 @@ class OmniDropXMod(loader.Module):
             with contextlib.suppress(Exception):
                 proc.kill()
             return -1, b"", b"Timeout"
+
+    async def _detect_dlp_mode(self) -> str:
+        if self._dlp_mode:
+            return self._dlp_mode
+        checks = [
+            ([sys.executable, "-m", "yt_dlp", "--version"], "module"),
+            (["yt-dlp", "--version"], "binary"),
+        ]
+        for cmd, mode in checks:
+            rc, _, _ = await self._run_proc(cmd, timeout=20)
+            if rc == 0:
+                self._dlp_mode = mode
+                return mode
+        self._dlp_mode = "none"
+        return "none"
+
+    async def _dlp_cmd(self, args: list) -> Optional[list]:
+        mode = await self._detect_dlp_mode()
+        if mode == "module":
+            return [sys.executable, "-m", "yt_dlp"] + args
+        if mode == "binary":
+            return ["yt-dlp"] + args
+        return None
 
     def _fmt_duration(self, value: Optional[int]) -> str:
         value = int(value or 0)
@@ -124,29 +149,31 @@ class OmniDropXMod(loader.Module):
 
     async def _extract_info(self, query: str) -> Tuple[Optional[dict], str]:
         target = self._resolve_url(query)
-        commands = [
+        cmd_a = await self._dlp_cmd(
             [
-                "python3",
-                "-m",
-                "yt_dlp",
                 "--no-playlist",
                 "--skip-download",
                 "--dump-single-json",
                 "--geo-bypass",
                 "--no-warnings",
                 target,
-            ],
+            ]
+        )
+        cmd_b = await self._dlp_cmd(
             [
-                "python3",
-                "-m",
-                "yt_dlp",
                 "--no-playlist",
                 "--skip-download",
                 "--dump-json",
                 "--geo-bypass",
                 "--no-warnings",
                 target,
-            ],
+            ]
+        )
+        if not cmd_a or not cmd_b:
+            return None, "yt-dlp is missing on host"
+        commands = [
+            cmd_a,
+            cmd_b,
         ]
         last_err = "Extractor failed"
         for cmd in commands:
@@ -201,23 +228,25 @@ class OmniDropXMod(loader.Module):
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
         tmp = tempfile.mkdtemp(prefix="omnidrop_")
         out_tpl = os.path.join(tmp, "%(title).180B_%(id)s.%(ext)s")
-        cmd = [
-            "python3",
-            "-m",
-            "yt_dlp",
-            "--no-playlist",
-            "--format",
-            cfg["format"],
-            "--ffmpeg-location",
-            ffmpeg_path,
-            "--embed-metadata",
-            "--embed-thumbnail",
-            "--add-metadata",
-            "--write-info-json",
-            "-o",
-            out_tpl,
-            query,
-        ] + cfg["post"]
+        base = await self._dlp_cmd(
+            [
+                "--no-playlist",
+                "--format",
+                cfg["format"],
+                "--ffmpeg-location",
+                ffmpeg_path,
+                "--embed-metadata",
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--write-info-json",
+                "-o",
+                out_tpl,
+                query,
+            ]
+        )
+        if not base:
+            return None, "yt-dlp is missing on host"
+        cmd = base + cfg["post"]
         rc, _, err = await self._run_proc(cmd, timeout=420)
         if rc != 0:
             return None, err.decode("utf-8", "ignore")[-350:]
