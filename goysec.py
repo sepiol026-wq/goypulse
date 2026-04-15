@@ -1160,6 +1160,8 @@ class GoySecurity(loader.Module):
             return
 
         async def guarded_register_module(*args, **kwargs):
+            if not self.config["guard_preinstall_enabled"]:
+                return await original(*args, **kwargs)
             module_name, source = self._extract_register_module_payload(args, kwargs)
             if source:
                 try:
