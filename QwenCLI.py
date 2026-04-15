@@ -305,7 +305,7 @@ class QwenCLI(loader.Module):
         "medium": {
             "pre_cleanup": True,
             "force_lean": True,
-            "heap_mb": 160,
+            "heap_mb": 384,
             "minimal_runtime_settings": True,
             "history_messages": 24,
             "history_entry_chars": 2200,
@@ -314,7 +314,7 @@ class QwenCLI(loader.Module):
         "max": {
             "pre_cleanup": True,
             "force_lean": True,
-            "heap_mb": 128,
+            "heap_mb": 768,
             "minimal_runtime_settings": True,
             "history_messages": QWEN_MAX_HISTORY_MESSAGES,
             "history_entry_chars": QWEN_MAX_HISTORY_ENTRY_CHARS,
@@ -7232,7 +7232,10 @@ class QwenCLI(loader.Module):
         return (
             "reached heap limit" in haystack
             or "javascript heap out of memory" in haystack
-            or "allocation failed - javaScript heap out of memory".lower() in haystack
+            or "allocation failed - javascript heap out of memory" in haystack
+            or "young object promotion failed" in haystack
+            or "markcompactcollector" in haystack
+            or "fatal error" in haystack and "heap" in haystack and "memory" in haystack
         )
 
     async def _kill_process_tree_by_pid(self, pid: int):
