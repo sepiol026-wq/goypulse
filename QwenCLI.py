@@ -1,10 +1,10 @@
 # requires: telethon pytz markdown-it-py psutil
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @samsepi0l_ovf | @qwertyiisme
+# authors: @samsepi0l_ovf | @qwertyiisme
 # Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 
-__version__ = (1, 2, 6)
+__version__ = (1, 2, 7)
 
 import asyncio
 import contextlib
@@ -5399,6 +5399,23 @@ class QwenCLI(loader.Module):
                     plain_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text, reply_markup=reply_markup)
+        if hasattr(entity, "edit"):
+            for candidate in (text, safe_text, plain_text):
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        candidate,
+                        parse_mode="html",
+                        link_preview=link_preview,
+                        reply_markup=reply_markup,
+                    )
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        candidate,
+                        parse_mode="html",
+                        reply_markup=reply_markup,
+                    )
+                with contextlib.suppress(Exception):
+                    return await entity.edit(candidate, reply_markup=reply_markup)
         try:
             return await utils.answer(
                 entity,
@@ -5425,14 +5442,6 @@ class QwenCLI(loader.Module):
                     reply_markup=reply_markup,
                     parse_mode="html",
                     link_preview=link_preview,
-                )
-        if hasattr(entity, "edit"):
-            with contextlib.suppress(Exception):
-                return await entity.edit(
-                    text,
-                    parse_mode="html",
-                    link_preview=link_preview,
-                    reply_markup=reply_markup,
                 )
         if isinstance(entity, Message):
             with contextlib.suppress(Exception):
@@ -5476,28 +5485,23 @@ class QwenCLI(loader.Module):
                 )
             return await entity.edit(text=text, reply_markup=reply_markup)
         if hasattr(entity, "edit"):
-            with contextlib.suppress(TypeError):
-                return await entity.edit(
-                    text,
-                    parse_mode="html",
-                    link_preview=link_preview,
-                    reply_markup=reply_markup,
-                )
+            for candidate in (text, safe_text, plain_text):
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        candidate,
+                        parse_mode="html",
+                        link_preview=link_preview,
+                        reply_markup=reply_markup,
+                    )
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        candidate,
+                        parse_mode="html",
+                        reply_markup=reply_markup,
+                    )
+                with contextlib.suppress(Exception):
+                    return await entity.edit(candidate, reply_markup=reply_markup)
             with contextlib.suppress(Exception):
-                with contextlib.suppress(Exception):
-                    return await entity.edit(
-                        safe_text,
-                        parse_mode="html",
-                        link_preview=link_preview,
-                        reply_markup=reply_markup,
-                    )
-                with contextlib.suppress(Exception):
-                    return await entity.edit(
-                        plain_text,
-                        parse_mode="html",
-                        link_preview=link_preview,
-                        reply_markup=reply_markup,
-                    )
                 return await entity.edit(text=text, reply_markup=reply_markup)
         return await self._answer_html(
             entity, text, reply_markup=reply_markup, link_preview=link_preview
