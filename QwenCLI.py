@@ -5399,6 +5399,28 @@ class QwenCLI(loader.Module):
                     plain_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text, reply_markup=reply_markup)
+        if hasattr(entity, "edit"):
+            with contextlib.suppress(TypeError):
+                return await entity.edit(
+                    text,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                    reply_markup=reply_markup,
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    safe_text,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                    reply_markup=reply_markup,
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    plain_text,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                    reply_markup=reply_markup,
+                )
         try:
             return await utils.answer(
                 entity,
@@ -5425,14 +5447,6 @@ class QwenCLI(loader.Module):
                     reply_markup=reply_markup,
                     parse_mode="html",
                     link_preview=link_preview,
-                )
-        if hasattr(entity, "edit"):
-            with contextlib.suppress(Exception):
-                return await entity.edit(
-                    text,
-                    parse_mode="html",
-                    link_preview=link_preview,
-                    reply_markup=reply_markup,
                 )
         if isinstance(entity, Message):
             with contextlib.suppress(Exception):
