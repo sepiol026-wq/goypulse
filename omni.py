@@ -1,7 +1,10 @@
 # requires: yt-dlp imageio-ffmpeg
 # meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
+# Description: Universal media downloader.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-__version__ = (1, 1)
+
+__version__ = (1, 3)
 import asyncio
 import contextlib
 import json
@@ -20,50 +23,50 @@ logger = logging.getLogger(__name__)
 @loader.tds
 class OmniLoad(loader.Module):
     """Универсальный загрузчик медиа."""
-    
+
     strings = {
         "name": "OmniLoad",
-        "no_args": "👾 <b>No URL provided.</b> Please specify a link.",
-        "fetching": "⏳ <b>Parsing target...</b>",
-        "menu": "💉 <b>Target:</b> <i>{title}</i>\nChoose format & quality:",
-        "downloading": "🔥 <b>Downloading & rendering...</b>",
-        "uploading": "⏳ <b>Uploading to Telegram...</b>",
-        "error": "💀 <b>Error:</b> <code>{error}</code>",
-        "expired": "💀 <b>Cache expired.</b> Please search again.",
-        "caption": "🎬 <b>{title}</b>\n👤 {author}\n🔗 <a href='{url}'>Source</a>"
+        "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>No URL provided.</b> Please specify a link.",
+        "fetching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Parsing target...</b>",
+        "menu": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Target:</b> <i>{title}</i>\nChoose format & quality:",
+        "downloading": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Downloading & rendering...</b>",
+        "uploading": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Uploading to Telegram...</b>",
+        "error": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Error:</b> <code>{error}</code>",
+        "expired": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Cache expired.</b> Please search again.",
+        "caption": "<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>{title}</b>\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> {author}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <a href='{url}'>Source</a>"
     }
-    
+
     strings_ru = {
-        "no_args": "👾 <b>Аргументы где?</b> Укажи ссылку.",
-        "fetching": "⏳ <b>Паршу таргет...</b>",
-        "menu": "💉 <b>Таргет:</b> <i>{title}</i>\nВыбирай качество:",
-        "downloading": "🔥 <b>Дамплю сурс & рендерю...</b>",
-        "uploading": "⏳ <b>Аплоад в Telegram...</b>",
-        "error": "💀 <b>Ошибка:</b> <code>{error}</code>",
-        "expired": "💀 <b>Кэш устарел.</b> Сделай запрос заново.",
-        "caption": "🎬 <b>{title}</b>\n👤 {author}\n🔗 <a href='{url}'>Сурс</a>"
+        "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Аргументы где?</b> Укажи ссылку.",
+        "fetching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Паршу таргет...</b>",
+        "menu": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Таргет:</b> <i>{title}</i>\nВыбирай качество:",
+        "downloading": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Дамплю сурс & рендерю...</b>",
+        "uploading": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Аплоад в Telegram...</b>",
+        "error": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка:</b> <code>{error}</code>",
+        "expired": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Кэш устарел.</b> Сделай запрос заново.",
+        "caption": "<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>{title}</b>\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> {author}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <a href='{url}'>Сурс</a>"
     }
 
     strings_de = {
-        "no_args": "👾 <b>Kein URL angegeben.</b>",
-        "fetching": "⏳ <b>Ziel wird analysiert...</b>",
-        "menu": "💉 <b>Ziel:</b> <i>{title}</i>\nWählen Sie die Qualität:",
-        "downloading": "🔥 <b>Herunterladen & Verarbeiten...</b>",
-        "uploading": "⏳ <b>Hochladen zu Telegram...</b>",
-        "error": "💀 <b>Fehler:</b> <code>{error}</code>",
-        "expired": "💀 <b>Cache abgelaufen.</b> Bitte erneut versuchen.",
-        "caption": "🎬 <b>{title}</b>\n👤 {author}\n🔗 <a href='{url}'>Quelle</a>"
+        "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Kein URL angegeben.</b>",
+        "fetching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Ziel wird analysiert...</b>",
+        "menu": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Ziel:</b> <i>{title}</i>\nWählen Sie die Qualität:",
+        "downloading": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Herunterladen & Verarbeiten...</b>",
+        "uploading": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Hochladen zu Telegram...</b>",
+        "error": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Fehler:</b> <code>{error}</code>",
+        "expired": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Cache abgelaufen.</b> Bitte erneut versuchen.",
+        "caption": "<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>{title}</b>\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> {author}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <a href='{url}'>Quelle</a>"
     }
 
     strings_jp = {
-        "no_args": "👾 <b>URLが提供されていません。</b>",
-        "fetching": "⏳ <b>ターゲットを解析中...</b>",
-        "menu": "💉 <b>ターゲット:</b> <i>{title}</i>\n品質を選択してください:",
-        "downloading": "🔥 <b>ダウンロードとレンダリング中...</b>",
-        "uploading": "⏳ <b>Telegramにアップロード中...</b>",
-        "error": "💀 <b>エラー:</b> <code>{error}</code>",
-        "expired": "💀 <b>キャッシュの期限切れ。</b> 再試行してください。",
-        "caption": "🎬 <b>{title}</b>\n👤 {author}\n🔗 <a href='{url}'>ソース</a>"
+        "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>URLが提供されていません。</b>",
+        "fetching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>ターゲットを解析中...</b>",
+        "menu": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>ターゲット:</b> <i>{title}</i>\n品質を選択してください:",
+        "downloading": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>ダウンロードとレンダリング中...</b>",
+        "uploading": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Telegramにアップロード中...</b>",
+        "error": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>エラー:</b> <code>{error}</code>",
+        "expired": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>キャッシュの期限切れ。</b> 再試行してください。",
+        "caption": "<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>{title}</b>\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> {author}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <a href='{url}'>ソース</a>"
     }
 
     def __init__(self):
@@ -98,15 +101,15 @@ class OmniLoad(loader.Module):
 
         msg = await utils.answer(message, self.strings("fetching"))
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-        
+
         cmd = [
             sys.executable, "-m", "yt_dlp", "--no-warnings", "--dump-json",
             "--extractor-args", "youtube:player_client=android",
             "--ffmpeg-location", ffmpeg_path, args
         ]
-        
+
         ret, stdout, stderr = await self._run_proc(cmd, timeout=45)
-        
+
         if ret != 0 or not stdout:
             err_text = stderr.decode('utf-8', errors='ignore')[-100:]
             return await utils.answer(msg, self.strings("error").format(error=err_text or "Extraction failed"))
@@ -119,10 +122,10 @@ class OmniLoad(loader.Module):
         call_id = str(message.id)
         target_chat_id = utils.get_chat_id(message)
         reply_id = message.id
-        
+
         self._cache[call_id] = {"info": info, "url": args}
         title = info.get("title", "Unknown")[:40]
-        
+
         keyboard = [
             [
                 {"text": "🎬 Video 1080p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", "video", target_chat_id, reply_id)},
@@ -143,7 +146,7 @@ class OmniLoad(loader.Module):
 
     async def _dl_callback(self, call, call_id: str, format_spec: str, media_type: str, target_chat_id: int, reply_id: int):
         with contextlib.suppress(Exception):
-            await call.answer("🚀 Processing...")
+            await call.answer("<tg-emoji emoji-id=5253613479754999811>➡️</tg-emoji> Processing...")
 
         if call_id not in self._cache:
             with contextlib.suppress(Exception):
@@ -174,7 +177,7 @@ class OmniLoad(loader.Module):
         elif media_type in ("audio", "flac"):
             ext = "flac" if media_type == "flac" else "mp3"
             cmd.extend(["-x", "--audio-format", ext])
-            
+
         cmd.append(url)
 
         ret, _, stderr = await self._run_proc(cmd, timeout=self.config["ytdl_timeout"])
@@ -190,9 +193,9 @@ class OmniLoad(loader.Module):
                 return
 
             final_path = os.path.join(dl_dir, target_file)
-            
+
             last_edit_time = 0
-            
+
             async def upload_progress(current, total):
                 nonlocal last_edit_time
                 now = time.time()
@@ -235,7 +238,7 @@ class OmniLoad(loader.Module):
             if media_type == "video":
                 w = int(info.get("width") or 0)
                 h = int(info.get("height") or 0)
-                
+
                 if w > 0 and h > 0:
                     attrs = [DocumentAttributeVideo(
                         duration=duration,
@@ -267,8 +270,8 @@ class OmniLoad(loader.Module):
                         upload_kwargs.pop("reply_to", None)
                         await self._client.send_file(**upload_kwargs)
                     else:
-                        raise e 
-                
+                        raise e
+
                 with contextlib.suppress(Exception):
                     await call.delete()
 

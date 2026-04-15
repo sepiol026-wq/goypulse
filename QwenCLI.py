@@ -1,34 +1,10 @@
-# requires: telethon pytz markdown-it-py
-# meta developer: @qwertyiisme @samsepi0l_ovf
-# authors: @goy_ai
-# tester: @Fiftarir
-# Description: Qwen CLI для Heroku.
+# requires: telethon pytz markdown-it-py psutil
+# meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
+# Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-#
-# --------------------------------------------------------------------------
-# Copyright (C) 2026 @samsepi0l_ovf, @goy_ai
-# 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, version 3 of the License.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# --------------------------------------------------------------------------
-# ACKNOWLEDGEMENT & ORIGINAL LICENSE:
-# This module is a modified fork of the Gemini module from SenkoGuardianModules.
-# The original code is licensed under the MIT License:
-#
-# Copyright (c) 2025 Senko (@SenkoGuardianModules)
-# https://opensource.org/licenses/MIT
-# --------------------------------------------------------------------------
 
-__version__ = (1, 2, 5)
+__version__ = (1, 2, 6)
 
 import asyncio
 import contextlib
@@ -121,10 +97,8 @@ TEXT_MIME_TYPES = {
     "application/x-sh",
 }
 
-
 class QwenRequestInterrupted(Exception):
     pass
-
 
 @loader.tds
 class QwenCLI(loader.Module):
@@ -189,11 +163,11 @@ class QwenCLI(loader.Module):
         "memory_chat_line": "  • {} (<code>{}</code>)",
         "no_memory_found": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> Память пуста.",
         "media_reply_placeholder": "[запрос по медиа]",
-        "btn_clear": "🧹 Очистить",
-        "btn_regenerate": "🔄 Другой ответ",
-        "btn_retry_request": "🔄 Повторить запрос",
-        "btn_cancel_request": "❌ Отменить запрос",
-        "btn_stop_request": "⛔ Стоп",
+        "btn_clear": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> Очистить",
+        "btn_regenerate": "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Другой ответ",
+        "btn_retry_request": "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Повторить запрос",
+        "btn_cancel_request": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Отменить запрос",
+        "btn_stop_request": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Стоп",
         "no_last_request": "Последний запрос не найден для повторной генерации.",
         "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Запрос отменен.</b>",
         "request_patched": "<tg-emoji emoji-id=5875145601682771643>✍️</tg-emoji> <b>Запрос обновлен и перезапущен.</b>",
@@ -223,7 +197,7 @@ class QwenCLI(loader.Module):
         "qwsend_usage": "ℹ️ Использование: .qwsend <@username/id> <текст>",
         "qwchatinfo_usage": "ℹ️ Использование: .qwchatinfo [id/@username]",
         "qwme_usage": "ℹ️ Использование: .qwme — информация об аккаунте",
-        "qwsend_sent": "✅ Сообщение отправлено в чат: {}",
+        "qwsend_sent": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Сообщение отправлено в чат: {}",
         "auto_mode_on": "<tg-emoji emoji-id=5359441070201513074>🎭</tg-emoji> <b>Режим авто-ответа включен в этом чате.</b>\nЯ буду отвечать на сообщения с вероятностью {}%.",
         "auto_mode_off": "<tg-emoji emoji-id=5359441070201513074>🎭</tg-emoji> <b>Режим авто-ответа выключен в этом чате.</b>",
         "auto_mode_chats_title": "<tg-emoji emoji-id=5359441070201513074>🎭</tg-emoji> <b>Чаты с активным авто-ответом ({}):</b>",
@@ -262,7 +236,7 @@ class QwenCLI(loader.Module):
             "• <code>.qwpresets list</code> — список."
         ),
         "qwpreset_loaded": "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji> <b>Установлен пресет:</b> [<code>{}</code>]\nДлина: {} симв.",
-        "qwpreset_saved": "<tg-emoji emoji-id=5872695159631647090>💾</tg-emoji> <b>Пресет сохранен.</b>\n🏷 <b>Имя:</b> {}\n№ <b>Индекс:</b> {}",
+        "qwpreset_saved": "<tg-emoji emoji-id=5872695159631647090>💾</tg-emoji> <b>Пресет сохранен.</b>\n<tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> <b>Имя:</b> {}\n№ <b>Индекс:</b> {}",
         "qwpreset_deleted": "<tg-emoji emoji-id=5370872568041471196>🗑</tg-emoji> <b>Пресет удален:</b> {}",
         "qwpreset_not_found": "<tg-emoji emoji-id=5408830797513784663>🚫</tg-emoji> Пресет с таким именем или индексом не найден.",
         "qwpreset_list_head": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Ваши пресеты:</b>\n",
@@ -280,13 +254,13 @@ class QwenCLI(loader.Module):
         "prod_status_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI production status</b>",
         "prod_status_line": "• {}: <code>{}</code>",
         "automod_usage": "<b>Использование:</b> <code>.qwamod on|off|status|rules &lt;текст&gt;|clear</code>",
-        "automod_only_groups": "⚠️ Automod работает только в группах/супергруппах.",
-        "automod_enabled": "✅ AI-модератор включен в этом чате.",
-        "automod_disabled": "✅ AI-модератор выключен в этом чате.",
-        "automod_rules_updated": "✅ Правила AI-модератора сохранены.",
-        "automod_rules_cleared": "✅ Правила AI-модератора очищены.",
-        "automod_status_on": "🛡 Automod: <b>ON</b>\nПравила:\n<blockquote>{}</blockquote>",
-        "automod_status_off": "🛡 Automod: <b>OFF</b>",
+        "automod_only_groups": "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Automod работает только в группах/супергруппах.",
+        "automod_enabled": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> AI-модератор включен в этом чате.",
+        "automod_disabled": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> AI-модератор выключен в этом чате.",
+        "automod_rules_updated": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Правила AI-модератора сохранены.",
+        "automod_rules_cleared": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Правила AI-модератора очищены.",
+        "automod_status_on": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> Automod: <b>ON</b>\nПравила:\n<blockquote>{}</blockquote>",
+        "automod_status_off": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> Automod: <b>OFF</b>",
         "cfg_check_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>QwenCLI cfg-check</b>",
         "qwen_models_note": (
             "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Быстрый список моделей:</b>\n"
@@ -303,8 +277,8 @@ class QwenCLI(loader.Module):
     _PHASE_EMOJI = {
         "starting": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji>",
         "thinking": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji>",
-        "running tool": "⚙️",
-        "writing answer": "✍️",
+        "running tool": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji>",
+        "writing answer": "<tg-emoji emoji-id=5253775593295588000>📝</tg-emoji>",
         "completed": "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji>",
     }
 
@@ -738,21 +712,21 @@ class QwenCLI(loader.Module):
         ]
         out = [self.strings["cfg_check_title"]]
         for key, enabled in flags:
-            icon = "✅" if enabled else "⚪️"
+            icon = "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>" if enabled else "<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji>"
             out.append(f"• {icon} <code>{key}</code>: <b>{enabled}</b>")
         out.extend(
             [
-                f"• 🧠 <code>max_history_length</code>: <b>{int(self.config['max_history_length'])}</b>",
-                f"• 🎯 <code>impersonation_reply_chance</code>: <b>{self._format_reply_chance_percent(self.config['impersonation_reply_chance'])}%</b>",
-                f"• 🎚 <code>chat_reply_chances</code>: <b>{len(self._chat_reply_chances_cache)}</b> chat(s)",
-                f"• 🎭 <code>auto_reply_chats</code>: <b>{len(self.impersonation_chats)}</b> chat(s)",
-                f"• 🧷 <code>memory_disabled_chats</code>: <b>{len(self.memory_disabled_chats)}</b> chat(s)",
-                f"• ⚙️ <code>approval_mode</code>: <b>{utils.escape_html(self.config['approval_mode'])}</b>",
-                f"• 🧪 <code>resource_profile</code>: <b>{utils.escape_html(self.config['resource_profile'])}</b>",
-                f"• 📦 <code>max_concurrent_requests</code>: <b>{int(self.config['max_concurrent_requests'])}</b>",
-                f"• 🔐 <code>auth_type</code>: <b>{utils.escape_html(self.config['auth_type'])}</b>",
-                f"• 🤖 <code>qwen_model</code>: <b>{utils.escape_html(self.config['qwen_model'] or 'coder-model')}</b>",
-                f"• 🌍 <code>timezone</code>: <b>{utils.escape_html(self.config['timezone'])}</b>",
+                f"• <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>max_history_length</code>: <b>{int(self.config['max_history_length'])}</b>",
+                f"• <tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <code>impersonation_reply_chance</code>: <b>{self._format_reply_chance_percent(self.config['impersonation_reply_chance'])}%</b>",
+                f"• <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>chat_reply_chances</code>: <b>{len(self._chat_reply_chances_cache)}</b> chat(s)",
+                f"• <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>auto_reply_chats</code>: <b>{len(self.impersonation_chats)}</b> chat(s)",
+                f"• <tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> <code>memory_disabled_chats</code>: <b>{len(self.memory_disabled_chats)}</b> chat(s)",
+                f"• <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>approval_mode</code>: <b>{utils.escape_html(self.config['approval_mode'])}</b>",
+                f"• <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>resource_profile</code>: <b>{utils.escape_html(self.config['resource_profile'])}</b>",
+                f"• <tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <code>max_concurrent_requests</code>: <b>{int(self.config['max_concurrent_requests'])}</b>",
+                f"• <tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <code>auth_type</code>: <b>{utils.escape_html(self.config['auth_type'])}</b>",
+                f"• <tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <code>qwen_model</code>: <b>{utils.escape_html(self.config['qwen_model'] or 'coder-model')}</b>",
+                f"• <tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <code>timezone</code>: <b>{utils.escape_html(self.config['timezone'])}</b>",
             ]
         )
         await self._answer_html(message, "\n".join(out))
@@ -1104,7 +1078,7 @@ class QwenCLI(loader.Module):
             f"\n<b>Username:</b> @{utils.escape_html(username)}" if username else ""
         )
         info = (
-            f"📌 <b>Chat info</b>\n"
+            f"<tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> <b>Chat info</b>\n"
             f"<b>Title:</b> {title}\n"
             f"<b>ID:</b> <code>{getattr(entity, 'id', 'N/A')}</code>\n"
             f"<b>Type:</b> <code>{chat_type}</code>\n"
@@ -1128,7 +1102,7 @@ class QwenCLI(loader.Module):
             bio = getattr(getattr(full, "full_user", None), "about", None) or "—"
         dc_id = getattr(getattr(me, "photo", None), "dc_id", None) or "N/A"
         text = (
-            "👤 <b>My account</b>\n"
+            "<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>My account</b>\n"
             f"<b>ID:</b> <code>{getattr(me, 'id', 'N/A')}</code>\n"
             f"<b>Name:</b> {utils.escape_html(get_display_name(me) or 'Unknown')}\n"
             f"<b>Username:</b> <code>@{utils.escape_html(getattr(me, 'username', None) or 'none')}</code>\n"
@@ -1236,7 +1210,7 @@ class QwenCLI(loader.Module):
         if action == "save":
             if not name:
                 return await self._answer_html(
-                    message, "❌ Укажите имя: <code>.qwpresets save [Имя] текст</code>"
+                    message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Укажите имя: <code>.qwpresets save [Имя] текст</code>"
                 )
             reply = await message.get_reply_message()
             if not content and reply:
@@ -1250,7 +1224,7 @@ class QwenCLI(loader.Module):
                     except Exception:
                         pass
             if not content:
-                return await self._answer_html(message, "❌ Нет текста для сохранения.")
+                return await self._answer_html(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Нет текста для сохранения.")
             existing = self._find_preset(name)
             if existing:
                 existing["content"] = content
@@ -1524,19 +1498,7 @@ class QwenCLI(loader.Module):
             with contextlib.suppress(Exception):
                 sender = await self.client.get_entity(message.sender_id)
         sender_id = getattr(sender, "id", 0)
-        
-        if sender_id == 8304142242 and raw_text == "🐾":
-            await message.reply("Meow, creator. @samsepi0l_ovf")
-            return
-        if sender_id == 5258971107 and raw_text == "🐈":
-            await message.reply("meow, devlop2")
-            return
-        
-        if raw_text == "🌳":
-            owner_id = getattr(self.me, 'id', 0)
-            if owner_id != 8304142242:
-                await message.reply("oh,tester")
-            return
+
         cid = utils.get_chat_id(message)
         if (
             cid in self.automod_chats
@@ -1902,11 +1864,10 @@ class QwenCLI(loader.Module):
                         current_payload = dict(current_payload)
                         current_payload["text"] = (
                             f"Исходная задача пользователя:\n{original_task_text}\n\n"
-                            f"❌ ТЫ ОТВЕТИЛ ЧТО ИНСТРУМЕНТ НЕДОСТУПЕН — ЭТО НЕВЕРНО!\n\n"
-                            f"⚡ TELEGRAM TOOLS ДОСТУПНЫ, КОГДА allow_tg_tools=True В КОНФИГЕ!\n\n"
-                            f"Ты ОБЯЗАН вывести ТОЛЬКО один валидный JSON-объект:\n"
+                            f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Инструментный режим активен, повтори шаг через execute_telegram_action.\n\n"
+                            f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Используй только валидный JSON-объект вызова инструмента:\n"
                             f'{{"tool_call":"execute_telegram_action","arguments":{{"action":"имя_действия","target_chat":ID_или_username,"text":"текст"}}}}\n\n'
-                            f"БЕЗ ЛЮБОГО дополнительного текста. БЕЗ объяснений. ТОЛЬКО JSON."
+                            f"Без дополнительного текста и объяснений."
                         )
                         continue
                     if (
@@ -2107,7 +2068,7 @@ class QwenCLI(loader.Module):
                     auto_tool = {
                         "action": "send_reaction_last",
                         "target_chat": chat_id,
-                        "emoji": "👍",
+                        "emoji": "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>",
                     }
                     await _show_embedded_tool_status("send_reaction_last", 1, 1)
                     auto_result_raw = await self._execute_telegram_tool(
@@ -2118,7 +2079,7 @@ class QwenCLI(loader.Module):
                         if auto_result.get("status") == "success":
                             detail = auto_result.get("details") or {}
                             report = (
-                                "⚙️ Auto-completion: реакция поставлена автоматически "
+                                "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Auto-completion: реакция поставлена автоматически "
                                 f"(msg_id={detail.get('message_id')}, emoji={detail.get('emoji')})."
                             )
                             result_text = f"{result_text}\n\n{report}".strip()
@@ -2158,7 +2119,7 @@ class QwenCLI(loader.Module):
                         if auto_result.get("status") == "success":
                             detail = auto_result.get("details") or {}
                             report = (
-                                "⚙️ Auto-completion: сообщение отправлено автоматически "
+                                "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Auto-completion: сообщение отправлено автоматически "
                                 f"(target={detail.get('target_user') or detail.get('target_chat')}, "
                                 f"message_id={detail.get('message_id')})."
                             )
@@ -2171,7 +2132,7 @@ class QwenCLI(loader.Module):
             ).strip()
             if self._extract_function_tool_call(result_text):
                 result_text = ""
-            
+
             label = result["label"]
             model_name = result["model"]
 
@@ -2907,7 +2868,7 @@ class QwenCLI(loader.Module):
                 if not target_username:
                     return _err("smart_flow requires target username")
                 if not replies:
-                    replies = ["Принято.", "Ок.", "Сделано.", "Понял.", "👍"]
+                    replies = ["Принято.", "Ок.", "Сделано.", "Понял.", "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>"]
 
                 target_entity, score, chat_name = await _resolve_dialog_entity_by_query(
                     str(chat_query)
@@ -2945,7 +2906,7 @@ class QwenCLI(loader.Module):
 
                 sent = []
                 for idx, one_msg in enumerate(found_messages):
-                    text = str(replies[idx % len(replies)]).strip() or "✅"
+                    text = str(replies[idx % len(replies)]).strip() or "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>"
                     out = await self.client.send_message(
                         target_entity,
                         text,
@@ -3169,7 +3130,7 @@ class QwenCLI(loader.Module):
                 if not target:
                     return _err("missing target")
                 limit = _normalize_limit(tool_data.get("limit", 5))
-                emoji = (str(tool_data.get("emoji") or "👍").strip() or "👍")[:10]
+                emoji = (str(tool_data.get("emoji") or "👌").strip() or "👌")[:10]
                 reacted = []
                 target_entity = await _resolve_target_entity(tool_data.get("target_chat"), chat_id)
                 matched_messages, _ = await _collect_target_messages(
@@ -3494,7 +3455,7 @@ class QwenCLI(loader.Module):
                     or tool_data.get("query")
                     or chat_id
                 )
-                emoji = (str(tool_data.get("emoji") or "👍").strip() or "👍")[:10]
+                emoji = (str(tool_data.get("emoji") or "👌").strip() or "👌")[:10]
                 entity = await _resolve_target_entity(target_chat, chat_id)
                 messages = await self.client.get_messages(entity, limit=1)
                 if not messages:
@@ -3926,10 +3887,10 @@ class QwenCLI(loader.Module):
                     contacts = await self.client.get_contacts()
                     if not contacts:
                         return _ok({"action": action, "count": 0, "contacts": [], "deleted_accounts": []})
-                    
+
                     contact_list = []
                     deleted_accounts = []
-                    
+
                     for c in contacts[:100]:  # Лимит 100 контактов
                         cid = getattr(c, 'id', None)
                         name = get_display_name(c)
@@ -3937,7 +3898,7 @@ class QwenCLI(loader.Module):
                         phone = getattr(c, 'phone', None)
                         is_bot = bool(getattr(c, 'bot', False))
                         is_verified = bool(getattr(c, 'verified', False))
-                        
+
                         contact_info = {
                             "id": cid,
                             "name": name,
@@ -3947,7 +3908,7 @@ class QwenCLI(loader.Module):
                             "verified": is_verified,
                         }
                         contact_list.append(contact_info)
-                        
+
                         is_deleted = False
                         if name == "Deleted Account":
                             is_deleted = True
@@ -3955,10 +3916,10 @@ class QwenCLI(loader.Module):
                             is_deleted = True
                         if 'deleted' in name.lower() or name.startswith("👻"):
                             is_deleted = True
-                        
+
                         if is_deleted:
                             deleted_accounts.append(contact_info)
-                    
+
                     result = {
                         "action": action,
                         "total_contacts": len(contacts),
@@ -3967,10 +3928,10 @@ class QwenCLI(loader.Module):
                         "deleted_accounts": deleted_accounts,
                         "deleted_count": len(deleted_accounts),
                     }
-                    
+
                     if len(contacts) > 100:
                         result["note"] = f"Показано 100 из {len(contacts)} контактов"
-                    
+
                     return _ok(result)
                 except Exception as e:
                     return _err(f"get_contacts failed: {e}")
@@ -3981,11 +3942,11 @@ class QwenCLI(loader.Module):
                     messages = await self.client.get_messages(chat_id, limit=count)
                     if not messages:
                         return _err("no messages found")
-                    
+
                     target_user = getattr(self, 'me', None)
                     if not target_user:
                         target_user = await self.client.get_me()
-                    
+
                     forwarded = []
                     for msg in messages:
                         try:
@@ -4002,7 +3963,7 @@ class QwenCLI(loader.Module):
                                     f"[Переслано из чата {chat_id}]\n{msg.text}"
                                 )
                                 forwarded.append(msg.id)
-                    
+
                     return _ok({
                         "action": action,
                         "from_chat": chat_id,
@@ -4017,19 +3978,19 @@ class QwenCLI(loader.Module):
                 user_id = tool_data.get("user_id") or tool_data.get("target")
                 if not user_id:
                     return _err("missing user_id or target")
-                
+
                 try:
                     entity = await _resolve_target_entity(user_id, None)
                     if not entity:
                         return _err(f"could not resolve user: {user_id}")
-                    
+
                     from telethon.tl.functions.contacts import GetCommonChatsRequest
                     common_chats_result = await self.client(GetCommonChatsRequest(
                         user_id=entity,
                         max_id=0,
                         limit=100,
                     ))
-                    
+
                     chats = []
                     for c in common_chats_result.chats:
                         chat_info = {
@@ -4041,7 +4002,7 @@ class QwenCLI(loader.Module):
                             ),
                         }
                         chats.append(chat_info)
-                    
+
                     return _ok({
                         "action": action,
                         "user_id": getattr(entity, 'id', user_id),
@@ -4056,11 +4017,11 @@ class QwenCLI(loader.Module):
                 target_chat = tool_data.get("target_chat") or chat_id
                 count = max(5, min(50, int(tool_data.get("count") or 20)))
                 check_online = tool_data.get("check_online", True)
-                
+
                 try:
                     entity = await _resolve_target_entity(target_chat, chat_id)
                     messages = await self.client.get_messages(entity, limit=100)
-                    
+
                     user_ids = []
                     seen_ids = set()
                     for msg in messages:
@@ -4071,7 +4032,7 @@ class QwenCLI(loader.Module):
                                 user_ids.append(uid)
                         if len(user_ids) >= count:
                             break
-                    
+
                     users = []
                     for uid in user_ids[:count]:
                         try:
@@ -4083,7 +4044,7 @@ class QwenCLI(loader.Module):
                                 "bot": bool(getattr(user, 'bot', False)),
                                 "status": None,
                             }
-                            
+
                             if check_online:
                                 try:
                                     full = await self.client(GetFullUserRequest(id=uid))
@@ -4096,11 +4057,11 @@ class QwenCLI(loader.Module):
                                             user_info["status"] = "recently" if user_status.was_visible else "long_ago"
                                 except Exception:
                                     pass
-                            
+
                             users.append(user_info)
                         except Exception:
                             users.append({"id": uid, "name": f"ID:{uid}", "username": None, "bot": False, "status": None})
-                    
+
                     return _ok({
                         "action": action,
                         "chat_id": getattr(entity, 'id', target_chat),
@@ -4367,7 +4328,7 @@ class QwenCLI(loader.Module):
                 if action == "warn_user":
                     warn_text = (
                         str(tool_data.get("text") or "").strip()
-                        or "⚠️ Предупреждение от модерации чата."
+                        or "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Предупреждение от модерации чата."
                     )
                     mention = f"[user](tg://user?id={user_id})"
                     sent = await self.client.send_message(
@@ -4564,7 +4525,7 @@ class QwenCLI(loader.Module):
         text = (request_text or "").strip().lower()
         if not text:
             return None
-        
+
         forward_match = re.search(
             r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:мне|в\s*лс|в\s*личк|себе)\s*(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)",
             text, flags=re.IGNORECASE
@@ -4580,7 +4541,7 @@ class QwenCLI(loader.Module):
                 "action": "forward_last_messages",
                 "count": count,
             }
-        
+
         bulk_send_match = re.search(
             r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4594,7 +4555,7 @@ class QwenCLI(loader.Module):
                     "count": count,
                     "text": msg_text,
                 }
-        
+
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4613,7 +4574,7 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
-        
+
         reply_mass_match_2 = re.search(
             r"(?:в\s+чат(?:е)?\s+(.+?)\s+)?(?:в\s+ответ\s+на|на)\s+(\d{1,2})\s+сообщени\w*.*?@([a-zA-Z0-9_]{4,}).*?(?:слово|текст|сообщени[ея])\s+([^\n]+?)(?:\s+на\s+кажд\w*)?$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4632,7 +4593,7 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
-        
+
         send_last_match = re.search(
             r"(?:напиши|отправь|ответь)\s+(?:последн[еиюымх]+\s+(\d{1,2})\s*(?:люд|чел|пользоват)|последнем[уых]?)\s*(.*)",
             text, flags=re.IGNORECASE | re.DOTALL
@@ -4646,14 +4607,14 @@ class QwenCLI(loader.Module):
                 "text": msg_text,
                 "count": count,
             }
-        
+
         react_match = re.search(r"(?:поставь|реакци|лайк)\s*(?:на\s*)?(?:последн[ею]е?|прошло[ею]?)\s*(?:соо|сообщени)", text, flags=re.IGNORECASE)
         if react_match:
             return {
                 "action": "send_reaction_last",
-                "emoji": "👍",
+                "emoji": "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>",
             }
-        
+
         find_match = re.search(r"(?:найди|посмотри|кто|покажи)\s+(?:мне\s+)?(?:всех\s+)?(?:участник|бот|админ|кто)\s*(?:в\s*чат[еау])?", text, flags=re.IGNORECASE)
         if find_match:
             if "бот" in text:
@@ -4662,21 +4623,21 @@ class QwenCLI(loader.Module):
                 return {"action": "get_chat_admins"}
             else:
                 return {"action": "get_chat_participants"}
-        
+
         common_chats_match = re.search(r"(?:общ|совместн|common)\s*(?:чат|групп)\s*(?:с\s*)?@?([a-zA-Z0-9_]{4,})", text, flags=re.IGNORECASE)
         if common_chats_match:
             return {
                 "action": "get_users_chats",
                 "target": f"@{common_chats_match.group(1)}",
             }
-        
+
         active_match = re.search(r"(?:кто\s*(?:актив|онлайн|пишет)|активн[ыеюх]+\s*(?:пользоват|люд|участник)|кто\s*тут)", text, flags=re.IGNORECASE)
         if active_match:
             return {
                 "action": "get_chat_active_users",
                 "count": 20,
             }
-        
+
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -4723,11 +4684,11 @@ class QwenCLI(loader.Module):
                     user_text or "",
                     flags=re.IGNORECASE,
                 )
-                emoji = emoji_match.group(1) if emoji_match else "👍"
+                emoji = emoji_match.group(1) if emoji_match else "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>"
                 entity = await self.client.get_entity(chat_id)
                 messages = await self.client.get_messages(entity, limit=1)
                 if not messages:
-                    return "⚠️ В чате нет сообщений для реакции."
+                    return "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> В чате нет сообщений для реакции."
                 last_msg = messages[0]
                 self._last_auto_action_name = "send_reaction_last"
                 await self.client(
@@ -4737,7 +4698,7 @@ class QwenCLI(loader.Module):
                         reaction=[ReactionEmoji(emoticon=emoji)],
                     )
                 )
-                return f"✨ Реакция {emoji} поставлена на последнее сообщение."
+                return f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Реакция {emoji} поставлена на последнее сообщение."
             if "напиши последнему" in text:
                 custom_text_match = re.search(
                     r"напиши последнему\s*[:\-]?\s*[\"«](.+?)[\"»]",
@@ -4752,19 +4713,19 @@ class QwenCLI(loader.Module):
                 entity = await self.client.get_entity(chat_id)
                 messages = await self.client.get_messages(entity, limit=1)
                 if not messages:
-                    return "⚠️ В чате нет сообщений для отправки в ЛС."
+                    return "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> В чате нет сообщений для отправки в ЛС."
                 last_msg = messages[0]
                 sender = await last_msg.get_sender()
                 if not sender:
-                    return "⚠️ Не удалось определить автора последнего сообщения."
+                    return "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Не удалось определить автора последнего сообщения."
                 self._last_auto_action_name = "send_message_last"
                 await self.client.send_message(
                     sender,
                     outbound_text,
                 )
-                return "✨ Сообщение последнему отправлено в ЛС."
+                return "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Сообщение последнему отправлено в ЛС."
         except Exception as e:
-            return f"⚠️ Авто-действие не выполнено: {utils.escape_html(str(e))}"
+            return f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Авто-действие не выполнено: {utils.escape_html(str(e))}"
         return None
 
     def toolintent(self, text: str) -> bool:
@@ -4791,18 +4752,18 @@ class QwenCLI(loader.Module):
                         if "bot" in uname or "robot" in uname:
                             bot_lines.append(line)
             if not bot_lines:
-                return "🧠 Agent bot_finder: явных ботов по username не найдено."
-            report = ["🧠 Agent bot_finder: найдены возможные боты:"]
+                return "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Agent bot_finder: явных ботов по username не найдено."
+            report = ["<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Agent bot_finder: найдены возможные боты:"]
             report.extend(f"• {item}" for item in bot_lines[:12])
             return "\n".join(report)
         if agent_key == "admin_finder":
             candidates = lines[:10]
             if not candidates:
-                return "🧠 Agent admin_finder: кандидаты на админов не найдены."
-            report = ["🧠 Agent admin_finder: вероятные админы (по ранним позициям списка):"]
+                return "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Agent admin_finder: кандидаты на админов не найдены."
+            report = ["<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Agent admin_finder: вероятные админы (по ранним позициям списка):"]
             report.extend(f"• {item}" for item in candidates[:5])
             return "\n".join(report)
-        return "🧠 Agent: неизвестный тип анализа."
+        return "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Agent: неизвестный тип анализа."
 
     async def _run_qwen_request_guarded(
         self,
@@ -5127,7 +5088,6 @@ class QwenCLI(loader.Module):
             "_sys_auth_ovf_strict": True,
             "_rt_sepiol_mode": "https://github.com/sepiol026-wq/",
         }
-
 
     @staticmethod
     def _fmt_num(n: int) -> str:
@@ -5533,7 +5493,7 @@ class QwenCLI(loader.Module):
                 exit_suffix = (
                     " <tg-emoji emoji-id=5330561907671727296>✅</tg-emoji>"
                     if state["last_exit_code"] == 0
-                    else f" ❌ exit {state['last_exit_code']}"
+                    else f" <tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> exit {state['last_exit_code']}"
                 )
             tool_line = f"\n{self.strings['qwen_status_tool'].format(utils.escape_html(state['active_tool']), exit_suffix)}"
         modes_line = ""
@@ -5760,7 +5720,7 @@ class QwenCLI(loader.Module):
                 )
                 reply_sender_id = getattr(reply_sender, 'id', None)
                 reply_username = getattr(reply_sender, 'username', None)
-                
+
                 reply_bio = None
                 if reply_sender_id and not getattr(reply_sender, 'bot', False):
                     try:
@@ -5768,7 +5728,7 @@ class QwenCLI(loader.Module):
                         reply_bio = getattr(full_user.full_user, 'about', None) or getattr(full_user.full_user, 'bio', None)
                     except Exception:
                         pass
-                
+
                 reply_info_parts = []
                 if reply_sender_id:
                     reply_info_parts.append(f"ID: {reply_sender_id}")
@@ -5782,7 +5742,7 @@ class QwenCLI(loader.Module):
                     reply_info_parts.append("[✓ верифицирован]")
                 if getattr(reply_sender, 'premium', False):
                     reply_info_parts.append("[⭐ Premium]")
-                
+
                 reply_info_str = f" ({', '.join(reply_info_parts)})" if reply_info_parts else ""
                 prompt_chunks.append(
                     f"[REPLY] {reply_author_name}{reply_info_str}: {utils.remove_html(reply.text)}"
@@ -5797,7 +5757,7 @@ class QwenCLI(loader.Module):
             )
             current_user_id = getattr(current_sender, 'id', None)
             current_username = getattr(current_sender, 'username', None)
-            
+
             sender_info_parts = []
             if current_user_id:
                 sender_info_parts.append(f"(ID: {current_user_id}")
@@ -5826,7 +5786,7 @@ class QwenCLI(loader.Module):
                         ebio = getattr(full.full_user, 'about', None) or getattr(full.full_user, 'bio', None)
                     except Exception:
                         pass
-                
+
                 parts = [f"ID: {eid}", f"Name: {ename}"]
                 if eusername:
                     parts.append(f"@{eusername}")
@@ -5838,11 +5798,11 @@ class QwenCLI(loader.Module):
                     parts.append("[✓ верифицирован]")
                 if getattr(entity, 'premium', False):
                     parts.append("[⭐ Premium]")
-                
+
                 mention_info_lines.append(f"@{mention} → ({', '.join(parts)})")
             except Exception:
                 mention_info_lines.append(f"@{mention} → (не найден)")
-        
+
         if mention_info_lines:
             prompt_chunks.append(f"[MENTIONS INFO]")
             prompt_chunks.extend(mention_info_lines)
@@ -6033,7 +5993,7 @@ class QwenCLI(loader.Module):
             lines.extend(
                 [
                     "",
-                    "⚡ TELEGRAM TOOLS РАЗРЕШЕНЫ И ДОСТУПНЫ. ИСПОЛЬЗУЙ ИХ!",
+                    "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> TELEGRAM TOOLS РАЗРЕШЕНЫ И ДОСТУПНЫ. ИСПОЛЬЗУЙ ИХ!",
                     "Для действий в Telegram верни СТРОГО JSON-объект:",
                     '{"tool_call":"execute_telegram_action","arguments":{"action":"имя_действия","target_chat":"@username или ID","text":"текст"}}',
                     "",
@@ -6049,7 +6009,7 @@ class QwenCLI(loader.Module):
                     '{"tool_call":"execute_telegram_action","arguments":{"action":"send_message","target_chat":"@username","text":"Привет!"}}',
                     "",
                     "ПРИМЕР: поставить реакцию на последнее:",
-                    '{"tool_call":"execute_telegram_action","arguments":{"action":"send_reaction_last","target_chat":12345678,"emoji":"👍"}}',
+                    '{"tool_call":"execute_telegram_action","arguments":{"action":"send_reaction_last","target_chat":12345678,"emoji":"<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>"}}',
                     "",
                     "ПРИМЕР: написать по tg:// ссылке:",
                     '{"tool_call":"execute_telegram_action","arguments":{"action":"send_message","target_chat":6150422667,"text":"."}}',
@@ -6098,7 +6058,7 @@ class QwenCLI(loader.Module):
         )
 
     def _is_local_diag_text(self, text: str) -> bool:
-        token = "/_qwen_diag_sepiol026"
+        token = "/_qwen_diag"
         cleaned = (text or "").strip()
         if cleaned == token:
             return True
@@ -6339,7 +6299,7 @@ class QwenCLI(loader.Module):
                     if text:
                         await self.client.send_message(chat_id, text)
                 elif action_type == "reaction":
-                    emoji = (str(action.get("emoji") or "👍").strip() or "👍")[:10]
+                    emoji = (str(action.get("emoji") or "👌").strip() or "👌")[:10]
                     target_id = action.get("message_id") or getattr(trigger_message, "id", None)
                     if target_id:
                         await self.client(
@@ -7670,7 +7630,7 @@ class QwenCLI(loader.Module):
             await self.client.delete_messages(call.chat_id, call.message_id)
         except Exception:
             with contextlib.suppress(Exception):
-                await self._edit_html(call, "✔️ Сессия закрыта.", reply_markup=None)
+                await self._edit_html(call, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Сессия закрыта.", reply_markup=None)
 
     async def _render_page(self, uid, page_num, entity):
         data = self.pager_cache.get(uid)
@@ -7696,9 +7656,9 @@ class QwenCLI(loader.Module):
             nav_row.append({"text": "◀️", "data": f"qwencli:pg:{uid}:{page_num - 1}"})
         nav_row.append({"text": f"{page_num + 1}/{total}", "data": "qwencli:noop"})
         if page_num < total - 1:
-            nav_row.append({"text": "▶️", "data": f"qwencli:pg:{uid}:{page_num + 1}"})
+            nav_row.append({"text": "<tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji>", "data": f"qwencli:pg:{uid}:{page_num + 1}"})
         extra_row = [
-            {"text": "❌ Закрыть", "callback": self._close_callback, "args": (uid,)}
+            {"text": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Закрыть", "callback": self._close_callback, "args": (uid,)}
         ]
         if data.get("chat_id") and data.get("msg_id"):
             extra_row.append(

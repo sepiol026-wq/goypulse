@@ -1,10 +1,12 @@
 # requires: requests aiohttp
 # meta developer: @samsepi0l_ovf
-# authors: @goy_ai
-# Description: GoySecurity — продвинутый антивирусный сканер модулей, файлов и архивов с поддержкой Gemini AI.
+# authors: @samsepi0l_ovf
+# Description: Security scanner + optional pre-installation module guard.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 
 from __future__ import annotations
+
+__version__ = (1, 0, 0)
 
 import ast
 import asyncio
@@ -193,11 +195,11 @@ IP_PORT_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}:(?:\d{2,5})\b")
 PROMPT_INJECTION_RE = re.compile(r"(?is)(?:ignore\s+previous\s+instructions|follow\s+these\s+instructions|answer\s+in\s+english|return\s+safe\s+verdict|do\s+not\s+report|system\s+prompt|developer\s+message|you\s+are\s+chatgpt|you\s+are\s+an\s+ai|respond\s+with\s+json\s+only)")
 
 SUS_DOMAINS = (
-    "webhook", "pastebin", "discord.com/api/webhooks", "discordapp.com/api/webhooks", 
-    "api.telegram.org/bot", "ngrok", "localtunnel", "requestbin", "hookbin", 
-    "transfer.sh", "file.io", "anonfiles", "gofile", "0x0.st", "paste.ee", 
-    "ghostbin", "catbox.moe", "t.me", "telegram.me", "rentry.co", "rentry.org", 
-    "telegra.ph", "hastebin.com", "dpaste.com", "controlc.com", "iplogger.org", 
+    "webhook", "pastebin", "discord.com/api/webhooks", "discordapp.com/api/webhooks",
+    "api.telegram.org/bot", "ngrok", "localtunnel", "requestbin", "hookbin",
+    "transfer.sh", "file.io", "anonfiles", "gofile", "0x0.st", "paste.ee",
+    "ghostbin", "catbox.moe", "t.me", "telegram.me", "rentry.co", "rentry.org",
+    "telegra.ph", "hastebin.com", "dpaste.com", "controlc.com", "iplogger.org",
     "grabify.link", "api.ipify.org", "ident.me", "myexternalip.com", "ifconfig.me"
 )
 
@@ -394,10 +396,10 @@ class Analyzer:
         for name, raw in parts:
             txt = self._decode_candidate(name, raw)
             texts.append(f"# FILE: {name}\n{txt}")
-        
+
         self.decoded = "\n\n".join(texts).strip()
         self.fp = hashlib.sha256(self.decoded.encode("utf-8", "ignore")).hexdigest()[:16]
-        
+
         self._scan_text(self.decoded, "bundle")
         for name, raw in parts:
             txt = self._decode_candidate(name, raw)
@@ -410,18 +412,18 @@ class Analyzer:
             text = self._maybe_decode(name, raw)
         else:
             text = str(raw)
-            
+
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         current = text
         methods = []
-        
+
         for _ in range(max(1, self.depth)):
             nxt, method_name = self._try_decode_layer(current)
             if not method_name or nxt == current:
                 break
             methods.append(method_name)
             current = nxt
-            
+
         self.mode_chain = methods if methods else ["Исходный код (Plaintext)"]
         return current
 
@@ -450,17 +452,17 @@ class Analyzer:
     def _try_decode_layer(self, text: str) -> Tuple[str, str]:
         s = text.strip()
         if not s: return text, ""
-        
+
         # 1. Whole-file encoding check
         plain = s.replace("\n", "").replace(" ", "").replace('"', '').replace("'", "")
         if len(plain) > 60 and B64_RE.fullmatch(plain):
-            try: 
+            try:
                 dec = base64.b64decode(plain, validate=False).decode("utf-8", "ignore")
                 if len(dec) > 10: return dec, "Base64"
             except: pass
-            
+
         if len(plain) > 80 and HEX_RE.fullmatch(plain):
-            try: 
+            try:
                 dec = binascii.unhexlify(plain).decode("utf-8", "ignore")
                 if len(dec) > 10: return dec, "Hex"
             except: pass
@@ -548,7 +550,7 @@ class Analyzer:
         self.stats["ips"] += len(IP_RE.findall(text))
         self.stats["ip_ports"] += local_ip_ports
         self.stats["secret_literals"] += local_secret_literals
-        
+
         for m in re.finditer(r'["\']([A-Za-z0-9+/]{30,})["\']', text):
             if self._is_rule_context(text, m.start(), m.end()):
                 continue
@@ -558,7 +560,7 @@ class Analyzer:
             if ent > 4.2:
                 self.stats["high_entropy_strings"] += 1
                 self._add("warning", "Аномальная энтропия", f"Высокая плотность информации ({ent:.2f})", source, self._pos(text, m.start()), 25, "obf")
-        
+
         non_ascii = len(re.findall(r'[^\x00-\x7F]', text))
         if len(text) > 1000:
             ratio = non_ascii / len(text)
@@ -648,7 +650,7 @@ class Analyzer:
         for h in self.hits:
             fam[h.family] = fam.get(h.family, 0) + h.score
             conf[h.family] = max(conf.get(h.family, 0), h.conf)
-            
+
         ranked = [(k, fam[k], conf.get(k, 0)) for k in fam]
         return sorted(ranked, key=lambda x: (-x[1], -x[2], x[0]))
 
@@ -687,21 +689,21 @@ class Analyzer:
         fam = {}
         for h in self.hits:
             fam[h.family] = fam.get(h.family, 0) + 1
-            
+
         score = sum(h.score for h in self.hits)
         ranked = self._family_rank()
-        
+
         main_family = "clean"
         main_conf = 100
-        
+
         if ranked:
             main_family = ranked[0][0]
             main_conf = ranked[0][2]
-            
+
         if main_family in RISK_WEAK and not any(f in RISK_STRONG for f, _, _ in ranked):
             main_family = "capability-only"
             main_conf = max(10, main_conf)
-            
+
         return {
             "decoded": self.decoded,
             "mode": self.mode_chain,
@@ -803,7 +805,7 @@ class _ASTVisitor(ast.NodeVisitor):
                 taint = "secret_literal"
             elif len(s) >= 80 and self.av._entropy(s) > 4.2:
                 taint = "packed_literal"
-        
+
         if taint:
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
@@ -817,7 +819,7 @@ class _ASTVisitor(ast.NodeVisitor):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
                     self.vars[tgt.id] = self.vars[node.value.id]
-                            
+
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
@@ -860,14 +862,14 @@ class _ASTVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call):
         self.av.stats["calls"] += 1
         q = self._call_name(node.func)
-        
+
         # Detect getattr(builtins, 'exec') or similar
         if q == "getattr" and len(node.args) >= 2:
             base = self._eval_node_str(node.args[0]) or self._call_name(node.args[0])
             attr = self._eval_node_str(node.args[1])
             if attr:
                 q = f"{base}.{attr}" if base else attr
-        
+
         if q == "__import__":
             if node.args:
                 arg_str = self._eval_node_str(node.args[0])
@@ -886,7 +888,7 @@ class _ASTVisitor(ast.NodeVisitor):
                     arg_name = arg.id
                 elif isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
                     arg_name = arg.func.id
-                
+
                 if arg_name and arg_name in self.vars:
                     vtype = self.vars[arg_name]
                     target_funcs = ("post", "send", "request", "upload", "write")
@@ -937,14 +939,14 @@ class _ASTVisitor(ast.NodeVisitor):
         while isinstance(cur, ast.Attribute):
             parts.append(cur.attr)
             cur = cur.value
-            
+
         if isinstance(cur, ast.Name):
             parts.append(cur.id)
         elif isinstance(cur, ast.Call):
             parts.append(self._call_name(cur.func))
         else:
             return ""
-            
+
         parts.reverse()
         return ".".join(parts)
 
@@ -979,25 +981,25 @@ class GoySecurity(loader.Module):
     """
     strings = {
         "name": "GoySecurity",
-        "loading": "<b>🛡 GoySecurity</b>",
-        "stage_fetch": "📥 <code>Сбор входных данных</code>",
-        "stage_extract": "📦 <code>Извлечение содержимого</code>",
-        "stage_decode": "🧬 <code>Декодирование слоёв</code>",
-        "stage_parse": "🧠 <code>Статический разбор</code>",
-        "stage_rules": "🧪 <code>Сигнатуры и эвристики</code>",
-        "stage_ai": "🤖 <code>AI-анализ: {provider}</code>",
-        "stage_ai_wait": "🤖 <code>Жду ответ от {provider}</code>",
+        "loading": "<b><tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> GoySecurity</b>",
+        "stage_fetch": "<tg-emoji emoji-id=5255890718659979335>⬇️</tg-emoji> <code>Сбор входных данных</code>",
+        "stage_extract": "<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <code>Извлечение содержимого</code>",
+        "stage_decode": "<tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> <code>Декодирование слоёв</code>",
+        "stage_parse": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>Статический разбор</code>",
+        "stage_rules": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>Сигнатуры и эвристики</code>",
+        "stage_ai": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <code>AI-анализ: {provider}</code>",
+        "stage_ai_wait": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <code>Жду ответ от {provider}</code>",
         "no_code": "<b>ошибка входа</b>: исходник не извлечён",
-        "header": "<b>🛡 Отчёт GoySecurity</b>\n",
+        "header": "<b><tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> Отчёт GoySecurity</b>\n",
         "summary": (
-            "<b>⚖️ Вердикт:</b> {verdict}\n"
-            "<b>🧬 Семейство:</b> <code>{family}</code> | <b>Уверенность:</b> <code>{family_conf}%</code>\n"
-            "<b>📊 Риск-балл:</b> <code>{score}</code> | <b>Найдено индикаторов:</b> <code>{total}</code>\n"
+            "<b><tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Вердикт:</b> {verdict}\n"
+            "<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Семейство:</b> <code>{family}</code> | <b>Уверенность:</b> <code>{family_conf}%</code>\n"
+            "<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск-балл:</b> <code>{score}</code> | <b>Найдено индикаторов:</b> <code>{total}</code>\n"
         ),
-        "mode_line": "<b>🧱 Цепочка декодирования:</b> <code>{mode}</code>",
-        "caps": "<b>🛰 Поведенческий профиль:</b>\n{caps}",
-        "why_head": "<b>🚨 Статические находки:</b>\n",
-        "empty": "✅ <b>Высокодоверенных вредоносных индикаторов не найдено.</b>\n",
+        "mode_line": "<b><tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> Цепочка декодирования:</b> <code>{mode}</code>",
+        "caps": "<b><tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> Поведенческий профиль:</b>\n{caps}",
+        "why_head": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Статические находки:</b>\n",
+        "empty": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>Высокодоверенных вредоносных индикаторов не найдено.</b>\n",
         "section": "\n<b>┌ {title}</b>\n",
         "row": "├ <b>{title}</b> <i>(строка={line})</i>\n",
         "row_why": "├ <b>{title}</b>\n│ <i>{detail} • строка={line}</i>\n",
@@ -1006,12 +1008,12 @@ class GoySecurity(loader.Module):
         "mode_set": "<b>режим</b>: <code>{mode}</code>",
         "wl_add": "<b>Белый список: добавлено</b> <code>{fp}</code>",
         "wl_del": "<b>Белый список: удалено</b> <code>{fp}</code>",
-        "hist_head": "<b>🗂 История сканов:</b>\n",
+        "hist_head": "<b><tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> История сканов:</b>\n",
         "hist_row": "• <code>{fp}</code> | <b>{verdict}</b> | риск-балл=<code>{score}</code>\n",
         "whitelisted": "<b>Белый список</b>: текущий отпечаток пропущен\n",
-        "details_head": "<b>🔎 Детальный отчёт</b>\n",
+        "details_head": "<b><tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> Детальный отчёт</b>\n",
         "ai_set": "<b>AI-провайдер</b>: <code>{provider}</code>\n<b>Модель</b>: <code>{model}</code>",
-        "models_head": "<b>🧠 AI-каталог</b>:\n",
+        "models_head": "<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> AI-каталог</b>:\n",
         "custom_ai_ok": "<b>Кастомный провайдер</b>: <code>{provider}</code>\n<b>Базовый URL</b>: <code>{base}</code>\n<b>Модель</b>: <code>{model}</code>\n<b>Совместимость</b>: <code>{style}</code>",
     }
 
@@ -1040,6 +1042,9 @@ class GoySecurity(loader.Module):
             loader.ConfigValue("decode_depth", 7, "Глубина декодирования", validator=loader.validators.Integer(minimum=1, maximum=10)),
             loader.ConfigValue("max_files", 60, "Максимум файлов в архиве", validator=loader.validators.Integer(minimum=1, maximum=250)),
             loader.ConfigValue("ui_updates", True, "Показывать пошаговый статус", validator=loader.validators.Boolean()),
+            loader.ConfigValue("guard_preinstall_enabled", False, "Включить предустановочную проверку модулей (перехват register_module).", validator=loader.validators.Boolean()),
+            loader.ConfigValue("guard_preinstall_threshold", 70, "Порог risk-балла для блокировки установки при guard_preinstall_enabled.", validator=loader.validators.Integer(minimum=1, maximum=250)),
+            loader.ConfigValue("guard_preinstall_notify", True, "Писать предупреждения в лог при блокировке/ошибке preinstall guard.", validator=loader.validators.Boolean()),
         )
         self.av = Analyzer(depth=self.config["decode_depth"], mode="paranoid", max_files=self.config["max_files"])
         self._hist: List[Dict[str, Any]] = []
@@ -1049,6 +1054,8 @@ class GoySecurity(loader.Module):
         self._last_res = None
         self._custom_ai: Dict[str, Dict[str, Any]] = {}
         self._custom_ai_tokens: Dict[str, str] = {}
+        self._register_guard_patched = False
+        self._register_guard_original = None
 
     def config_complete(self):
         self.av.depth = self.config["decode_depth"]
@@ -1057,26 +1064,104 @@ class GoySecurity(loader.Module):
     async def client_ready(self):
         self.av.depth = self.config["decode_depth"]
         self.av.max_files = self.config["max_files"]
-        
+
         hist_data = self.db.get("GoySecurity", "gsec_hist")
         if hist_data:
             self._hist = list(hist_data)
         else:
             self._hist = []
-            
+
         wl_data = self.db.get("GoySecurity", "gsec_wl")
         if wl_data:
             self._wl = list(wl_data)
         else:
             self._wl = []
-            
+
         self._mode = self.db.get("GoySecurity", "gsec_mode", "paranoid")
         if self._mode not in {"normal", "strict", "paranoid"}:
             self._mode = "paranoid"
-            
+
         self.av.mode = self._mode
         self._custom_ai = dict(self.db.get("GoySecurity", "gsec_custom_ai", {}) or {})
         self._custom_ai_tokens = dict(self.db.get("GoySecurity", "gsec_custom_ai_tokens", {}) or {})
+        self._ensure_preinstall_guard()
+
+    def _extract_register_module_payload(self, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[str, str]:
+        spec = args[0] if args else kwargs.get("spec")
+        module_name = ""
+        if len(args) > 1 and isinstance(args[1], str):
+            module_name = args[1]
+        module_name = module_name or str(getattr(spec, "name", "") or "external_module")
+        source = ""
+        loader_obj = getattr(spec, "loader", None) if spec else None
+
+        if loader_obj:
+            for attr in ("data", "source", "text", "code", "_data"):
+                val = getattr(loader_obj, attr, None)
+                if isinstance(val, bytes):
+                    source = val.decode("utf-8", errors="ignore")
+                    break
+                if isinstance(val, str):
+                    source = val
+                    break
+
+            if not source and callable(getattr(loader_obj, "get_source", None)):
+                with contextlib.suppress(Exception):
+                    fetched = loader_obj.get_source(module_name)
+                    if isinstance(fetched, str):
+                        source = fetched
+
+        if not source and isinstance(kwargs.get("source"), str):
+            source = kwargs["source"]
+        if not source and len(args) > 2 and isinstance(args[2], str):
+            source = args[2]
+
+        return module_name, source
+
+    def _should_block_preinstall(self, risk: str, score: int) -> bool:
+        if not self.config["guard_preinstall_enabled"]:
+            return False
+        return int(score) >= int(self.config["guard_preinstall_threshold"]) and risk in {"medium", "high", "critical"}
+
+    def _ensure_preinstall_guard(self) -> None:
+        if self._register_guard_patched:
+            return
+        lm = self.lookup("loader") or self.lookup("Loader")
+        allmodules = getattr(lm, "allmodules", None) if lm else None
+        original = getattr(allmodules, "register_module", None) if allmodules else None
+        if not callable(original):
+            return
+
+        async def guarded_register_module(*args, **kwargs):
+            module_name, source = self._extract_register_module_payload(args, kwargs)
+            if source:
+                try:
+                    prev_mode = self.av.mode
+                    self.av.mode = self._mode
+                    try:
+                        scan_res = self.av.scan([(module_name, source)])
+                    finally:
+                        self.av.mode = prev_mode
+                    risk = str(scan_res.get("risk", "clean"))
+                    score = int(scan_res.get("score", 0) or 0)
+                    if self._should_block_preinstall(risk, score):
+                        msg = (
+                            "GoySecurity preinstall guard blocked module "
+                            f"{module_name} (risk={risk}, score={score}, threshold={self.config['guard_preinstall_threshold']})"
+                        )
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning(msg)
+                        raise RuntimeError(msg)
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    if self.config["guard_preinstall_notify"]:
+                        log.warning("GoySecurity preinstall guard fallback for %s: %s", module_name, e)
+            return await original(*args, **kwargs)
+
+        allmodules.register_module = guarded_register_module
+        self._register_guard_original = original
+        self._register_guard_patched = True
 
     def _persist(self) -> None:
         self.db.set("GoySecurity", "gsec_hist", self._hist)
@@ -1159,7 +1244,7 @@ class GoySecurity(loader.Module):
             meta = self._custom_ai.get(provider, {})
             active_model = current_model if current_model != "не задана" else "твоя-модель"
             return (
-                f"<b>🛠 Подключение кастомного провайдера</b>\n"
+                f"<b><tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Подключение кастомного провайдера</b>\n"
                 f"<b>Провайдер:</b> <code>{html.escape(provider)}</code>\n"
                 f"<b>Базовый URL:</b> <code>{html.escape(str(meta.get('base_url', '')))}</code>\n"
                 f"<b>Совместимость API:</b> <code>{html.escape(str(meta.get('style', 'openai')))}</code>\n"
@@ -1189,7 +1274,7 @@ class GoySecurity(loader.Module):
             "perplexity": "Для этой связки оптимален sonar-профиль с предсказуемым JSON-ответом без лишних режимов.",
         }.get(provider, "Проверь документацию провайдера и задай точный model id, который реально доступен на твоём токене.")
         return (
-            f"<b>🛠 Подключение: {title}</b>\n"
+            f"<b><tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Подключение: {title}</b>\n"
             f"<b>Токен сейчас:</b> <code>{token_state}</code>\n"
             f"<b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
             f"<b>Актуальный ряд:</b> {suggested}\n"
@@ -1210,23 +1295,23 @@ class GoySecurity(loader.Module):
             meta = AI_MODEL_CATALOG[provider]
             suggested = ", ".join(f"<code>{html.escape(m)}</code>" for m in meta["models"])
             return (
-                f"✨ <b>{html.escape(meta['title'])}</b>\n"
-                f"📅 <b>Актуальность каталога:</b> <code>{html.escape(meta['updated'])}</code>\n"
-                f"🔐 <b>Токен:</b> <code>{html.escape(token_state)}</code>\n"
-                f"🧠 <b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
-                f"📚 <b>Актуальные model id:</b> {suggested}\n"
-                f"🧾 <b>Тех. заметка:</b> {html.escape(meta['help'])}\n"
-                f"⚙️ <b>Быстрый выбор:</b> <code>.gai {html.escape(provider)} {html.escape(meta['models'][0])}</code>\n"
-                f"🔗 <b>Документация:</b> <code>{html.escape(str(meta.get('docs', '')))}</code>\n"
+                f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>{html.escape(meta['title'])}</b>\n"
+                f"<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Актуальность каталога:</b> <code>{html.escape(meta['updated'])}</code>\n"
+                f"<tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <b>Токен:</b> <code>{html.escape(token_state)}</code>\n"
+                f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
+                f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Актуальные model id:</b> {suggested}\n"
+                f"<tg-emoji emoji-id=5253775593295588000>📝</tg-emoji> <b>Тех. заметка:</b> {html.escape(meta['help'])}\n"
+                f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Быстрый выбор:</b> <code>.gai {html.escape(provider)} {html.escape(meta['models'][0])}</code>\n"
+                f"<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Документация:</b> <code>{html.escape(str(meta.get('docs', '')))}</code>\n"
             )
         meta = self._custom_ai.get(provider, {})
         return (
-            f"🧩 <b>{html.escape(self._provider_label(provider))}</b>\n"
-            f"🔐 <b>Токен:</b> <code>{html.escape(token_state)}</code>\n"
-            f"🧠 <b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
-            f"🌐 <b>Базовый URL:</b> <code>{html.escape(str(meta.get('base_url', '')))}</code>\n"
-            f"🧱 <b>Совместимость:</b> <code>{html.escape(str(meta.get('style', 'openai')))}</code>\n"
-            f"⚙️ <b>Быстрый выбор:</b> <code>.gai {html.escape(provider)} {html.escape(current_model if current_model != 'не задана' else 'твоя-модель')}</code>\n"
+            f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>{html.escape(self._provider_label(provider))}</b>\n"
+            f"<tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <b>Токен:</b> <code>{html.escape(token_state)}</code>\n"
+            f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
+            f"<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Базовый URL:</b> <code>{html.escape(str(meta.get('base_url', '')))}</code>\n"
+            f"<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <b>Совместимость:</b> <code>{html.escape(str(meta.get('style', 'openai')))}</code>\n"
+            f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Быстрый выбор:</b> <code>.gai {html.escape(provider)} {html.escape(current_model if current_model != 'не задана' else 'твоя-модель')}</code>\n"
         )
 
     def _provider_models_text(self, provider: str) -> str:
@@ -1241,7 +1326,7 @@ class GoySecurity(loader.Module):
                 model_rows.append(f"{marker} <code>{html.escape(model_id)}</code>")
             listing = "\n".join(model_rows) if model_rows else "<i>Каталог пуст</i>"
             return (
-                f"<b>🧠 Модельный ряд: {html.escape(self._provider_label(provider))}</b>\n"
+                f"<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Модельный ряд: {html.escape(self._provider_label(provider))}</b>\n"
                 f"<b>Провайдер активен:</b> <code>{'да' if provider == active_provider else 'нет'}</code>\n"
                 f"<b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
                 f"<b>Токен:</b> <code>{'есть' if self._provider_token(provider) else 'нет'}</code>\n\n"
@@ -1250,7 +1335,7 @@ class GoySecurity(loader.Module):
             )
         meta = self._custom_ai.get(provider, {})
         return (
-            f"<b>🧠 Модель кастомного провайдера</b>\n"
+            f"<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Модель кастомного провайдера</b>\n"
             f"<b>Провайдер:</b> <code>{html.escape(provider)}</code>\n"
             f"<b>Провайдер активен:</b> <code>{'да' if provider == active_provider else 'нет'}</code>\n"
             f"<b>Текущая модель:</b> <code>{html.escape(current_model)}</code>\n"
@@ -1286,12 +1371,12 @@ class GoySecurity(loader.Module):
             rows.append(row)
         target = selected or self._active_provider()
         rows.append([
-            {"text": "📚 Каталог", "callback": self._inline_models, "args": (target, "catalog")},
-            {"text": "🛠 Подключение", "callback": self._inline_models, "args": (target, "setup")},
+            {"text": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Каталог", "callback": self._inline_models, "args": (target, "catalog")},
+            {"text": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Подключение", "callback": self._inline_models, "args": (target, "setup")},
         ])
         rows.append([
-            {"text": "🧠 Модели", "callback": self._inline_models, "args": (target, "models")},
-            {"text": "✅ Сделать активным", "callback": self._inline_activate_provider, "args": (target, page)},
+            {"text": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Модели", "callback": self._inline_models, "args": (target, "models")},
+            {"text": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Сделать активным", "callback": self._inline_activate_provider, "args": (target, page)},
         ])
         if target in AI_MODEL_CATALOG:
             current_model = self._provider_model(target)
@@ -1308,7 +1393,7 @@ class GoySecurity(loader.Module):
                     model_row = []
             if model_row:
                 rows.append(model_row)
-        rows.append([{"text": "✖ Закрыть", "action": "close"}])
+        rows.append([{"text": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> Закрыть", "action": "close"}])
         return rows
 
     async def _inline_models(self, call: InlineCall, provider: str, page: str = "catalog"):
@@ -1345,10 +1430,10 @@ class GoySecurity(loader.Module):
         provider_label = html.escape(self._provider_label(provider))
         stage = self.strings("stage_ai_wait").format(provider=provider_label)
         lines = [self.strings("loading"), stage]
-        lines.append(f"<b>📶 Статус:</b> <code>{html.escape(self._progress_bar(attempt, total))} попытка {attempt}/{total}</code>")
-        lines.append(f"<b>🧠 Модель:</b> <code>{html.escape(model)}</code>")
+        lines.append(f"<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Статус:</b> <code>{html.escape(self._progress_bar(attempt, total))} попытка {attempt}/{total}</code>")
+        lines.append(f"<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Модель:</b> <code>{html.escape(model)}</code>")
         if res:
-            lines.append(f"<b>📦 Контекст:</b> <code>файлы={res.get('parts', 0)} • находки={res.get('total', 0)} • score={res.get('score', 0)}</code>")
+            lines.append(f"<b><tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> Контекст:</b> <code>файлы={res.get('parts', 0)} • находки={res.get('total', 0)} • score={res.get('score', 0)}</code>")
         if retry_reason:
             cut_reason = retry_reason[:240] + ("..." if len(retry_reason) > 240 else "")
             lines.append(f"<b>↻ Повторный запрос:</b> <i>{html.escape(cut_reason)}</i>")
@@ -1699,11 +1784,11 @@ class GoySecurity(loader.Module):
         return {"error": True, "reason": last_error}
 
     def _get_verdict(self, risk: str) -> str:
-        if risk == "critical": return "☠️ Критический риск"
-        if risk == "high": return "🔴 Высокий риск"
-        if risk == "medium": return "🟡 Подозрительная активность"
-        if risk == "low": return "🔵 Низкий риск"
-        return "✅ Чисто"
+        if risk == "critical": return "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Критический риск"
+        if risk == "high": return "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Высокий риск"
+        if risk == "medium": return "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Подозрительная активность"
+        if risk == "low": return "<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> Низкий риск"
+        return "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Чисто"
 
     def _short_title(self, title: str) -> str:
         mapping = {
@@ -1754,7 +1839,7 @@ class GoySecurity(loader.Module):
                 current_chunk = line + "\n"
             else:
                 current_chunk += line + "\n"
-                
+
         if current_chunk:
             chunks.append(current_chunk.strip())
 
@@ -1774,27 +1859,27 @@ class GoySecurity(loader.Module):
         """<ответом на файл/ссылку/текст> — Проверить модуль на вирусы и стилеры"""
         args = utils.get_args_raw(message).strip()
         status_msg = await utils.answer(message, self.strings("loading"))
-        
+
         try:
             srcs = await self._resolve(message, args)
             if not srcs:
                 await utils.answer(message, self.strings("no_code"))
                 return
-            
+
             if self.config["ui_updates"]:
                 await utils.answer(status_msg, f"{self.strings('loading')}\n{self._stage_line(self.strings('stage_rules'))}")
-            
+
             self.av.mode = self._mode
             res = self.av.scan(srcs)
             self._cur = res["fp"]
             self._last_res = res
-            
+
             ai_result = None
             api_error = None
             provider = self._active_provider()
             token = self._provider_token(provider)
             model = self._provider_model(provider)
-            
+
             if token:
                 if self.config["ui_updates"]:
                     stage_ai = self.strings("stage_ai").format(provider=html.escape(self._provider_label(provider)))
@@ -1818,9 +1903,9 @@ class GoySecurity(loader.Module):
                     self._push(res["fp"], res["risk"], res["score"], res.get("mode", []))
                     self._persist()
                     final_text += self._fmt_static(res, api_error)
-                
+
             await self._send_text_chunked(message, final_text)
-            
+
         except Exception as e:
             log.exception("GoySecurity scan error")
             err_str = str(e)
@@ -1836,16 +1921,16 @@ class GoySecurity(loader.Module):
             m = "normal" if self._mode == "strict" else "strict"
         else:
             m = a
-            
+
         if m not in {"normal", "strict", "paranoid"}:
             err_msg = self.strings("err").format(err="доступные режимы: normal, strict, paranoid")
             await utils.answer(message, err_msg)
             return
-            
+
         self._mode = m
         self.av.mode = m
         self._persist()
-        
+
         success_msg = self.strings("mode_set").format(mode=html.escape(m))
         await utils.answer(message, success_msg)
 
@@ -1905,7 +1990,7 @@ class GoySecurity(loader.Module):
             out = ["<b>кастомные ai-провайдеры</b>\n"]
             for name, meta in sorted(self._custom_ai.items()):
                 token_state = "настроен" if self._custom_ai_tokens.get(name) else "пусто"
-                out.append(f"<blockquote>✨ <b>{html.escape(name)}</b><br>🌐 <i>базовый URL</i>: <code>{html.escape(str(meta.get('base_url', '')))}</code><br>🧱 <i>совместимость</i>: <code>{html.escape(str(meta.get('style', 'openai')))}</code><br>🧠 <i>модель</i>: <code>{html.escape(str(meta.get('model', '')))}</code><br>🔐 <i>токен</i>: <code>{html.escape(token_state)}</code></blockquote>")
+                out.append(f"<blockquote><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>{html.escape(name)}</b><br><tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <i>базовый URL</i>: <code>{html.escape(str(meta.get('base_url', '')))}</code><br><tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <i>совместимость</i>: <code>{html.escape(str(meta.get('style', 'openai')))}</code><br><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <i>модель</i>: <code>{html.escape(str(meta.get('model', '')))}</code><br><tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <i>токен</i>: <code>{html.escape(token_state)}</code></blockquote>")
             await self._send_text_chunked(message, "".join(out))
             return
         if action == "del" and len(parts) >= 2:
@@ -1947,16 +2032,16 @@ class GoySecurity(loader.Module):
     async def gwlcmd(self, message):
         """[fp|ссылка] или reply на модуль — Добавить хэш модуля в белый список"""
         fp = await self._resolve_fp(message, utils.get_args_raw(message))
-            
+
         if not fp:
             err_msg = self.strings("err").format(err="не удалось извлечь отпечаток из ссылки, reply или текста")
             await utils.answer(message, err_msg)
             return
-            
+
         if fp not in self._wl:
             self._wl.append(fp)
             self._persist()
-            
+
         success_msg = self.strings("wl_add").format(fp=html.escape(fp))
         await utils.answer(message, success_msg)
 
@@ -1964,16 +2049,16 @@ class GoySecurity(loader.Module):
     async def gunwlcmd(self, message):
         """[fp|ссылка] или reply на модуль — Удалить хэш модуля из белого списка"""
         fp = await self._resolve_fp(message, utils.get_args_raw(message))
-            
+
         if not fp:
             err_msg = self.strings("err").format(err="не удалось извлечь отпечаток из ссылки, reply или текста")
             await utils.answer(message, err_msg)
             return
-            
+
         if fp in self._wl:
             self._wl.remove(fp)
             self._persist()
-            
+
         success_msg = self.strings("wl_del").format(fp=html.escape(fp))
         await utils.answer(message, success_msg)
 
@@ -1985,7 +2070,7 @@ class GoySecurity(loader.Module):
             empty_msg = self.strings("hist_head") + "<i>пусто</i>"
             await utils.answer(message, empty_msg)
             return
-            
+
         out = [self.strings("hist_head")]
         for it in reversed(hist):
             fp_str = html.escape(str(it.get("fp", "")))
@@ -1993,7 +2078,7 @@ class GoySecurity(loader.Module):
             score_str = html.escape(str(it.get("score", "")))
             row_msg = self.strings("hist_row").format(fp=fp_str, verdict=verdict_str, score=score_str)
             out.append(row_msg)
-            
+
         await utils.answer(message, "".join(out))
 
     @loader.unrestricted
@@ -2003,13 +2088,13 @@ class GoySecurity(loader.Module):
             err_msg = self.strings("err").format(err="Сначала запустите .gscan")
             await utils.answer(message, err_msg)
             return
-            
+
         provider = self._active_provider()
         token = self._provider_token(provider)
         model = self._provider_model(provider)
         ai_result = None
         api_error = None
-        
+
         if token and self._last_res.get("decoded"):
             status = self.strings("stage_ai").format(provider=html.escape(self._provider_label(provider)))
             await self._stage(message, status)
@@ -2019,19 +2104,19 @@ class GoySecurity(loader.Module):
             if ai_result and ai_result.get("error"):
                 api_error = ai_result.get("reason")
                 ai_result = None
-                
+
         if ai_result:
             why_str = self._fmt_ai(self._last_res, ai_result, provider, model)
         else:
             why_str = self._why_static(self._last_res, api_error)
-            
+
         await self._send_text_chunked(message, why_str)
 
     def _push(self, fp: str, risk: str, score: int, mode: List[str]) -> None:
         mode_str = " -> ".join(mode)
         ts = int(time.time())
         item = {"fp": fp, "risk": risk, "score": score, "mode": mode_str, "ts": ts}
-        
+
         self._hist.append(item)
         if len(self._hist) > 50:
             del self._hist[:-50]
@@ -2057,21 +2142,21 @@ class GoySecurity(loader.Module):
     async def _resolve(self, message, args: str) -> List[Tuple[str, str]]:
         if args and (args.startswith("http://") or args.startswith("https://")):
             return await self._from_url(args)
-            
+
         reply = await message.get_reply_message()
         if reply:
             xs = await self._from_msg(reply)
             if xs:
                 return xs
-                
+
         if getattr(message, "media", None):
             xs = await self._from_msg(message)
             if xs:
                 return xs
-                
+
         if args:
             return [("args", args)]
-            
+
         return []
 
     async def _from_url(self, url: str) -> List[Tuple[str, str]]:
@@ -2092,15 +2177,15 @@ class GoySecurity(loader.Module):
                     f_name = "document.py"
                     if hasattr(msg, "file") and getattr(msg.file, "name"):
                         f_name = msg.file.name
-                        
+
                     chopped_data = data[: self.config["max_bytes"]]
                     expanded = self._expand(f_name, chopped_data)
                     xs.extend(expanded)
-                    
+
             txt = getattr(msg, "raw_text", None) or getattr(msg, "text", None)
             if txt and not xs:
                 xs.append(("message", str(txt)))
-                
+
             return xs
         except Exception as e:
             log.error(f"Media extraction failed: {e}")
@@ -2109,10 +2194,10 @@ class GoySecurity(loader.Module):
     def _expand(self, name: str, data: bytes) -> List[Tuple[str, str]]:
         if not data:
             return []
-            
+
         out = []
         bio = io.BytesIO(data)
-        
+
         try:
             if zipfile.is_zipfile(bio):
                 bio.seek(0)
@@ -2132,9 +2217,9 @@ class GoySecurity(loader.Module):
                     return out
         except Exception:
             pass
-            
+
         bio.seek(0)
-        
+
         try:
             if tarfile.is_tarfile(bio):
                 bio.seek(0)
@@ -2160,7 +2245,7 @@ class GoySecurity(loader.Module):
                     return out
         except Exception:
             pass
-            
+
         decoded_str = self._maybe_decode(name, data)
         out.append((name, decoded_str))
         return out
@@ -2168,7 +2253,7 @@ class GoySecurity(loader.Module):
     def _maybe_decode(self, name: str, data: bytes) -> str:
         if not data:
             return ""
-            
+
         for enc in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
             try:
                 s = data.decode(enc)
@@ -2176,37 +2261,37 @@ class GoySecurity(loader.Module):
                     return s.replace("\r\n", "\n").replace("\r", "\n")
             except Exception:
                 pass
-                
+
         lower_name = name.lower()
-        
+
         if lower_name.endswith(".gz") or lower_name.endswith(".gzip"):
             try:
                 decompressed = gzip.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         if lower_name.endswith(".bz2"):
             try:
                 decompressed = bz2.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         if lower_name.endswith(".xz") or lower_name.endswith(".lzma"):
             try:
                 decompressed = lzma.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         for fn in (gzip.decompress, bz2.decompress, lzma.decompress):
             try:
                 decompressed = fn(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         return data.decode("utf-8", "ignore")
 
     def _dec_bytes(self, b: bytes) -> str:
@@ -2216,7 +2301,7 @@ class GoySecurity(loader.Module):
                 return s.replace("\r\n", "\n").replace("\r", "\n")
             except Exception:
                 pass
-                
+
         return b.decode("utf-8", "ignore")
 
     def _fmt_stats(self, res: Dict[str, Any]) -> str:
@@ -2263,31 +2348,36 @@ class GoySecurity(loader.Module):
 
     def _fmt_ai(self, res: Dict[str, Any], ai: Dict[str, Any], provider: str, model: str) -> str:
         out = [self.strings("header")]
-        out.append(f"<b>🤖 AI-анализ / {html.escape(self._provider_label(provider))}</b>\n")
+        out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> AI-анализ / {html.escape(self._provider_label(provider))}</b>\n")
         out.append(f"<i>Модель:</i> <code>{html.escape(model)}</code>")
-        out.append(f"<b>📏 Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>")
-        
+        out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>")
+
         v = html.escape(str(ai.get("verdict", "Unknown")))
         conf = ai.get("confidence", 0)
         level = ai.get("threat_level", 0)
-        
-        v_map = {"Clear": "✅ Чисто", "Suspicious": "🟡 Подозрительно", "Malicious": "🔴 Вредоносно", "Critical": "☠️ КРИТИЧЕСКИЙ РИСК"}
+
+        v_map = {
+            "Clear": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Чисто",
+            "Suspicious": "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Подозрительно",
+            "Malicious": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Вредоносно",
+            "Critical": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> КРИТИЧЕСКИЙ РИСК",
+        }
         v_str = v_map.get(v, v)
-        
-        out.append(f"<b>⚖️ Вердикт:</b> <code>{v_str}</code> | <b>Уверенность:</b> <code>{conf}%</code>")
-        out.append(f"<b>🔥 Уровень угрозы:</b> <code>{level}/10</code>")
-        
+
+        out.append(f"<b><tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Вердикт:</b> <code>{v_str}</code> | <b>Уверенность:</b> <code>{conf}%</code>")
+        out.append(f"<b><tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Уровень угрозы:</b> <code>{level}/10</code>")
+
         fam = html.escape(str(ai.get("family", "N/A")))
-        out.append(f"<b>🧬 Семейство:</b> <code>{fam}</code>")
-        
+        out.append(f"<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Семейство:</b> <code>{fam}</code>")
+
         reason = str(ai.get("reason", "Нет тех. обоснования"))
         if len(reason) > 520:
             reason = reason[:517] + "..."
-        out.append(f"\n<b>🧾 Разбор:</b>\n<i>{html.escape(reason)}</i>")
-        
+        out.append(f"\n<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Разбор:</b>\n<i>{html.escape(reason)}</i>")
+
         inds = ai.get("indicators", [])
         if inds:
-            out.append("\n<b>📍 Индикаторы компрометации:</b>")
+            out.append("\n<b><tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> Индикаторы компрометации:</b>")
             for i in inds[:4]:
                 t = html.escape(str(i.get("type", "Info")))
                 d = str(i.get("description", ""))
@@ -2298,7 +2388,7 @@ class GoySecurity(loader.Module):
 
         kill_chain = ai.get("kill_chain", [])
         if kill_chain:
-            out.append("\n<b>⛓ Цепочка действий:</b>")
+            out.append("\n<b><tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> Цепочка действий:</b>")
             for step in kill_chain[:4]:
                 step_str = str(step)
                 if len(step_str) > 64:
@@ -2308,55 +2398,55 @@ class GoySecurity(loader.Module):
         prompt_injection = ai.get("prompt_injection", {})
         if prompt_injection.get("detected"):
             details = html.escape(str(prompt_injection.get("details", "обнаружены инъекции инструкций внутри кода")))
-            out.append(f"\n<b>🪤 Инъекция инструкций в AI-контур:</b> <i>{details}</i>")
-                
+            out.append(f"\n<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Инъекция инструкций в AI-контур:</b> <i>{details}</i>")
+
         obf = ai.get("obfuscation", {})
         if obf.get("detected"):
             o_type = html.escape(str(obf.get("type", "Unknown")))
             o_depth = html.escape(str(obf.get("depth", "1")))
-            out.append(f"\n<b>🧬 Обфускация:</b> <code>{o_type}</code> | <b>Глубина:</b> <code>{o_depth}</code>")
-        
+            out.append(f"\n<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Обфускация:</b> <code>{o_type}</code> | <b>Глубина:</b> <code>{o_depth}</code>")
+
         out.append(self.strings("footer"))
         return "\n".join(out)
 
     def _fmt_static(self, res: Dict[str, Any], api_err: Optional[str] = None) -> str:
         out = [self.strings("header")]
-        
+
         if api_err:
-            out.append(f"⚠️ <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
-            
+            out.append(f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
+
         r_risk = str(res.get("risk", ""))
         verdict = self._get_verdict(r_risk)
-        
+
         r_fam = html.escape(str(res.get("family", "")))
         r_conf = str(res.get("family_conf", ""))
         r_score = str(res.get("score", ""))
         r_total = str(res.get("total", ""))
         r_fp = str(res.get("fp", ""))
         r_parts = str(res.get("parts", 1))
-        
+
         summary_msg = self.strings("summary").format(
-            verdict=verdict, family=r_fam, family_conf=r_conf, 
+            verdict=verdict, family=r_fam, family_conf=r_conf,
             score=r_score, total=r_total, fp=r_fp, parts=r_parts
         )
         out.append(summary_msg)
-        out.append(f"<b>📏 Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
-        
+        out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
+
         modes = res.get("mode", [])
         if not modes:
             modes = ["Исходный слой"]
-            
+
         m_str = html.escape(" -> ".join(modes))
         mode_msg = self.strings("mode_line").format(mode=m_str)
         out.append(mode_msg + "\n")
-        out.append(f"<b>🧮 Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
-        
+        out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
+
         if not res.get("total", 0):
             out.append(self.strings("empty"))
             out.append(self.strings("footer"))
             return "".join(out)
-            
-        out.append("<b>🚨 Ключевые находки:</b>\n")
+
+        out.append("<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Ключевые находки:</b>\n")
         for h in self._top_static_hits(res, 5):
             t_esc = html.escape(self._short_title(str(h.get("title", ""))))
             row_msg = self.strings("row").format(title=t_esc, line=h.get("line", 0))
@@ -2367,48 +2457,48 @@ class GoySecurity(loader.Module):
 
     def _why_static(self, res: Dict[str, Any], api_err: Optional[str] = None) -> str:
         out = [self.strings("details_head")]
-        
+
         if api_err:
-            out.append(f"⚠️ <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
-            
+            out.append(f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
+
         r_risk = str(res.get("risk", ""))
         verdict = self._get_verdict(r_risk)
-        
+
         summary_msg = self.strings("summary").format(
-            verdict=verdict, 
-            family=html.escape(str(res.get("family", ""))), 
-            family_conf=str(res.get("family_conf", "")), 
-            score=str(res.get("score", "")), 
-            total=str(res.get("total", "")), 
-            fp=str(res.get("fp", "")), 
+            verdict=verdict,
+            family=html.escape(str(res.get("family", ""))),
+            family_conf=str(res.get("family_conf", "")),
+            score=str(res.get("score", "")),
+            total=str(res.get("total", "")),
+            fp=str(res.get("fp", "")),
             parts=str(res.get("parts", 1))
         )
         out.append(summary_msg)
-        out.append(f"<b>📏 Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
-        out.append(f"<b>🧮 Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
-        
+        out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
+        out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
+
         crit_issues = res.get("critical", [])
         warn_issues = res.get("warning", [])
         info_issues = res.get("info", [])
         all_issues = crit_issues + warn_issues + info_issues
-        
+
         if not all_issues:
             out.append(self.strings("empty"))
             out.append(self.strings("footer"))
             return "".join(out)
-            
+
         for h in all_issues:
             t_esc = html.escape(self._short_title(str(h.get("title", ""))))
-            
+
             d_str = str(h.get("detail", ""))
             d_str = d_str[:44] + "..." if len(d_str) > 44 else d_str
             d_esc = html.escape(d_str)
-            
+
             row_msg = self.strings("row_why").format(
                 title=t_esc, detail=d_esc, line=h.get("line", 0)
             )
             out.append(row_msg)
-                
+
         out.append(self.strings("footer"))
         return "".join(out)
 
@@ -2416,7 +2506,7 @@ class GoySecurity(loader.Module):
         caps = res.get("capabilities", {})
         if not caps:
             return "нет выраженных поведенческих индикаторов"
-            
+
         cap_names = {
             "stealer": "Доступ к данным / credential surface",
             "exfil": "Эксфильтрация / outbound flow",
@@ -2433,10 +2523,10 @@ class GoySecurity(loader.Module):
             "framework": "Framework context",
             "updater": "Update flow",
         }
-            
+
         items = []
         for k, v in sorted(caps.items(), key=lambda x: (-x[1], x[0])):
             name = cap_names.get(k, k.capitalize())
             items.append(f"{name}: {v}")
-            
+
         return "\n".join(items)

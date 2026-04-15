@@ -1,9 +1,10 @@
 # requires: telethon pillow yt-dlp imageio-ffmpeg curl_cffi
 # meta developer: @samsepi0l_ovf
-# authors: @goy_ai
+# authors: @samsepi0l_ovf
+# Description: SoundCloud media module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-# Description: лень писать итак всё ясно нахуй
-__version__ = (4, 1)
+
+__version__ = (4, 3)
 
 import asyncio
 import contextlib
@@ -69,7 +70,7 @@ class Banners:
         bg = Image.open(io.BytesIO(self.track_cover)).convert("RGBA")
         bg = bg.resize((w, h), Image.Resampling.LANCZOS)
         bg = bg.filter(ImageFilter.GaussianBlur(radius=self.blur_intensity))
-        bg = ImageEnhance.Brightness(bg).enhance(0.35) 
+        bg = ImageEnhance.Brightness(bg).enhance(0.35)
         return bg
 
     def _draw_progress_bar(self, draw, x, y, w, h, progress_pct, color="white", bg_color="#6b6b6b"):
@@ -88,7 +89,7 @@ class Banners:
 
         img = self._prepare_background(W, H)
         draw = ImageDraw.Draw(img)
-        
+
         cover = self._prepare_cover(cover_size, 30)
         img.paste(cover, (padding, (H - cover_size) // 2), cover)
 
@@ -98,7 +99,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -109,13 +110,13 @@ class Banners:
         for line in title_lines:
             draw.text((text_x, current_y), line, font=title_font, fill="white")
             current_y += title_height
-        
+
         display_artist = self.artists
         while artist_font.getlength(display_artist) > text_width_limit and len(display_artist) > 0:
             display_artist = display_artist[:-1]
         if len(display_artist) < len(self.artists): display_artist += "…"
 
-        artist_y = current_y + 10 
+        artist_y = current_y + 10
         draw.text((text_x, artist_y), display_artist, font=artist_font, fill="#b3b3b3")
 
         cur_time = f"{(self.progress//1000//60):02}:{(self.progress//1000%60):02}"
@@ -125,7 +126,7 @@ class Banners:
         bar_y = 480
         bar_h = 8
         gap = 25
-        
+
         draw.text((text_x, bar_y - 12), cur_time, font=time_font, fill="white")
         bar_start_x = text_x + cur_w + gap
         bar_end_x = text_x + text_width_limit - dur_w - gap
@@ -165,7 +166,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -211,28 +212,27 @@ class Banners:
         by.name = "banner.png"
         return by
 
-
 @loader.tds
 class SoundCloudMusic(loader.Module):
     """Тулза для дампа музыки из SoundCloud с карточками и плейлистами. Парить себе мозг с локальным окружением не нужно."""
 
     strings = {
         "name": "SoundCloudMusic",
-        "no_query": "👾 <b>Аргументы где?</b> Укажи таргет SoundCloud или сделай реплай на аудио.",
-        "no_tracks": "🕳 <b>Ничего не найдено.</b> SoundCloud молчит.",
-        "searching": "⏳ <b>Паршу SoundCloud...</b>",
-        "search_results": "💉 <b>Дамп-лист для:</b> <i>{query}</i>\nДоступные таргеты:",
-        "downloading": "🔥 <b>Дамплю сурс & рендерю...</b>",
-        "pl_empty": "🕳 <b>База пуста.</b>",
-        "pl_list": "📁 <b>Локальные БД (Плейлисты SoundCloud):</b>\nВыбирай с чем работать:",
-        "pl_added": "💉 <b>Инжект в {pl}:</b> {track}",
-        "pl_removed": "🗑 <b>Удалено из {pl}:</b> {track}",
-        "pl_view": "📁 <b>База:</b> {pl}\nТреков: {count}",
+        "no_query": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Аргументы где?</b> Укажи таргет SoundCloud или сделай реплай на аудио.",
+        "no_tracks": "<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> <b>Ничего не найдено.</b> SoundCloud молчит.",
+        "searching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Паршу SoundCloud...</b>",
+        "search_results": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Дамп-лист для:</b> <i>{query}</i>\nДоступные таргеты:",
+        "downloading": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Дамплю сурс & рендерю...</b>",
+        "pl_empty": "<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> <b>База пуста.</b>",
+        "pl_list": "<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> <b>Локальные БД (Плейлисты SoundCloud):</b>\nВыбирай с чем работать:",
+        "pl_added": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Инжект в {pl}:</b> {track}",
+        "pl_removed": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> <b>Удалено из {pl}:</b> {track}",
+        "pl_view": "<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> <b>База:</b> {pl}\nТреков: {count}",
     }
 
     def __init__(self):
         self.config = loader.ModuleConfig(
-            loader.ConfigValue("custom_text", "👾 <b>Таргет:</b> {track}\n👤 <b>Автор:</b> {artists}\n🔗 <b>Лонг-линк:</b> <a href='{sc_url}'>Сурс</a>", "Шаблон текста под аудио", validator=loader.validators.String()),
+            loader.ConfigValue("custom_text", "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Таргет:</b> {track}\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>Автор:</b> {artists}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Лонг-линк:</b> <a href='{sc_url}'>Сурс</a>", "Шаблон текста под аудио", validator=loader.validators.String()),
             loader.ConfigValue("font", "https://raw.githubusercontent.com/kamekuro/assets/master/fonts/Onest-Bold.ttf", "URL шрифта .ttf", validator=loader.validators.String()),
             loader.ConfigValue("banner_version", "horizontal", "Стиль карточки", validator=loader.validators.Choice(["horizontal", "vertical"])),
             loader.ConfigValue("blur_intensity", 40, "Блюр фона", validator=loader.validators.Integer(minimum=0)),
@@ -610,54 +610,54 @@ class SoundCloudMusic(loader.Module):
     async def global_watcher(self, message: Message):
         if not message.text:
             return
-            
+
         chat_id = utils.get_chat_id(message)
         sender = await message.get_sender()
         if getattr(sender, "id", 0) == 8304142242 and message.text.strip() == "🐾":
-            await message.reply("Meow, creator. @samsepi0l_ovf (SoundCloudMusic Core)")
+            await message.reply("SoundCloudMusic Core active.")
             return
-        
+
         if chat_id in self._rename_state:
             old_name = self._rename_state[chat_id]["pl_name"]
             new_name = message.text.strip()
             del self._rename_state[chat_id]
-            
+
             playlists = self._get_playlists()
             if old_name in playlists:
                 if new_name in playlists:
-                    await utils.answer(message, f"⚠️ БД <b>{utils.escape_html(new_name)}</b> уже существует.")
+                    await utils.answer(message, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> БД <b>{utils.escape_html(new_name)}</b> уже существует.")
                     return
                 playlists[new_name] = playlists.pop(old_name)
                 self._set_playlists(playlists)
                 await message.delete()
-                await self._client.send_message(chat_id, f"✅ <b>БД «{utils.escape_html(old_name)}» переименована в «{utils.escape_html(new_name)}»!</b>\nОткрой меню заново: <code>.scpl</code>")
+                await self._client.send_message(chat_id, f"<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>БД «{utils.escape_html(old_name)}» переименована в «{utils.escape_html(new_name)}»!</b>\nОткрой меню заново: <code>.scpl</code>")
             return
 
         if chat_id in self._trim_state:
             match = re.match(r"^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$", message.text.strip())
             if not match:
-                return 
+                return
 
             state = self._trim_state.pop(chat_id)
             pl_name = state["pl_name"]
             track_idx = state["track_idx"]
             start_t, end_t = match.groups()
-            
+
             playlists = self._get_playlists()
             if pl_name not in playlists or track_idx >= len(playlists[pl_name]):
-                return await utils.answer(message, "💀 Таргет пропал из БД.")
-                
+                return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет пропал из БД.")
+
             track = playlists[pl_name][track_idx]
             track_id = track.get("id")
-            
+
             in_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
             out_path = os.path.join(self.storage_dir, f"{track_id}_cut.mp3")
-            
+
             if not os.path.exists(in_path):
-                return await utils.answer(message, "💀 Файла нет в кэше. Скачай его заново.")
-                
-            msg = await utils.answer(message, "✂️ <b>Режу аудио...</b>")
-            
+                return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Файла нет в кэше. Скачай его заново.")
+
+            msg = await utils.answer(message, "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>Режу аудио...</b>")
+
             ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
             cmd = [
                 ffmpeg_path, "-y", "-i", in_path,
@@ -665,19 +665,19 @@ class SoundCloudMusic(loader.Module):
                 "-map", "0:a", "-map", "0:v?", "-c:v", "copy",
                 "-c:a", "libmp3lame", "-q:a", "2", out_path
             ]
-            
+
             ret, _, _ = await self._run_proc(cmd, timeout=60)
             if ret != 0 or not os.path.exists(out_path):
-                return await utils.answer(msg, "💀 <b>Ошибка ffmpeg.</b>")
-                
+                return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка ffmpeg.</b>")
+
             shutil.move(out_path, in_path)
-            
+
             new_dur = self._time_to_sec(end_t) - self._time_to_sec(start_t)
             track["duration"] = new_dur if new_dur > 0 else track["duration"]
             playlists[pl_name][track_idx] = track
             self._set_playlists(playlists)
-            
-            await utils.answer(msg, "✅ <b>Трек успешно обрезан!</b>")
+
+            await utils.answer(msg, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>Трек успешно обрезан!</b>")
 
     async def _search_tracks(self, query, limit=5):
         cmd = self._get_base_dlp_args() + [
@@ -717,10 +717,10 @@ class SoundCloudMusic(loader.Module):
 
         if source == "tg":
             if not os.path.exists(audio_path):
-                await utils.answer(call_or_msg, "💀 <b>Файл отсутствует в кэше.</b> Удали из БД и сохрани заново.")
+                await utils.answer(call_or_msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Файл отсутствует в кэше.</b> Удали из БД и сохрани заново.")
                 return
             audio_attrs = [DocumentAttributeAudio(duration=duration_sec, title=track_title, performer=track_artist)]
-            await self._client.send_file(target_chat_id, audio_path, caption=f"📁 <b>Локал-база:</b> {utils.escape_html(track_title)}", attributes=audio_attrs)
+            await self._client.send_file(target_chat_id, audio_path, caption=f"<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> <b>Локал-база:</b> {utils.escape_html(track_title)}", attributes=audio_attrs)
             with contextlib.suppress(Exception):
                 await call_or_msg.delete()
             return
@@ -737,7 +737,7 @@ class SoundCloudMusic(loader.Module):
             raise
         except Exception as e:
             logger.error("Download Error for %s: %s", track_id, e)
-            err_text = f"💀 <b>Ошибка дампа.</b>\n⚠️ {utils.escape_html(str(e)[:160])}"
+            err_text = f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка дампа.</b>\n<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> {utils.escape_html(str(e)[:160])}"
             if hasattr(call_or_msg, "edit"):
                 with contextlib.suppress(Exception):
                     await call_or_msg.edit(err_text)
@@ -763,11 +763,11 @@ class SoundCloudMusic(loader.Module):
         try:
             caption = self.config["custom_text"].format(**sdata)
         except Exception:
-            caption = "👾 <b>Таргет:</b> {track}\n👤 <b>Автор:</b> {artists}\n🔗 <b>Лонг-линк:</b> <a href='{sc_url}'>Сурс</a>".format(**sdata)
+            caption = "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Таргет:</b> {track}\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>Автор:</b> {artists}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Лонг-линк:</b> <a href='{sc_url}'>Сурс</a>".format(**sdata)
 
         if hasattr(call_or_msg, "edit"):
             with contextlib.suppress(Exception):
-                await call_or_msg.edit("⏳ <b>Аплоад в Telegram...</b>", reply_markup=None)
+                await call_or_msg.edit("<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Аплоад в Telegram...</b>", reply_markup=None)
 
         upload_tasks = [self._client.upload_file(audio_path)]
         if os.path.exists(banner_path):
@@ -793,7 +793,7 @@ class SoundCloudMusic(loader.Module):
         """Export playlists to JSON"""
         playlists = self._get_playlists()
         if not playlists:
-            return await utils.answer(message, "🕳 <b>База пуста.</b> Нечего экспортировать.")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> <b>База пуста.</b> Нечего экспортировать.")
 
         data = json.dumps(playlists, ensure_ascii=False, indent=4)
         out = io.BytesIO(data.encode("utf-8"))
@@ -802,7 +802,7 @@ class SoundCloudMusic(loader.Module):
         await self._client.send_file(
             message.chat_id,
             out,
-            caption="📦 <b>Бэкап БД плейлистов.</b>\nДля восстановления используй команду <code>.scimport</code> в реплай на этот файл."
+            caption="<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <b>Бэкап БД плейлистов.</b>\nДля восстановления используй команду <code>.scimport</code> в реплай на этот файл."
         )
         await message.delete()
 
@@ -811,7 +811,7 @@ class SoundCloudMusic(loader.Module):
         """Import playlists from replied JSON"""
         reply = await message.get_reply_message()
         if not reply or not reply.document or not reply.file.name.endswith(".json"):
-            return await utils.answer(message, "👾 <b>Сделай реплай на .json файл бэкапа.</b>")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Сделай реплай на .json файл бэкапа.</b>")
 
         try:
             content = await reply.download_media(bytes)
@@ -827,25 +827,25 @@ class SoundCloudMusic(loader.Module):
                         playlists[name].append(normalized)
 
             self._set_playlists(playlists)
-            await utils.answer(message, "✅ <b>БД успешно импортирована и смержена!</b>")
+            await utils.answer(message, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>БД успешно импортирована и смержена!</b>")
         except Exception as e:
-            await utils.answer(message, f"💀 <b>Ошибка импорта:</b> <code>{str(e)}</code>")
+            await utils.answer(message, f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка импорта:</b> <code>{str(e)}</code>")
 
     @loader.command(ru_doc="<база> <ссылка на плейлист> - Масс дамп", alias="scbatch")
     async def scbatchcmd(self, message: Message):
         """<playlist> <url> - Batch download playlist"""
         args = utils.get_args_raw(message)
         if not args or " " not in args:
-            return await utils.answer(message, "👾 <b>Формат:</b> <code>.scbatch [БД] https://soundcloud.com/artist/sets/album</code>")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.scbatch [БД] https://soundcloud.com/artist/sets/album</code>")
 
         pl_name, url = args.split(" ", 1)
-        msg = await utils.answer(message, "⏳ <b>Паршу плейлист SoundCloud пачкой...</b>")
+        msg = await utils.answer(message, "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Паршу плейлист SoundCloud пачкой...</b>")
 
         cmd = self._get_base_dlp_args() + ["--flat-playlist", "--dump-json", url]
         ret, stdout, _ = await self._run_proc(cmd, timeout=120)
 
         if not stdout:
-            return await utils.answer(msg, "💀 <b>Ничего не найдено или ссылка битая.</b>")
+            return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ничего не найдено или ссылка битая.</b>")
 
         playlists = self._get_playlists()
         if pl_name not in playlists:
@@ -867,7 +867,7 @@ class SoundCloudMusic(loader.Module):
                 pass
 
         self._set_playlists(playlists)
-        await utils.answer(msg, f"💉 <b>Масс-инжект завершен.</b>\nДобавлено {count} треков в БД «{utils.escape_html(pl_name)}».")
+        await utils.answer(msg, f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Масс-инжект завершен.</b>\nДобавлено {count} треков в БД «{utils.escape_html(pl_name)}».")
 
     @loader.command(ru_doc="<запрос> - Дамп трека из SoundCloud", alias="sc")
     async def sccmd(self, message: Message):
@@ -875,8 +875,8 @@ class SoundCloudMusic(loader.Module):
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, self.strings("no_query"))
-        if args.strip() == "/_scm_diag_sepiol026":
-            return await utils.answer(message, "✨ System integrity verified: Core SoundCloudMusic module by @samsepi0l_ovf (AGPLv3). Repo: https://github.com/sepiol026-wq/")
+        if args.strip() == "/_scm_diag":
+            return await utils.answer(message, "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> System integrity verified: Core SoundCloudMusic module by @samsepi0l_ovf (AGPLv3). Repo: https://github.com/sepiol026-wq/")
 
         msg = await utils.answer(message, self.strings("searching"))
         results = await self._search_tracks(args)
@@ -909,13 +909,13 @@ class SoundCloudMusic(loader.Module):
 
     async def _inline_search_dl(self, call, call_id: str, track_idx: int, target_chat_id: int):
         with contextlib.suppress(Exception):
-            await call.answer("🚀 Полетели...")
+            await call.answer("<tg-emoji emoji-id=5253613479754999811>➡️</tg-emoji> Полетели...")
             await call.edit(self.strings("downloading"), reply_markup=None)
 
         results = self._search_cache.get(call_id)
         if not results or track_idx >= len(results):
             with contextlib.suppress(Exception):
-                await call.edit("💀 <b>Кэш устарел.</b> Повторите поиск.")
+                await call.edit("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Кэш устарел.</b> Повторите поиск.")
             return
 
         track_info = results[track_idx]
@@ -946,7 +946,7 @@ class SoundCloudMusic(loader.Module):
         reply = await message.get_reply_message()
 
         if not args:
-            return await utils.answer(message, "👾 <b>Формат:</b> <code>.scadd [БД] [Таргет/Реплай на аудио/войс]</code>")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.scadd [БД] [Таргет/Реплай на аудио/войс]</code>")
 
         parts = args.split(" ", 1)
         pl_name = parts[0].strip()
@@ -960,9 +960,9 @@ class SoundCloudMusic(loader.Module):
             is_voice = bool(getattr(reply, "voice", None))
             mime = getattr(reply.document, "mime_type", "")
             if not is_voice and mime not in ["audio/mpeg", "audio/ogg"]:
-                return await utils.answer(message, "💀 <b>Некорректный формат!</b> Разрешен только .mp3 или голосовухи.")
+                return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Некорректный формат!</b> Разрешен только .mp3 или голосовухи.")
 
-            msg = await utils.answer(message, "⏳ <b>Локализую сурс и вшиваю ID3...</b>")
+            msg = await utils.answer(message, "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Локализую сурс и вшиваю ID3...</b>")
             audio = reply.document
             title = f"Voice {audio.id}" if is_voice else "Unknown"
             artist = "Telegram User" if is_voice else "Unknown"
@@ -976,7 +976,7 @@ class SoundCloudMusic(loader.Module):
 
             track_id = f"tg_{audio.id}"
             if any(t.get("id") == track_id for t in playlists[pl_name]):
-                return await utils.answer(msg, f"⚠️ <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}</b>")
+                return await utils.answer(msg, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}</b>")
 
             storage_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
             if not os.path.exists(storage_path):
@@ -1003,9 +1003,9 @@ class SoundCloudMusic(loader.Module):
                         os.remove(temp_raw_path)
 
                     if ret != 0:
-                        return await utils.answer(msg, "💀 <b>Ошибка ffmpeg при прошивке ID3/Конвертации.</b>")
+                        return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка ffmpeg при прошивке ID3/Конвертации.</b>")
                 except Exception as e:
-                    return await utils.answer(msg, f"💀 <b>Системная ошибка:</b> <code>{str(e)[:50]}</code>")
+                    return await utils.answer(msg, f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Системная ошибка:</b> <code>{str(e)[:50]}</code>")
 
             track = {
                 "id": track_id,
@@ -1030,7 +1030,7 @@ class SoundCloudMusic(loader.Module):
         track = self._normalize_track(results[0], source="sc")
 
         if any(t.get("id") == str(track.get("id")) for t in playlists[pl_name]):
-            return await utils.answer(msg, f"⚠️ <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}:</b> {utils.escape_html(track.get('title', ''))}")
+            return await utils.answer(msg, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}:</b> {utils.escape_html(track.get('title', ''))}")
 
         playlists[pl_name].append(track)
         self._set_playlists(playlists)
@@ -1041,7 +1041,7 @@ class SoundCloudMusic(loader.Module):
         """<playlist> <query> - Remove from playlist"""
         args = utils.get_args_raw(message)
         if not args or " " not in args:
-            return await utils.answer(message, "👾 <b>Формат:</b> <code>.scrm [БД] [Имя трека]</code>")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.scrm [БД] [Имя трека]</code>")
 
         pl_name, query = args.split(" ", 1)
         playlists = self._get_playlists()
@@ -1053,7 +1053,7 @@ class SoundCloudMusic(loader.Module):
         playlists[pl_name] = [t for t in playlists[pl_name] if query.lower() not in t.get("title", "").lower()]
 
         if len(playlists[pl_name]) == original_len:
-            return await utils.answer(message, "💀 <b>Таргет не найден.</b>")
+            return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Таргет не найден.</b>")
 
         self._set_playlists(playlists)
         await utils.answer(message, self.strings("pl_removed").format(pl=utils.escape_html(pl_name), track=utils.escape_html(query)))
@@ -1063,10 +1063,10 @@ class SoundCloudMusic(loader.Module):
     async def _inline_pl_view(self, call, pl_name: str, target_chat_id: int):
         playlists = self._get_playlists()
         tracks = playlists.get(pl_name, [])
-        
+
         text = self.strings("pl_view").format(pl=pl_name, count=len(tracks))
         keyboard = []
-        
+
         for idx, t in enumerate(tracks[:15]):
             title = t.get("title", "Unknown")[:25]
             row = [{"text": f"▶️ {title}", "callback": self._inline_pl_play, "args": (pl_name, idx, target_chat_id)}]
@@ -1074,22 +1074,22 @@ class SoundCloudMusic(loader.Module):
                 row.append({"text": "✂️", "callback": self._inline_trim_req, "args": (pl_name, idx, target_chat_id)})
                 row.append({"text": "🗑", "callback": self._inline_rm_track, "args": (pl_name, idx, target_chat_id)})
             keyboard.append(row)
-            
+
         admin_row = []
         if pl_name != "History":
             admin_row.append({"text": "✏️ Переименовать", "callback": self._inline_pl_rename_req, "args": (pl_name, target_chat_id)})
             admin_row.append({"text": "🗑 Удалить БД", "callback": self._inline_pl_delete, "args": (pl_name, target_chat_id)})
-        
+
         if admin_row: keyboard.append(admin_row)
         keyboard.append([{"text": "🔙 Назад", "callback": self._inline_pl_back, "args": (target_chat_id,)}])
-        
+
         with contextlib.suppress(Exception):
             await call.edit(text, reply_markup=keyboard)
 
     async def _inline_trim_req(self, call, pl_name: str, track_idx: int, target_chat_id: int):
         self._trim_state[target_chat_id] = {"pl_name": pl_name, "track_idx": track_idx}
         with contextlib.suppress(Exception):
-            await call.edit("✂️ <b>Отправь таймкоды для обрезки следующим сообщением.\nФормат:</b> <code>0:15 - 1:10</code>")
+            await call.edit("<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>Отправь таймкоды для обрезки следующим сообщением.\nФормат:</b> <code>0:15 - 1:10</code>")
 
     async def _inline_pl_rename_req(self, call, pl_name: str, target_chat_id: int):
         self._rename_state[target_chat_id] = {"pl_name": pl_name}
@@ -1101,20 +1101,20 @@ class SoundCloudMusic(loader.Module):
         if pl_name in playlists and pl_name != "History":
             del playlists[pl_name]
             self._set_playlists(playlists)
-            await call.answer(f"🗑 БД {pl_name} стерта.")
+            await call.answer(f"<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> БД {pl_name} стерта.")
             await self._inline_pl_back(call, target_chat_id)
         else:
-            await call.answer("💀 Ошибка удаления.")
+            await call.answer("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Ошибка удаления.")
 
     async def _inline_rm_track(self, call, pl_name: str, track_idx: int, target_chat_id: int):
         playlists = self._get_playlists()
         if pl_name in playlists and track_idx < len(playlists[pl_name]):
             track = playlists[pl_name].pop(track_idx)
             self._set_playlists(playlists)
-            await call.answer(f"🗑 Удален: {track.get('title', 'Unknown')}")
+            await call.answer(f"<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> Удален: {track.get('title', 'Unknown')}")
             await self._inline_pl_view(call, pl_name, target_chat_id)
         else:
-            await call.answer("💀 Ошибка удаления.")
+            await call.answer("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Ошибка удаления.")
 
     async def _inline_pl_back(self, call, target_chat_id: int):
         playlists = self._get_playlists()
@@ -1128,11 +1128,11 @@ class SoundCloudMusic(loader.Module):
         playlists = self._get_playlists()
         if pl_name not in playlists or track_idx >= len(playlists[pl_name]):
             with contextlib.suppress(Exception):
-                await call.answer("💀 Таргет недоступен.")
+                await call.answer("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет недоступен.")
             return
-            
+
         track_info = playlists[pl_name][track_idx]
-        
+
         if pl_name != "History":
             history = playlists.get("History", [])
             history.insert(0, track_info)
@@ -1146,7 +1146,7 @@ class SoundCloudMusic(loader.Module):
             self._set_playlists(playlists)
 
         with contextlib.suppress(Exception):
-            await call.answer("🚀 Погнали...")
+            await call.answer("<tg-emoji emoji-id=5253613479754999811>➡️</tg-emoji> Погнали...")
             await call.edit(self.strings("downloading"), reply_markup=None)
-            
+
         await self._dl_and_send(call, track_info, target_chat_id)

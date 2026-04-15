@@ -1,4 +1,10 @@
+# requires: herokutl
 # meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
+# Description: Inline DOOM mini-game module.
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+
+__version__ = (1, 0, 0)
 
 import math
 import time
@@ -62,7 +68,7 @@ class Doom(loader.Module):
             [{"text": "🟡 Продолжить", "callback": self.action_cont}]
         ]
         await self.inline.form(
-            text="💀 <b>DOOM</b>\n\nВыбери действие:",
+            text="<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>DOOM</b>\n\nВыбери действие:",
             message=message,
             reply_markup=buttons
         )
@@ -73,24 +79,24 @@ class Doom(loader.Module):
         fov = self.config["fov"]
         depth = self.config["depth"]
         shades = self.config["shades"]
-        
+
         px, py, pa = state["x"], state["y"], state["a"]
         screen = []
-        
+
         for x in range(w):
             ray_a = (pa - fov / 2.0) + (x / float(w)) * fov
             dist_w = 0.0
             hit_w = False
             cell_hit = " "
-            
+
             eye_x = math.sin(ray_a)
             eye_y = math.cos(ray_a)
-            
+
             while not hit_w and dist_w < depth:
                 dist_w += 0.1
                 test_x = int(px + eye_x * dist_w)
                 test_y = int(py + eye_y * dist_w)
-                
+
                 if test_x < 0 or test_x >= self.map_w or test_y < 0 or test_y >= self.map_h:
                     hit_w = True
                     dist_w = depth
@@ -99,10 +105,10 @@ class Doom(loader.Module):
                     if cell in ["#", "E", "A", "H"]:
                         hit_w = True
                         cell_hit = cell
-            
+
             ceil = float(h / 2.0) - h / dist_w
             floor = h - ceil
-            
+
             shade = " "
             if cell_hit not in ["E", "A", "H"]:
                 if dist_w <= depth / 5.0: shade = shades[4]
@@ -110,7 +116,7 @@ class Doom(loader.Module):
                 elif dist_w <= depth / 3.0: shade = shades[2]
                 elif dist_w <= depth / 1.5: shade = shades[1]
                 elif dist_w < depth: shade = shades[0]
-            
+
             col = []
             for y in range(h):
                 if y <= ceil:
@@ -136,7 +142,7 @@ class Doom(loader.Module):
                     elif b < 0.75: col.append("=")
                     else: col.append(" ")
             screen.append(col)
-            
+
         out = []
         for y in range(h):
             row = "".join([screen[x][y] for x in range(w)])
@@ -156,23 +162,23 @@ class Doom(loader.Module):
     async def do_render(self, call, st):
         if st["hp"] <= 0:
             st["running"] = False
-            dead_text = f"💀 <b>ВЫ ПОГИБЛИ</b>\n\nСчет: {st['score']}\nНажмите Новая игра, чтобы воскреснуть."
+            dead_text = f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>ВЫ ПОГИБЛИ</b>\n\nСчет: {st['score']}\nНажмите Новая игра, чтобы воскреснуть."
             btn = [[{"text": "🔄 Новая игра", "callback": self.action_new}]]
             await call.edit(dead_text, reply_markup=btn)
             return
 
         frame = self.render_3d_frame(st)
         mmap = self.get_mini_map(st)
-        
+
         hud = (
             f"🗺 <b>Mini-Map</b>:\n"
             f"<pre>{mmap}</pre>\n"
             f"📺 <b>Action</b>:\n"
             f"<pre>{frame}</pre>\n"
-            f"❤️ HP: <b>{st['hp']}</b> | 🔫 Ammo: <b>{st['ammo']}</b> | 💀 Kills: <b>{st['score']}</b>\n"
-            f"💬 <i>{st['log']}</i>"
+            f"❤️ HP: <b>{st['hp']}</b> | 🔫 Ammo: <b>{st['ammo']}</b> | <tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Kills: <b>{st['score']}</b>\n"
+            f"<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> <i>{st['log']}</i>"
         )
-        
+
         btn = [
             [{"text": "🔄 L", "callback": self.action_rot_l}, {"text": "⬆️", "callback": self.action_fw}, {"text": "🔄 R", "callback": self.action_rot_r}],
             [{"text": "⬅️", "callback": self.action_m_l}, {"text": "💥", "callback": self.action_shoot}, {"text": "➡️", "callback": self.action_m_r}],
@@ -185,7 +191,7 @@ class Doom(loader.Module):
         while user_id in self.sessions and self.sessions[user_id].get("running"):
             st = self.sessions[user_id]
             now = time.time()
-            
+
             if now - st.get("last_ai", 0) > 1.5:
                 moved = False
                 enemies = []
@@ -193,7 +199,7 @@ class Doom(loader.Module):
                     for x in range(self.map_w):
                         if st["map"][y][x] == "E":
                             enemies.append((x, y))
-                            
+
                 for ex, ey in enemies:
                     dist = math.hypot(st["x"] - ex, st["y"] - ey)
                     if dist < 1.5:
@@ -203,7 +209,7 @@ class Doom(loader.Module):
                     else:
                         dx = 1 if st["x"] > ex else (-1 if st["x"] < ex else 0)
                         dy = 1 if st["y"] > ey else (-1 if st["y"] < ey else 0)
-                        
+
                         if dx != 0 and st["map"][ey][ex+dx] == " ":
                             st["map"][ey][ex] = " "
                             st["map"][ey][ex+dx] = "E"
@@ -212,7 +218,7 @@ class Doom(loader.Module):
                             st["map"][ey][ex] = " "
                             st["map"][ey+dy][ex] = "E"
                             moved = True
-                        
+
                 if moved: st["dirty"] = True
                 st["last_ai"] = now
 
@@ -223,14 +229,14 @@ class Doom(loader.Module):
                     st["dirty"] = False
                 except Exception:
                     pass
-            
+
             await asyncio.sleep(0.1)
 
     def update_player(self, dx, dy, dr):
         if "doom_user" not in self.sessions: return
         st = self.sessions["doom_user"]
         if st["hp"] <= 0: return
-        
+
         st["a"] += dr
         if dx or dy:
             nx, ny = st["x"] + dx, st["y"] + dy
@@ -251,16 +257,16 @@ class Doom(loader.Module):
     async def action_shoot(self, call):
         st = self.sessions.get("doom_user")
         if not st or st["hp"] <= 0: return
-        
+
         if st["ammo"] <= 0:
             st["log"] = "Клик! Нет патронов!"
             st["dirty"] = True
             return
-            
+
         st["ammo"] -= 1
         hit = False
         rx, ry = math.sin(st["a"]), math.cos(st["a"])
-        
+
         for d in range(1, int(self.config["depth"])):
             tx, ty = int(st["x"] + rx * d), int(st["y"] + ry * d)
             if 0 <= tx < self.map_w and 0 <= ty < self.map_h:
@@ -272,7 +278,7 @@ class Doom(loader.Module):
                     break
                 elif st["map"][ty][tx] == "#":
                     break
-                    
+
         if not hit: st["log"] = "Выстрел в стену."
         st["dirty"] = True
 
@@ -281,9 +287,9 @@ class Doom(loader.Module):
             m = []
             for row in self.base_map:
                 m.append(list(row.replace(".", " ")))
-                
+
             self.sessions["doom_user"] = {
-                "x": 2.0, "y": 2.0, "a": 0.0, 
+                "x": 2.0, "y": 2.0, "a": 0.0,
                 "hp": 100, "ammo": 10, "score": 0,
                 "log": "Добро пожаловать в Ад.",
                 "last_render": 0, "last_ai": 0,
@@ -319,7 +325,7 @@ class Doom(loader.Module):
             st["dirty"] = True
 
     async def action_exit(self, call):
-        if "doom_user" in self.sessions: 
+        if "doom_user" in self.sessions:
             self.sessions["doom_user"]["running"] = False
             del self.sessions["doom_user"]
         await call.edit("Игра завершена.", reply_markup=[])
