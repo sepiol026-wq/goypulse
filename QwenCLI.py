@@ -132,7 +132,7 @@ class QwenCLI(loader.Module):
         "qwen_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>qwen</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>qwen_path</code> в cfg.",
         "qwen_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen CLI не готов к работе.</b>\nНастройте авторизацию.",
         "qwen_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Qwen OAuth не настроен.</b>\nЗапустите <code>.qwauth qwen</code> и подтвердите вход в браузере.",
-        "processing": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Обработка...</b>",
+        "processing": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Обработка...</b>",
         "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Ожидаю свободный слот выполнения...</b>",
         "bootstrap_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Подготавливаю локальный Qwen CLI runtime...</b>",
         "tool_exec_status": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <b>Выполняю Telegram-инструмент:</b> <code>{}</code> <i>(шаг {}/{})</i>",
@@ -180,17 +180,17 @@ class QwenCLI(loader.Module):
         "response_too_long": "Ответ был слишком длинным и отправлен файлом.",
         "qwen_files_only": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Qwen создал файлы. Отправляю их ниже.</b>",
         "qwen_file_caption": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Файл от Qwen:</b> <code>{}</code>",
-        "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen в работе</b>{} · {}",
+        "qwen_status_title": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Qwen в работе</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
-        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}с</code>",
-        "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> режимы: {}",
+        "qwen_status_step": "<tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>{}с</code>",
+        "qwen_status_modes": "<tg-emoji emoji-id=5255989563037331120>➡️</tg-emoji> режимы: {}",
         "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> токены: in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
-        "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> инструмент: <code>{}</code>{}",
-        "qwen_status_trace": "<tg-emoji emoji-id=5395671241971654446>🧭</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
-        "qwen_status_activity": "<tg-emoji emoji-id=5467820914235974013>📌</tg-emoji> активность: <code>{}</code>",
+        "qwen_status_tool": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> инструмент: <code>{}</code>{}",
+        "qwen_status_trace": "<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> трассировка: <code>{}</code> → <code>{}</code> · событий <code>{}</code>",
+        "qwen_status_activity": "<tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> активность: <code>{}</code>",
         "qwen_status_stream": "<tg-emoji emoji-id=5424885441100782420>📝</tg-emoji> поток: символов <code>{}</code> · tools <code>{}</code>",
-        "qwen_status_thought": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> мысли: <code>{}</code>",
-        "qwen_status_action": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> действие: <code>{}</code>",
+        "qwen_status_thought": "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> мысли: <code>{}</code>",
+        "qwen_status_action": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> действие: <code>{}</code>",
         "qwen_status_final_error": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> ошибка: <code>{}</code>",
         "qwclear_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwclear [auto]</code>",
         "qwreset_usage": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Использование:</b> <code>.qwreset [auto]</code>",
@@ -275,11 +275,11 @@ class QwenCLI(loader.Module):
     }
 
     _PHASE_EMOJI = {
-        "starting": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji>",
-        "thinking": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji>",
+        "starting": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji>",
+        "thinking": "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji>",
         "running tool": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji>",
         "writing answer": "<tg-emoji emoji-id=5253775593295588000>📝</tg-emoji>",
-        "completed": "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji>",
+        "completed": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>",
     }
 
     _RESOURCE_PROFILES = {
@@ -5511,7 +5511,7 @@ class QwenCLI(loader.Module):
         elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
         phase = state["phase"]
         phase_emoji = self._PHASE_EMOJI.get(
-            phase, "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji>"
+            phase, "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji>"
         )
         session_suffix = (
             f" · <code>{utils.escape_html(state['session_id'][:8])}</code>"
