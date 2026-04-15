@@ -166,8 +166,8 @@ class QwenCLI(loader.Module):
         "btn_clear": "🗑 Очистить",
         "btn_regenerate": "🔃 Другой ответ",
         "btn_retry_request": "🔃 Повторить запрос",
-        "btn_cancel_request": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> Отменить запрос",
-        "btn_stop_request": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Стоп",
+        "btn_cancel_request": "⛔ Отменить запрос",
+        "btn_stop_request": "⛔ Стоп",
         "no_last_request": "Последний запрос не найден для повторной генерации.",
         "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Запрос отменен.</b>",
         "request_patched": "<tg-emoji emoji-id=5875145601682771643>✍️</tg-emoji> <b>Запрос обновлен и перезапущен.</b>",
@@ -182,7 +182,7 @@ class QwenCLI(loader.Module):
         "qwen_file_caption": "<tg-emoji emoji-id=5377844313575150051>📎</tg-emoji> <b>Файл от Qwen:</b> <code>{}</code>",
         "qwen_status_title": "<tg-emoji emoji-id=5276127848644503161>🤖</tg-emoji> <b>Qwen в работе</b>{} · {}",
         "qwen_status_phase": "{} <code>{}</code>",
-        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code>",
+        "qwen_status_step": "<tg-emoji emoji-id=5269528017213887051>🏃‍♂️</tg-emoji> шаг <code>{}</code> · <tg-emoji emoji-id=5936170807716745162>🎛</tg-emoji> <code>{}с</code>",
         "qwen_status_modes": "<tg-emoji emoji-id=5931342716959501576>⚡️</tg-emoji> режимы: {}",
         "qwen_status_tokens": "<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> токены: in <code>{}</code>{} / out <code>{}</code> / total <code>{}</code>",
         "qwen_status_tool": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> инструмент: <code>{}</code>{}",
@@ -5471,6 +5471,7 @@ class QwenCLI(loader.Module):
         return re.sub(r"</?tg-emoji[^>]*>", "", str(text or ""))
 
     def _format_qwen_status(self, state: dict) -> str:
+        elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
         phase = state["phase"]
         phase_emoji = self._PHASE_EMOJI.get(
             phase, "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji>"
@@ -5485,6 +5486,16 @@ class QwenCLI(loader.Module):
             if state["cached_tokens"] > 0
             else ""
         )
+        tool_line = ""
+        if state["active_tool"]:
+            exit_suffix = ""
+            if state["last_exit_code"] is not None:
+                exit_suffix = (
+                    " <tg-emoji emoji-id=5330561907671727296>✅</tg-emoji>"
+                    if state["last_exit_code"] == 0
+                    else f" <tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> exit {state['last_exit_code']}"
+                )
+            tool_line = f"\n{self.strings['qwen_status_tool'].format(utils.escape_html(state['active_tool']), exit_suffix)}"
         modes_line = ""
         tags = [str(tag).strip() for tag in (state.get("status_tags") or []) if str(tag).strip()]
         if tags:
@@ -5497,13 +5508,32 @@ class QwenCLI(loader.Module):
             if state["final_error"]
             else ""
         )
+        trace_line = self.strings["qwen_status_trace"].format(
+            self._fmt_num(state.get("thought_events", 0)),
+            self._fmt_num(state.get("action_events", 0)),
+            self._fmt_num(state.get("thought_events", 0) + state.get("action_events", 0)),
+        )
+        activity_line = self.strings["qwen_status_activity"].format(
+            utils.escape_html(str(state.get("last_activity") or "idle"))
+        )
+        stream_line = self.strings["qwen_status_stream"].format(
+            self._fmt_num(state.get("final_text_chars") or len(state.get("final_text") or "")),
+            self._fmt_num(len(state.get("tool_use_ids") or {})),
+        )
+        thought_line = self.strings["qwen_status_thought"].format(
+            utils.escape_html(self._short_status_text(state.get("thought_stream") or state.get("phase") or "—", limit=180)),
+        )
+        action_line = self.strings["qwen_status_action"].format(
+            utils.escape_html(self._short_status_text(state.get("action_stream") or state.get("active_tool") or "—", limit=180))
+        )
         return (
             f"<blockquote>"
             f"{self.strings['qwen_status_title'].format(session_suffix, '<code>' + utils.escape_html(state.get('model', '')) + '</code>' if state.get('model') else '')}\n"
             f"{self.strings['qwen_status_phase'].format(phase_emoji, utils.escape_html(phase))} · "
-            f"{self.strings['qwen_status_step'].format(state['step'])}\n"
+            f"{self.strings['qwen_status_step'].format(state['step'], elapsed)}\n"
             f"{self.strings['qwen_status_tokens'].format(self._fmt_num(state['input_tokens']), cached_suffix, self._fmt_num(state['output_tokens']), self._fmt_num(state['total_tokens']))}"
-            f"{modes_line}{error_line}"
+            f"\n{trace_line}\n{activity_line}\n{stream_line}\n{thought_line}\n{action_line}"
+            f"{modes_line}{tool_line}{error_line}"
             f"</blockquote>"
         )
 
