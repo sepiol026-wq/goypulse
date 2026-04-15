@@ -82,6 +82,7 @@ QWEN_MAX_HISTORY_ENTRY_CHARS = 1200
 QWEN_MAX_PROMPT_TEXT_CHARS = 12000
 QWEN_DEFAULT_MAX_SESSION_TURNS = 12
 PROMPT_FILENAME = "prompt.txt"
+TOOL_APPROVAL_TIMEOUT = 180
 
 TEXT_MIME_TYPES = {
     "text/plain",
@@ -122,7 +123,13 @@ class QwenCLI(loader.Module):
         "cfg_chat_reply_chances_doc": "Персональные шансы авто-ответа по чатам: chat_id:chance (0..1 или 0..100), по одному на строку.",
         "cfg_inline_pagination_doc": "Использовать инлайн-пагинацию для длинных ответов.",
         "cfg_chat_recording_doc": "Разрешить Qwen CLI сохранять свои session records в runtime-home.",
-        "cfg_approval_mode_doc": "Режим подтверждений Qwen CLI.",
+        "cfg_approval_mode_doc": (
+            "Режим подтверждений Qwen CLI: "
+            "default — подтверждать каждое действие, "
+            "plan — подтвердить один раз на сессию, "
+            "auto-edit — авто для безопасных, confirm для опасных, "
+            "yolo — без подтверждений."
+        ),
         "cfg_max_concurrent_requests_doc": "Максимум одновременно выполняемых Qwen CLI запросов.",
         "cfg_auto_bootstrap_doc": "Автоматически пытаться установить локальные Node.js и Qwen CLI в user-space при отсутствии бинарника.",
         "cfg_resource_profile_doc": "Профиль расхода ресурсов: off, medium или max.",
@@ -168,6 +175,18 @@ class QwenCLI(loader.Module):
         "btn_retry_request": "🔃 Повторить запрос",
         "btn_cancel_request": "📛 Отменить запрос",
         "btn_stop_request": "📛 Стоп",
+        "btn_tool_approve": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Принять",
+        "btn_tool_reject": "<tg-emoji emoji-id=5409235172979672859>⚠️</tg-emoji> Отклонить",
+        "btn_tool_stop": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji> Стоп",
+        "tool_approval_title": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Подтвердите действие инструмента</b>",
+        "tool_approval_mode_line": "<tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> режим: <code>{}</code>",
+        "tool_approval_action_line": "<tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> действие: <code>{}</code>",
+        "tool_approval_payload_line": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> payload:",
+        "tool_approval_accepted": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Действие подтверждено.",
+        "tool_approval_rejected": "<tg-emoji emoji-id=5409235172979672859>⚠️</tg-emoji> Действие отклонено.",
+        "tool_approval_timeout": "tool approval timeout",
+        "tool_approval_user_reject": "tool action rejected by user",
+        "tool_approval_request_stopped": "tool action stopped by user",
         "no_last_request": "Последний запрос не найден для повторной генерации.",
         "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Запрос отменен.</b>",
         "request_patched": "<tg-emoji emoji-id=5875145601682771643>✍️</tg-emoji> <b>Запрос обновлен и перезапущен.</b>",
@@ -426,7 +445,7 @@ class QwenCLI(loader.Module):
             ),
             loader.ConfigValue(
                 "approval_mode",
-                "yolo",
+                "default",
                 self.strings["cfg_approval_mode_doc"],
                 validator=loader.validators.Choice(
                     ["plan", "default", "auto-edit", "yolo"]
@@ -496,6 +515,7 @@ class QwenCLI(loader.Module):
         self.tools_registry = self._build_tools_registry()
         self._dialogs_cache_ts = 0.0
         self._dialogs_cache_items = []
+        self._tool_approval_waiters = {}
 
     async def client_ready(self, client, db):
         self.client = client
@@ -722,6 +742,7 @@ class QwenCLI(loader.Module):
                 f"• <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>auto_reply_chats</code>: <b>{len(self.impersonation_chats)}</b> chat(s)",
                 f"• <tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> <code>memory_disabled_chats</code>: <b>{len(self.memory_disabled_chats)}</b> chat(s)",
                 f"• <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>approval_mode</code>: <b>{utils.escape_html(self.config['approval_mode'])}</b>",
+                f"• <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> approval policy: <i>{utils.escape_html(self._approval_mode_caption(self.config['approval_mode']))}</i>",
                 f"• <tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <code>resource_profile</code>: <b>{utils.escape_html(self.config['resource_profile'])}</b>",
                 f"• <tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <code>max_concurrent_requests</code>: <b>{int(self.config['max_concurrent_requests'])}</b>",
                 f"• <tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <code>auth_type</code>: <b>{utils.escape_html(self.config['auth_type'])}</b>",
@@ -1752,6 +1773,7 @@ class QwenCLI(loader.Module):
             "request_id": None,
             "task": asyncio.current_task(),
             "tool_actions_count": 0,
+            "plan_approved": False,
         }
 
         try:
@@ -2695,6 +2717,16 @@ class QwenCLI(loader.Module):
 
             if action not in self.tools_registry:
                 return _err(f"unsupported action: {action}")
+
+            approval = await self._resolve_tool_approval(chat_id, action, tool_data)
+            if not approval.get("approved"):
+                reason = approval.get("reason")
+                if reason == "timeout":
+                    return _err(self.strings["tool_approval_timeout"])
+                if reason == "stopped":
+                    return _err(self.strings["tool_approval_request_stopped"])
+                return _err(self.strings["tool_approval_user_reject"])
+
             if isinstance(session, dict):
                 session["tool_actions_count"] = int(session.get("tool_actions_count") or 0) + 1
 
@@ -7589,6 +7621,110 @@ class QwenCLI(loader.Module):
                 return nested_reply_id
         return getattr(message, "id", None) or fallback
 
+    @staticmethod
+    def _approval_mode_caption(mode: str) -> str:
+        mapping = {
+            "default": "каждое действие подтверждается инлайн",
+            "plan": "одно подтверждение на всю активную сессию",
+            "auto-edit": "безопасные — авто, опасные — с подтверждением",
+            "yolo": "все действия выполняются без подтверждений",
+        }
+        return mapping.get(mode, "кастомный режим")
+
+    async def _resolve_tool_approval(self, chat_id: int, action: str, tool_data: dict) -> dict:
+        mode = str(self.config.get("approval_mode", "default") or "default").strip().lower()
+        session = self._request_sessions.get(chat_id) or {}
+        destructive_actions = {
+            "ban_user",
+            "kick_user",
+            "mute_user",
+            "delete_messages",
+            "delete_user_messages",
+            "delete_last_message",
+            "purge_chat_messages",
+            "block_user",
+        }
+        if mode == "yolo":
+            return {"approved": True, "reason": "mode:yolo"}
+        if mode == "plan" and session.get("plan_approved"):
+            return {"approved": True, "reason": "mode:plan_cached"}
+        if mode == "auto-edit" and action not in destructive_actions:
+            return {"approved": True, "reason": "mode:auto_edit_safe"}
+
+        compact_payload = json.dumps(tool_data, ensure_ascii=False)
+        if len(compact_payload) > 850:
+            compact_payload = compact_payload[:850] + "…"
+        token = uuid.uuid4().hex
+        future = asyncio.get_running_loop().create_future()
+        self._tool_approval_waiters[token] = {
+            "future": future,
+            "chat_id": chat_id,
+            "mode": mode,
+        }
+        body = "\n".join(
+            [
+                self.strings["tool_approval_title"],
+                self.strings["tool_approval_mode_line"].format(utils.escape_html(mode)),
+                self.strings["tool_approval_action_line"].format(utils.escape_html(action)),
+                self.strings["tool_approval_payload_line"],
+                f"<blockquote expandable='true'><code>{utils.escape_html(compact_payload)}</code></blockquote>",
+            ]
+        )
+        buttons = [
+            [
+                {
+                    "text": self.strings["btn_tool_approve"],
+                    "callback": self._tool_approve_callback,
+                    "args": (token,),
+                    "color": "green",
+                    "style": "success",
+                },
+                {
+                    "text": self.strings["btn_tool_reject"],
+                    "callback": self._tool_reject_callback,
+                    "args": (token,),
+                    "color": "blue",
+                    "style": "primary",
+                },
+            ],
+            [
+                {
+                    "text": self.strings["btn_tool_stop"],
+                    "callback": self._tool_stop_callback,
+                    "args": (token,),
+                    "color": "red",
+                    "style": "danger",
+                }
+            ],
+        ]
+
+        base_mid = session.get("base_message_id")
+        base_msg = None
+        if base_mid:
+            with contextlib.suppress(Exception):
+                base_msg = await self.client.get_messages(chat_id, ids=base_mid)
+        try:
+            if base_msg is not None:
+                await self.inline.form(text=body, message=base_msg, reply_markup=buttons)
+            else:
+                self._tool_approval_waiters.pop(token, None)
+                return {"approved": False, "reason": "approval_ui_error"}
+        except Exception:
+            self._tool_approval_waiters.pop(token, None)
+            return {"approved": False, "reason": "approval_ui_error"}
+
+        try:
+            decision = await asyncio.wait_for(future, timeout=TOOL_APPROVAL_TIMEOUT)
+        except asyncio.TimeoutError:
+            self._tool_approval_waiters.pop(token, None)
+            return {"approved": False, "reason": "timeout"}
+        finally:
+            self._tool_approval_waiters.pop(token, None)
+
+        if mode == "plan" and decision == "approved" and isinstance(session, dict):
+            session["plan_approved"] = True
+        return {"approved": decision == "approved", "reason": decision}
+
     def _get_inline_buttons(self, chat_id, base_message_id):
         return [
             [
@@ -7670,6 +7806,36 @@ class QwenCLI(loader.Module):
         await self._edit_html(
             call, self.strings["request_cancelled"], reply_markup=None
         )
+
+    async def _tool_approve_callback(self, call: InlineCall, token: str):
+        waiter = self._tool_approval_waiters.get(token)
+        if not waiter:
+            return await call.answer("Сессия подтверждения истекла.", show_alert=True)
+        future = waiter.get("future")
+        if future and not future.done():
+            future.set_result("approved")
+        await self._edit_html(call, self.strings["tool_approval_accepted"], reply_markup=None)
+
+    async def _tool_reject_callback(self, call: InlineCall, token: str):
+        waiter = self._tool_approval_waiters.get(token)
+        if not waiter:
+            return await call.answer("Сессия подтверждения истекла.", show_alert=True)
+        future = waiter.get("future")
+        if future and not future.done():
+            future.set_result("rejected")
+        await self._edit_html(call, self.strings["tool_approval_rejected"], reply_markup=None)
+
+    async def _tool_stop_callback(self, call: InlineCall, token: str):
+        waiter = self._tool_approval_waiters.get(token)
+        if not waiter:
+            return await call.answer("Сессия подтверждения истекла.", show_alert=True)
+        chat_id = waiter.get("chat_id")
+        if chat_id is not None:
+            await self._interrupt_active_request(chat_id, reason="cancel")
+        future = waiter.get("future")
+        if future and not future.done():
+            future.set_result("stopped")
+        await self._edit_html(call, self.strings["request_cancelled"], reply_markup=None)
 
     async def _close_callback(self, call: InlineCall, uid: str):
         await call.answer()
