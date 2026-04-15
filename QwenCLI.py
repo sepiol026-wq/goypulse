@@ -5384,6 +5384,7 @@ class QwenCLI(loader.Module):
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
         safe_text = self._safe_emoji_html(text)
+        plain_text = self._strip_tg_emoji_html(safe_text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
@@ -5392,6 +5393,10 @@ class QwenCLI(loader.Module):
             with contextlib.suppress(Exception):
                 return await entity.edit(
                     safe_text, reply_markup=reply_markup, parse_mode="html"
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    plain_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text, reply_markup=reply_markup)
         try:
@@ -5413,6 +5418,14 @@ class QwenCLI(loader.Module):
                     parse_mode="html",
                     link_preview=link_preview,
                 )
+            with contextlib.suppress(Exception):
+                return await utils.answer(
+                    entity,
+                    plain_text,
+                    reply_markup=reply_markup,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                )
         if hasattr(entity, "edit"):
             with contextlib.suppress(Exception):
                 return await entity.edit(
@@ -5424,17 +5437,18 @@ class QwenCLI(loader.Module):
         if isinstance(entity, Message):
             return await self.client.send_message(
                 entity.chat_id,
-                safe_text,
+                plain_text,
                 parse_mode="html",
                 link_preview=link_preview,
                 reply_to=getattr(entity, "id", None),
             )
-        return await utils.answer(entity, safe_text, reply_markup=reply_markup)
+        return await utils.answer(entity, plain_text, reply_markup=reply_markup)
 
     async def _edit_html(
         self, entity, text: str, reply_markup=None, link_preview: bool = False
     ):
         safe_text = self._safe_emoji_html(text)
+        plain_text = self._strip_tg_emoji_html(safe_text)
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
@@ -5443,6 +5457,10 @@ class QwenCLI(loader.Module):
             with contextlib.suppress(Exception):
                 return await entity.edit(
                     text=safe_text, reply_markup=reply_markup, parse_mode="html"
+                )
+            with contextlib.suppress(Exception):
+                return await entity.edit(
+                    text=plain_text, reply_markup=reply_markup, parse_mode="html"
                 )
             return await entity.edit(text=text, reply_markup=reply_markup)
         if hasattr(entity, "edit"):
@@ -5457,6 +5475,13 @@ class QwenCLI(loader.Module):
                 with contextlib.suppress(Exception):
                     return await entity.edit(
                         safe_text,
+                        parse_mode="html",
+                        link_preview=link_preview,
+                        reply_markup=reply_markup,
+                    )
+                with contextlib.suppress(Exception):
+                    return await entity.edit(
+                        plain_text,
                         parse_mode="html",
                         link_preview=link_preview,
                         reply_markup=reply_markup,
@@ -5477,6 +5502,10 @@ class QwenCLI(loader.Module):
         )
         safe = re.sub(r"<code\b[^>]*>", "<code>", safe, flags=re.IGNORECASE)
         return safe
+
+    @staticmethod
+    def _strip_tg_emoji_html(text: str) -> str:
+        return re.sub(r"</?tg-emoji[^>]*>", "", str(text or ""), flags=re.IGNORECASE)
 
     def _format_qwen_status(self, state: dict) -> str:
         elapsed = max(0, int(asyncio.get_running_loop().time() - state["started_at"]))
