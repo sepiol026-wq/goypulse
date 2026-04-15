@@ -4,7 +4,7 @@
 # Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 
-__version__ = (1, 2, 6)
+__version__ = (1, 2, 7)
 
 import asyncio
 import contextlib
@@ -163,11 +163,11 @@ class QwenCLI(loader.Module):
         "memory_chat_line": "  • {} (<code>{}</code>)",
         "no_memory_found": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> Память пуста.",
         "media_reply_placeholder": "[запрос по медиа]",
-        "btn_clear": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> Очистить",
-        "btn_regenerate": "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Другой ответ",
-        "btn_retry_request": "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Повторить запрос",
-        "btn_cancel_request": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Отменить запрос",
-        "btn_stop_request": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Стоп",
+        "btn_clear": "🗑 Очистить",
+        "btn_regenerate": "🔃 Другой ответ",
+        "btn_retry_request": "🔃 Повторить запрос",
+        "btn_cancel_request": "⛔ Отменить запрос",
+        "btn_stop_request": "⛔ Стоп",
         "no_last_request": "Последний запрос не найден для повторной генерации.",
         "request_cancelled": "<tg-emoji emoji-id=5350470691701407492>⛔</tg-emoji>️ <b>Запрос отменен.</b>",
         "request_patched": "<tg-emoji emoji-id=5875145601682771643>✍️</tg-emoji> <b>Запрос обновлен и перезапущен.</b>",
@@ -5381,9 +5381,14 @@ class QwenCLI(loader.Module):
         os.replace(temp_path, path)
 
     async def _answer_html(
-        self, entity, text: str, reply_markup=None, link_preview: bool = False
+        self,
+        entity,
+        text: str,
+        reply_markup=None,
+        link_preview: bool = False,
+        strip_custom_emoji: bool = True,
     ):
-        safe_text = self._safe_emoji_html(text)
+        safe_text = self._safe_emoji_html(text) if strip_custom_emoji else text
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
@@ -5432,9 +5437,14 @@ class QwenCLI(loader.Module):
         return await utils.answer(entity, safe_text, reply_markup=reply_markup)
 
     async def _edit_html(
-        self, entity, text: str, reply_markup=None, link_preview: bool = False
+        self,
+        entity,
+        text: str,
+        reply_markup=None,
+        link_preview: bool = False,
+        strip_custom_emoji: bool = True,
     ):
-        safe_text = self._safe_emoji_html(text)
+        safe_text = self._safe_emoji_html(text) if strip_custom_emoji else text
         if isinstance(entity, InlineCall):
             with contextlib.suppress(TypeError):
                 return await entity.edit(
@@ -5463,7 +5473,11 @@ class QwenCLI(loader.Module):
                     )
                 return await entity.edit(text=text, reply_markup=reply_markup)
         return await self._answer_html(
-            entity, text, reply_markup=reply_markup, link_preview=link_preview
+            entity,
+            text,
+            reply_markup=reply_markup,
+            link_preview=link_preview,
+            strip_custom_emoji=strip_custom_emoji,
         )
 
     @staticmethod
@@ -5559,6 +5573,7 @@ class QwenCLI(loader.Module):
                 text,
                 reply_markup=state.get("reply_markup"),
                 link_preview=False,
+                strip_custom_emoji=False,
             )
         except Exception:
             pass
@@ -7543,7 +7558,6 @@ class QwenCLI(loader.Module):
                     "text": self.strings["btn_clear"],
                     "callback": self._clear_callback,
                     "args": (chat_id,),
-                    "icon_custom_emoji_id": "6007942490076745785",
                     "color": "green",
                     "style": "success",
                 },
@@ -7551,7 +7565,6 @@ class QwenCLI(loader.Module):
                     "text": self.strings["btn_regenerate"],
                     "callback": self._regenerate_callback,
                     "args": (base_message_id, chat_id),
-                    "icon_custom_emoji_id": "5404857686477015710",
                     "color": "blue",
                     "style": "primary",
                 },
@@ -7567,7 +7580,6 @@ class QwenCLI(loader.Module):
                     "text": self.strings["btn_stop_request"],
                     "callback": self._stop_request_callback,
                     "args": (base_message_id, chat_id),
-                    "icon_custom_emoji_id": "5350470691701407492",
                     "color": "red",
                     "style": "danger",
                 }
@@ -7581,13 +7593,11 @@ class QwenCLI(loader.Module):
                     "text": self.strings["btn_retry_request"],
                     "callback": self._regenerate_callback,
                     "args": (base_message_id, chat_id),
-                    "icon_custom_emoji_id": "5404857686477015710",
                 },
                 {
                     "text": self.strings["btn_cancel_request"],
                     "callback": self._cancel_request_callback,
                     "args": (base_message_id, chat_id),
-                    "icon_custom_emoji_id": "5350470691701407492",
                 },
             ]
         ]
@@ -7656,14 +7666,23 @@ class QwenCLI(loader.Module):
             nav_row.append({"text": "◀️", "data": f"qwencli:pg:{uid}:{page_num - 1}"})
         nav_row.append({"text": f"{page_num + 1}/{total}", "data": "qwencli:noop"})
         if page_num < total - 1:
-            nav_row.append({"text": "<tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji>", "data": f"qwencli:pg:{uid}:{page_num + 1}"})
+            nav_row.append(
+                {
+                    "text": "▶️",
+                    "data": f"qwencli:pg:{uid}:{page_num + 1}",
+                }
+            )
         extra_row = [
-            {"text": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Закрыть", "callback": self._close_callback, "args": (uid,)}
+            {
+                "text": "📛 Закрыть",
+                "callback": self._close_callback,
+                "args": (uid,),
+            }
         ]
         if data.get("chat_id") and data.get("msg_id"):
             extra_row.append(
                 {
-                    "text": "<tg-emoji emoji-id=5404857686477015710>🔄</tg-emoji>",
+                    "text": "🔄",
                     "callback": self._regenerate_callback,
                     "args": (data["msg_id"], data["chat_id"]),
                 }

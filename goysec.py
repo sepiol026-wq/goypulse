@@ -654,6 +654,72 @@ class Analyzer:
         ranked = [(k, fam[k], conf.get(k, 0)) for k in fam]
         return sorted(ranked, key=lambda x: (-x[1], -x[2], x[0]))
 
+    def _behavior_profile(self) -> Dict[str, Any]:
+        family_points: Dict[str, int] = {}
+        for h in self.hits:
+            family_points[h.family] = family_points.get(h.family, 0) + int(h.score or 0)
+
+        def _cap(v: int) -> int:
+            return max(0, min(100, int(v)))
+
+        collection = _cap(
+            family_points.get("session", 0)
+            + family_points.get("secret", 0)
+            + family_points.get("stealer", 0) // 2
+            + int(self.stats.get("secret_literals", 0) * 4)
+            + int(self.stats.get("tainted_flows", 0) * 6)
+        )
+        exfiltration = _cap(
+            family_points.get("exfil", 0)
+            + family_points.get("net", 0) // 2
+            + int(self.stats.get("suspicious_urls", 0) * 8)
+            + int(self.stats.get("tainted_flows", 0) * 8)
+            + int(self.stats.get("ip_ports", 0) * 4)
+        )
+        execution = _cap(
+            family_points.get("exec", 0)
+            + family_points.get("loader", 0)
+            + family_points.get("sandbox", 0) // 2
+            + int(self.stats.get("commands", 0) * 3)
+        )
+        persistence = _cap(
+            family_points.get("persistence", 0)
+            + family_points.get("trojan", 0) // 2
+        )
+        concealment = _cap(
+            family_points.get("obf", 0)
+            + family_points.get("sandbox", 0) // 2
+            + int(self.stats.get("high_entropy_strings", 0) * 7)
+            + int(self.stats.get("base64_blobs", 0) * 3)
+        )
+
+        stages: List[Dict[str, Any]] = []
+        if collection >= 35:
+            stages.append({"stage": "collection", "score": collection, "note": "Есть признаки сбора чувствительных данных/секретов"})
+        if exfiltration >= 35:
+            stages.append({"stage": "exfiltration", "score": exfiltration, "note": "Есть признаки вывода данных наружу"})
+        if execution >= 35:
+            stages.append({"stage": "execution", "score": execution, "note": "Есть признаки опасного исполнения/загрузки кода"})
+        if persistence >= 35:
+            stages.append({"stage": "persistence", "score": persistence, "note": "Есть признаки закрепления в системе"})
+        if concealment >= 35:
+            stages.append({"stage": "concealment", "score": concealment, "note": "Есть признаки сокрытия/упаковки полезной нагрузки"})
+
+        stages.sort(key=lambda x: x["score"], reverse=True)
+        top_titles = [h.title for h in sorted(self.hits, key=lambda item: item.score, reverse=True)[:6]]
+        return {
+            "scores": {
+                "collection": collection,
+                "exfiltration": exfiltration,
+                "execution": execution,
+                "persistence": persistence,
+                "concealment": concealment,
+            },
+            "stages": stages,
+            "top_evidence": top_titles,
+            "tainted_flows": int(self.stats.get("tainted_flows", 0)),
+        }
+
     def _synergy(self) -> None:
         fams = {h.family for h in self.hits}
         crit_count = sum(1 for h in self.hits if h.sev == "critical")
@@ -703,6 +769,7 @@ class Analyzer:
         if main_family in RISK_WEAK and not any(f in RISK_STRONG for f, _, _ in ranked):
             main_family = "capability-only"
             main_conf = max(10, main_conf)
+        behavior = self._behavior_profile()
 
         return {
             "decoded": self.decoded,
@@ -721,6 +788,7 @@ class Analyzer:
             "capabilities": fam,
             "stats": dict(self.stats),
             "safe_markers": list(self.safe_hits),
+            "behavior": behavior,
         }
 
     def _apply_safe_context(self) -> None:
@@ -1083,10 +1151,6 @@ class GoySecurity(loader.Module):
         self.av.mode = self._mode
         self._custom_ai = dict(self.db.get("GoySecurity", "gsec_custom_ai", {}) or {})
         self._custom_ai_tokens = dict(self.db.get("GoySecurity", "gsec_custom_ai_tokens", {}) or {})
-        if self.config["guard_preinstall_enabled"]:
-            if not await self._guard_ai_ready():
-                self.config["guard_preinstall_enabled"] = False
-                log.warning("GoySecurity: preinstall autoscan disabled because AI check failed")
         self._ensure_preinstall_guard()
 
     def _extract_register_module_payload(self, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[str, str]:
@@ -1157,24 +1221,45 @@ class GoySecurity(loader.Module):
                     provider = self._active_provider()
                     token = self._provider_token(provider)
                     model = self._provider_model(provider)
-                    ai_result = None
-                    if token and model:
-                        ai_result = await self._ask_ai_autoscan(provider, token, scan_res.get("decoded", ""), model)
-                    if not ai_result or ai_result.get("error"):
-                        msg = f"GoySecurity preinstall guard requires a working AI ({provider})"
-                        if self.config["guard_preinstall_notify"]:
-                            log.warning("%s: %s", msg, (ai_result or {}).get("reason", "no-response"))
-                        raise RuntimeError(msg)
-                    ai_verdict = str((ai_result or {}).get("verdict", "")).strip().upper()
-                    if ai_verdict not in {"SAFE", "UNSAFE"}:
-                        msg = f"GoySecurity preinstall guard invalid AI verdict ({ai_verdict or 'empty'})"
+                    if not token or not model:
+                        msg = (
+                            "GoySecurity preinstall guard requires a working AI provider "
+                            f"(provider={provider})"
+                        )
                         if self.config["guard_preinstall_notify"]:
                             log.warning(msg)
                         raise RuntimeError(msg)
-                    if ai_verdict == "UNSAFE":
+                    ai_result = await self._ask_ai(
+                        provider=provider,
+                        token=token,
+                        code=scan_res.get("decoded", ""),
+                        model_name=model,
+                        static_res=scan_res,
+                        paranoia=self._mode,
+                        status_cb=None,
+                        max_attempts=2,
+                        req_timeout=25,
+                        max_output_tokens=900,
+                    )
+                    if not ai_result or ai_result.get("error"):
+                        reason = (ai_result or {}).get("reason", "unknown error")
+                        msg = f"GoySecurity preinstall guard AI error ({provider}): {reason}"
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning(msg)
+                        raise RuntimeError(msg)
+                    ai_verdict = str(ai_result.get("verdict", "")).strip().upper()
+                    if ai_verdict in {"UNSAFE", "MALICIOUS", "CRITICAL"}:
                         msg = (
                             "GoySecurity preinstall guard blocked module "
                             f"{module_name} (ai={ai_verdict})"
+                        )
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning(msg)
+                        raise RuntimeError(msg)
+                    if ai_verdict not in {"SAFE", "CLEAR", "SUSPICIOUS"}:
+                        msg = (
+                            "GoySecurity preinstall guard got unknown AI verdict "
+                            f"for {module_name} (ai={ai_verdict or 'EMPTY'})"
                         )
                         if self.config["guard_preinstall_notify"]:
                             log.warning(msg)
@@ -1398,12 +1483,28 @@ class GoySecurity(loader.Module):
             rows.append(row)
         target = selected or self._active_provider()
         rows.append([
-            {"text": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Каталог", "callback": self._inline_models, "args": (target, "catalog")},
-            {"text": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Подключение", "callback": self._inline_models, "args": (target, "setup")},
+            {
+                "text": "📝 Каталог",
+                "callback": self._inline_models,
+                "args": (target, "catalog"),
+            },
+            {
+                "text": "⚙️ Подключение",
+                "callback": self._inline_models,
+                "args": (target, "setup"),
+            },
         ])
         rows.append([
-            {"text": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Модели", "callback": self._inline_models, "args": (target, "models")},
-            {"text": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Сделать активным", "callback": self._inline_activate_provider, "args": (target, page)},
+            {
+                "text": "📝 Модели",
+                "callback": self._inline_models,
+                "args": (target, "models"),
+            },
+            {
+                "text": "✅ Сделать активным",
+                "callback": self._inline_activate_provider,
+                "args": (target, page),
+            },
         ])
         if target in AI_MODEL_CATALOG:
             current_model = self._provider_model(target)
@@ -1420,7 +1521,12 @@ class GoySecurity(loader.Module):
                     model_row = []
             if model_row:
                 rows.append(model_row)
-        rows.append([{"text": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> Закрыть", "action": "close"}])
+        rows.append([
+            {
+                "text": "🗑 Закрыть",
+                "action": "close",
+            }
+        ])
         return rows
 
     async def _inline_models(self, call: InlineCall, provider: str, page: str = "catalog"):
@@ -1506,12 +1612,22 @@ class GoySecurity(loader.Module):
             warning_titles = ", ".join(h["title"] for h in static_res.get("warning", [])[:6])
             info_titles = ", ".join(h["title"] for h in static_res.get("info", [])[:6])
             stats = static_res.get("stats", {}) or {}
+            behavior = static_res.get("behavior", {}) or {}
+            behavior_scores = behavior.get("scores", {}) or {}
+            behavior_stages = behavior.get("stages", []) or []
+            behavior_line = ", ".join(
+                f"{stage.get('stage')}={stage.get('score')}"
+                for stage in behavior_stages[:5]
+                if stage.get("stage")
+            ) or "none"
             analysis_summary = (
                 f"Риск={static_res['risk']}; score={static_res['score']}; семейство={static_res['family']} ({static_res['family_conf']}%)\n"
                 f"Ключевые находки: {', '.join([h['title'] for h in static_res.get('critical', [])[:8]])}\n"
                 f"Предупреждения: {warning_titles}\n"
                 f"Инфо-сигналы: {info_titles}\n"
                 f"Safe-маркеры фреймворка: {stats.get('heroku_safe_markers', 0)}\n"
+                f"Поведенческие счёты: collection={behavior_scores.get('collection', 0)}, exfiltration={behavior_scores.get('exfiltration', 0)}, execution={behavior_scores.get('execution', 0)}, persistence={behavior_scores.get('persistence', 0)}, concealment={behavior_scores.get('concealment', 0)}\n"
+                f"Поведенческие стадии: {behavior_line}\n"
                 f"Статистика: {json.dumps(static_res.get('stats', {}), ensure_ascii=False)}\n"
             )
         return (
@@ -2005,14 +2121,13 @@ class GoySecurity(loader.Module):
             await utils.answer(message, self.strings("err").format(err="использование: .gautoscan [on|off]"))
             return
 
-        if enabled and not await self._guard_ai_ready():
-            self.config["guard_preinstall_enabled"] = False
-            await utils.answer(message, self.strings("autoscan_ai_required"))
-            return
-
-        self.config["guard_preinstall_enabled"] = enabled
         if enabled:
+            ready = await self._guard_ai_ready()
+            if not ready:
+                await utils.answer(message, self.strings("autoscan_ai_required"))
+                return
             self._ensure_preinstall_guard()
+        self.config["guard_preinstall_enabled"] = enabled
         state = (
             "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> on"
             if enabled else
@@ -2420,6 +2535,20 @@ class GoySecurity(loader.Module):
         ]
         return " | ".join(f"{k}: {v}" for k, v in pairs)
 
+    def _fmt_behavior_short(self, res: Dict[str, Any]) -> str:
+        behavior = res.get("behavior", {}) or {}
+        scores = behavior.get("scores", {}) or {}
+        if not scores:
+            return "нет поведенческих данных"
+        pairs = [
+            ("collect", scores.get("collection", 0)),
+            ("exfil", scores.get("exfiltration", 0)),
+            ("exec", scores.get("execution", 0)),
+            ("persist", scores.get("persistence", 0)),
+            ("hide", scores.get("concealment", 0)),
+        ]
+        return " | ".join(f"{k}:{v}" for k, v in pairs)
+
     def _top_static_hits(self, res: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]:
         hits = []
         for key in ("critical", "warning", "info"):
@@ -2526,6 +2655,7 @@ class GoySecurity(loader.Module):
         mode_msg = self.strings("mode_line").format(mode=m_str)
         out.append(mode_msg + "\n")
         out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
+        out.append(f"<b><tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> Поведенческий профиль:</b> <code>{html.escape(self._fmt_behavior_short(res))}</code>\n")
 
         if not res.get("total", 0):
             out.append(self.strings("empty"))
@@ -2562,6 +2692,16 @@ class GoySecurity(loader.Module):
         out.append(summary_msg)
         out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
         out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
+        out.append(f"<b><tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> Поведенческий профиль:</b> <code>{html.escape(self._fmt_behavior_short(res))}</code>\n")
+
+        behavior = (res.get("behavior", {}) or {}).get("stages", []) or []
+        if behavior:
+            out.append("<b><tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> Поведенческие стадии:</b>\n")
+            for stage in behavior[:4]:
+                stage_name = html.escape(str(stage.get("stage", "stage")))
+                stage_score = int(stage.get("score", 0) or 0)
+                stage_note = html.escape(str(stage.get("note", ""))[:90])
+                out.append(f" • <code>{stage_name}</code> ({stage_score}/100) — <i>{stage_note}</i>\n")
 
         crit_issues = res.get("critical", [])
         warn_issues = res.get("warning", [])
