@@ -1287,9 +1287,8 @@ class GoySecurity(loader.Module):
                         raise self._guard_block_error(
                             f"GoySecurity: модуль '{pretty_name}' заблокирован как небезопасный (AI={ai_verdict})"
                         )
-                except Exception as e:
-                    if "GoySecurity preinstall guard" in str(e):
-                        raise
+                except Exception:
+                    raise
             return await original(*args, **kwargs)
 
         allmodules.register_module = guarded_register_module
