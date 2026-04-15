@@ -5074,6 +5074,8 @@ class QwenCLI(loader.Module):
             prompt,
             "--output-format",
             "stream-json",
+            "--input-format",
+            "stream-json",
             "--approval-mode",
             approval_mode,
             "--auth-type",
