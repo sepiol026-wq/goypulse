@@ -1196,6 +1196,12 @@ class GoySecurity(loader.Module):
             fut.set_result(False)
         await call.edit("<b><tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Установка отклонена пользователем.</b>")
 
+    def _guard_block_error(self, message: str) -> Exception:
+        load_error = getattr(loader, "LoadError", None)
+        if load_error and isinstance(load_error, type) and issubclass(load_error, Exception):
+            return load_error(message)
+        return RuntimeError(message)
+
     async def _guard_ai_ready(self) -> bool:
         provider = self._active_provider()
         token = self._provider_token(provider)
@@ -1251,7 +1257,7 @@ class GoySecurity(loader.Module):
                             ai_reason,
                         )
                         if not allow_install:
-                            raise RuntimeError(
+                            raise self._guard_block_error(
                                 f"GoySecurity preinstall guard blocked module {module_name} (ai=UNAVAILABLE)"
                             )
                         return await original(*args, **kwargs)
@@ -1266,15 +1272,13 @@ class GoySecurity(loader.Module):
                             f"<b><tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Установка заблокирована:</b> <code>{html.escape(module_name)}</code>\n"
                             "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Вердикт AI:</b> <code>UNSAFE</code>"
                         )
-                        await self._guard_update_or_send(guard_message, block_text, delete_first=False)
-                        raise RuntimeError(
+                        await self._guard_update_or_send(guard_message, block_text, delete_first=True)
+                        raise self._guard_block_error(
                             f"GoySecurity preinstall guard blocked module {module_name} (ai={ai_verdict})"
                         )
-                except RuntimeError:
-                    raise
                 except Exception as e:
-                    if self.config["guard_preinstall_notify"]:
-                        log.warning("GoySecurity preinstall guard fallback for %s: %s", module_name, e)
+                    if "GoySecurity preinstall guard" in str(e):
+                        raise
             return await original(*args, **kwargs)
 
         allmodules.register_module = guarded_register_module
