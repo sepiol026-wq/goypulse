@@ -1,7 +1,7 @@
 # requires: requests aiohttp
 # meta developer: @samsepi0l_ovf
 # authors: @samsepi0l_ovf
-# Description: Security scanner + optional pre-installation module guard.
+# Description: Module scanner + preinstall guard.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 
 from __future__ import annotations
@@ -972,12 +972,9 @@ class _ASTVisitor(ast.NodeVisitor):
 @loader.tds
 class GoySecurity(loader.Module):
     """
-    Статический и AI-усиленный анализатор модулей Telegram userbot.
+    Сканер модулей с AI и автопроверкой перед установкой.
 
-    Поддерживает выбор AI-провайдера, отдельную модель на каждый провайдер
-    и детальный разбор модулей, файлов и архивов.
-
-    by @samsepi0l_ovf / @goy_ai
+    by @samsepi0l_ovf / @goy_ai.
     """
     strings = {
         "name": "GoySecurity",
@@ -1006,6 +1003,8 @@ class GoySecurity(loader.Module):
         "footer": "\n<i>движок=goysecurity • профиль=modules-only</i>",
         "err": "<b>ошибка</b>: {err}",
         "mode_set": "<b>режим</b>: <code>{mode}</code>",
+        "autoscan_set": "<b>Автоскан перед установкой</b>: <code>{state}</code>",
+        "autoscan_ai_required": "<b>ошибка</b>: для автоскана нужен рабочий AI (провайдер/токен/модель).",
         "wl_add": "<b>Белый список: добавлено</b> <code>{fp}</code>",
         "wl_del": "<b>Белый список: удалено</b> <code>{fp}</code>",
         "hist_head": "<b><tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> История сканов:</b>\n",
@@ -1042,9 +1041,9 @@ class GoySecurity(loader.Module):
             loader.ConfigValue("decode_depth", 7, "Глубина декодирования", validator=loader.validators.Integer(minimum=1, maximum=10)),
             loader.ConfigValue("max_files", 60, "Максимум файлов в архиве", validator=loader.validators.Integer(minimum=1, maximum=250)),
             loader.ConfigValue("ui_updates", True, "Показывать пошаговый статус", validator=loader.validators.Boolean()),
-            loader.ConfigValue("guard_preinstall_enabled", False, "Включить предустановочную проверку модулей (перехват register_module).", validator=loader.validators.Boolean()),
-            loader.ConfigValue("guard_preinstall_threshold", 70, "Порог risk-балла для блокировки установки при guard_preinstall_enabled.", validator=loader.validators.Integer(minimum=1, maximum=250)),
-            loader.ConfigValue("guard_preinstall_notify", True, "Писать предупреждения в лог при блокировке/ошибке preinstall guard.", validator=loader.validators.Boolean()),
+            loader.ConfigValue("guard_preinstall_enabled", True, "Автоскан перед установкой модулей.", validator=loader.validators.Boolean()),
+            loader.ConfigValue("guard_preinstall_threshold", 70, "Порог блокировки автоскана.", validator=loader.validators.Integer(minimum=1, maximum=250)),
+            loader.ConfigValue("guard_preinstall_notify", True, "Логировать блокировки и сбои guard.", validator=loader.validators.Boolean()),
         )
         self.av = Analyzer(depth=self.config["decode_depth"], mode="paranoid", max_files=self.config["max_files"])
         self._hist: List[Dict[str, Any]] = []
@@ -1084,6 +1083,10 @@ class GoySecurity(loader.Module):
         self.av.mode = self._mode
         self._custom_ai = dict(self.db.get("GoySecurity", "gsec_custom_ai", {}) or {})
         self._custom_ai_tokens = dict(self.db.get("GoySecurity", "gsec_custom_ai_tokens", {}) or {})
+        if self.config["guard_preinstall_enabled"]:
+            if not await self._guard_ai_ready():
+                self.config["guard_preinstall_enabled"] = False
+                log.warning("GoySecurity: preinstall autoscan disabled because AI check failed")
         self._ensure_preinstall_guard()
 
     def _extract_register_module_payload(self, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[str, str]:
@@ -1123,6 +1126,54 @@ class GoySecurity(loader.Module):
             return False
         return int(score) >= int(self.config["guard_preinstall_threshold"]) and risk in {"medium", "high", "critical"}
 
+    def _ai_verdict_to_risk(self, verdict: str) -> str:
+        v = (verdict or "").strip().lower()
+        if v == "critical":
+            return "critical"
+        if v == "malicious":
+            return "high"
+        if v == "suspicious":
+            return "medium"
+        if v == "clear":
+            return "clean"
+        return "unknown"
+
+    async def _guard_ai_ready(self) -> bool:
+        provider = self._active_provider()
+        token = self._provider_token(provider)
+        model = self._provider_model(provider)
+        if not token or not model:
+            return False
+        probe = "print('healthcheck')"
+        static_res = {
+            "risk": "clean",
+            "score": 0,
+            "family": "clean",
+            "family_conf": 0,
+            "mode": ["healthcheck"],
+        }
+        result = await self._ask_ai(provider, token, probe, model, static_res, "normal")
+        return bool(result) and not bool(result.get("error"))
+
+    async def _notify_guard_result(self, module_name: str, static_res: Dict[str, Any], ai_result: Optional[Dict[str, Any]], blocked: bool) -> None:
+        client = getattr(self, "client", None)
+        if client is None:
+            return
+        static_risk = str(static_res.get("risk", "clean"))
+        static_score = int(static_res.get("score", 0) or 0)
+        ai_verdict = str((ai_result or {}).get("verdict", "Unknown"))
+        ai_conf = int((ai_result or {}).get("confidence", 0) or 0)
+        status = "🔴 НЕБЕЗОПАСНО" if blocked else "🟢 БЕЗОПАСНО"
+        text = (
+            f"<b>GoySecurity автоскан:</b> <code>{html.escape(module_name)}</code>\n"
+            f"<b>Статус:</b> <code>{status}</code>\n"
+            f"<b>Static:</b> risk=<code>{html.escape(static_risk)}</code> score=<code>{static_score}</code>\n"
+            f"<b>AI:</b> verdict=<code>{html.escape(ai_verdict)}</code> conf=<code>{ai_conf}%</code>\n"
+            f"<b>Кнопки:</b> <code>🟢 SAFE</code> <code>🔴 UNSAFE</code>"
+        )
+        with contextlib.suppress(Exception):
+            await client.send_message("me", text, parse_mode="html", link_preview=False)
+
     def _ensure_preinstall_guard(self) -> None:
         if self._register_guard_patched:
             return
@@ -1144,10 +1195,26 @@ class GoySecurity(loader.Module):
                         self.av.mode = prev_mode
                     risk = str(scan_res.get("risk", "clean"))
                     score = int(scan_res.get("score", 0) or 0)
-                    if self._should_block_preinstall(risk, score):
+                    provider = self._active_provider()
+                    token = self._provider_token(provider)
+                    model = self._provider_model(provider)
+                    ai_result = None
+                    if token and model:
+                        ai_result = await self._ask_ai(provider, token, scan_res.get("decoded", ""), model, scan_res, self._mode)
+                    if not ai_result or ai_result.get("error"):
+                        msg = f"GoySecurity preinstall guard requires a working AI ({provider})"
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning("%s: %s", msg, (ai_result or {}).get("reason", "no-response"))
+                        raise RuntimeError(msg)
+                    ai_risk = self._ai_verdict_to_risk(str((ai_result or {}).get("verdict", "")))
+                    block_by_static = self._should_block_preinstall(risk, score)
+                    block_by_ai = ai_risk in {"medium", "high", "critical"}
+                    should_block = block_by_static or block_by_ai
+                    await self._notify_guard_result(module_name, scan_res, ai_result, should_block)
+                    if should_block:
                         msg = (
                             "GoySecurity preinstall guard blocked module "
-                            f"{module_name} (risk={risk}, score={score}, threshold={self.config['guard_preinstall_threshold']})"
+                            f"{module_name} (risk={risk}, score={score}, ai={str((ai_result or {}).get('verdict', 'n/a'))}, threshold={self.config['guard_preinstall_threshold']})"
                         )
                         if self.config["guard_preinstall_notify"]:
                             log.warning(msg)
@@ -1349,7 +1416,7 @@ class GoySecurity(loader.Module):
         providers = [provider] if provider and provider in self._all_providers() else self._all_providers()
         out = [self.strings("models_head")]
         out.append(f"<i>активный провайдер</i>: <code>{html.escape(self._active_provider())}</code>\n")
-        out.append("<i>команды</i>: <code>.gai провайдер [модель]</code> | <code>.gmodels [провайдер]</code> | <code>.gaicustom ...</code> | <code>.gscan</code> | <code>.gwhy</code>\n")
+        out.append("<i>команды</i>: <code>.gai провайдер [модель]</code> | <code>.gmodels [провайдер]</code> | <code>.gaicustom ...</code> | <code>.gscan</code> | <code>.gautoscan on/off</code> | <code>.gwhy</code>\n")
         for item in providers:
             out.append(f"\n<blockquote>{self._provider_card(item).replace(chr(10), '<br>')}</blockquote>\n")
         return "".join(out)
@@ -1933,6 +2000,31 @@ class GoySecurity(loader.Module):
 
         success_msg = self.strings("mode_set").format(mode=html.escape(m))
         await utils.answer(message, success_msg)
+
+    @loader.unrestricted
+    async def gautoscancmd(self, message):
+        """[on|off] — Вкл/выкл автоскан перед установкой модулей"""
+        raw = utils.get_args_raw(message).strip().lower()
+        if raw in {"on", "1", "true", "yes", "enable", "enabled", "вкл", "да"}:
+            enabled = True
+        elif raw in {"off", "0", "false", "no", "disable", "disabled", "выкл", "нет"}:
+            enabled = False
+        elif not raw:
+            enabled = not bool(self.config["guard_preinstall_enabled"])
+        else:
+            await utils.answer(message, self.strings("err").format(err="использование: .gautoscan [on|off]"))
+            return
+
+        if enabled and not await self._guard_ai_ready():
+            self.config["guard_preinstall_enabled"] = False
+            await utils.answer(message, self.strings("autoscan_ai_required"))
+            return
+
+        self.config["guard_preinstall_enabled"] = enabled
+        if enabled:
+            self._ensure_preinstall_guard()
+        state = "🟢 on" if enabled else "🔴 off"
+        await utils.answer(message, self.strings("autoscan_set").format(state=state))
 
     @loader.unrestricted
     async def gaicmd(self, message):
