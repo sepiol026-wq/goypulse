@@ -1083,10 +1083,6 @@ class GoySecurity(loader.Module):
         self.av.mode = self._mode
         self._custom_ai = dict(self.db.get("GoySecurity", "gsec_custom_ai", {}) or {})
         self._custom_ai_tokens = dict(self.db.get("GoySecurity", "gsec_custom_ai_tokens", {}) or {})
-        if self.config["guard_preinstall_enabled"]:
-            if not await self._guard_ai_ready():
-                self.config["guard_preinstall_enabled"] = False
-                log.warning("GoySecurity: preinstall autoscan disabled because AI check failed")
         self._ensure_preinstall_guard()
 
     def _extract_register_module_payload(self, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[str, str]:
@@ -1154,27 +1150,45 @@ class GoySecurity(loader.Module):
                         scan_res = self.av.scan([(module_name, source)])
                     finally:
                         self.av.mode = prev_mode
+                    threshold = int(self.config["guard_preinstall_threshold"] or 70)
+                    static_block = (
+                        scan_res.get("fp") not in self._wl
+                        and int(scan_res.get("score", 0)) >= threshold
+                    )
                     provider = self._active_provider()
                     token = self._provider_token(provider)
                     model = self._provider_model(provider)
                     ai_result = None
                     if token and model:
                         ai_result = await self._ask_ai_autoscan(provider, token, scan_res.get("decoded", ""), model)
-                    if not ai_result or ai_result.get("error"):
-                        msg = f"GoySecurity preinstall guard requires a working AI ({provider})"
-                        if self.config["guard_preinstall_notify"]:
-                            log.warning("%s: %s", msg, (ai_result or {}).get("reason", "no-response"))
-                        raise RuntimeError(msg)
                     ai_verdict = str((ai_result or {}).get("verdict", "")).strip().upper()
-                    if ai_verdict not in {"SAFE", "UNSAFE"}:
-                        msg = f"GoySecurity preinstall guard invalid AI verdict ({ai_verdict or 'empty'})"
+                    if ai_result and ai_result.get("error"):
                         if self.config["guard_preinstall_notify"]:
-                            log.warning(msg)
-                        raise RuntimeError(msg)
+                            log.warning(
+                                "GoySecurity preinstall guard AI fallback (%s): %s",
+                                provider,
+                                ai_result.get("reason", "error"),
+                            )
+                        ai_verdict = ""
+                    if ai_verdict not in {"", "SAFE", "UNSAFE"}:
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning(
+                                "GoySecurity preinstall guard invalid AI verdict (%s), using static verdict",
+                                ai_verdict,
+                            )
+                        ai_verdict = ""
                     if ai_verdict == "UNSAFE":
                         msg = (
                             "GoySecurity preinstall guard blocked module "
                             f"{module_name} (ai={ai_verdict})"
+                        )
+                        if self.config["guard_preinstall_notify"]:
+                            log.warning(msg)
+                        raise RuntimeError(msg)
+                    if static_block:
+                        msg = (
+                            "GoySecurity preinstall guard blocked module "
+                            f"{module_name} (score={scan_res.get('score', 0)} threshold={threshold})"
                         )
                         if self.config["guard_preinstall_notify"]:
                             log.warning(msg)
@@ -1399,28 +1413,24 @@ class GoySecurity(loader.Module):
         target = selected or self._active_provider()
         rows.append([
             {
-                "text": "Каталог",
-                "icon_custom_emoji_id": "5256230583717079814",
+                "text": "📝 Каталог",
                 "callback": self._inline_models,
                 "args": (target, "catalog"),
             },
             {
-                "text": "Подключение",
-                "icon_custom_emoji_id": "5253952855185829086",
+                "text": "⚙️ Подключение",
                 "callback": self._inline_models,
                 "args": (target, "setup"),
             },
         ])
         rows.append([
             {
-                "text": "Модели",
-                "icon_custom_emoji_id": "5256230583717079814",
+                "text": "📝 Модели",
                 "callback": self._inline_models,
                 "args": (target, "models"),
             },
             {
-                "text": "Сделать активным",
-                "icon_custom_emoji_id": "5255813619702049821",
+                "text": "✅ Сделать активным",
                 "callback": self._inline_activate_provider,
                 "args": (target, page),
             },
@@ -1442,8 +1452,7 @@ class GoySecurity(loader.Module):
                 rows.append(model_row)
         rows.append([
             {
-                "text": "Закрыть",
-                "icon_custom_emoji_id": "5255831443816327915",
+                "text": "🗑 Закрыть",
                 "action": "close",
             }
         ])
@@ -2029,11 +2038,6 @@ class GoySecurity(loader.Module):
             enabled = not bool(self.config["guard_preinstall_enabled"])
         else:
             await utils.answer(message, self.strings("err").format(err="использование: .gautoscan [on|off]"))
-            return
-
-        if enabled and not await self._guard_ai_ready():
-            self.config["guard_preinstall_enabled"] = False
-            await utils.answer(message, self.strings("autoscan_ai_required"))
             return
 
         self.config["guard_preinstall_enabled"] = enabled

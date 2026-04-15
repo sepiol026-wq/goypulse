@@ -7659,14 +7659,12 @@ class QwenCLI(loader.Module):
             nav_row.append(
                 {
                     "text": "▶️",
-                    "icon_custom_emoji_id": "5249019346512008974",
                     "data": f"qwencli:pg:{uid}:{page_num + 1}",
                 }
             )
         extra_row = [
             {
-                "text": "Закрыть",
-                "icon_custom_emoji_id": "5256054975389247793",
+                "text": "📛 Закрыть",
                 "callback": self._close_callback,
                 "args": (uid,),
             }
@@ -7675,7 +7673,6 @@ class QwenCLI(loader.Module):
             extra_row.append(
                 {
                     "text": "🔄",
-                    "icon_custom_emoji_id": "5404857686477015710",
                     "callback": self._regenerate_callback,
                     "args": (data["msg_id"], data["chat_id"]),
                 }
