@@ -7656,14 +7656,23 @@ class QwenCLI(loader.Module):
             nav_row.append({"text": "◀️", "data": f"qwencli:pg:{uid}:{page_num - 1}"})
         nav_row.append({"text": f"{page_num + 1}/{total}", "data": "qwencli:noop"})
         if page_num < total - 1:
-            nav_row.append({"text": "<tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji>", "data": f"qwencli:pg:{uid}:{page_num + 1}"})
+            nav_row.append(
+                {
+                    "text": "▶️",
+                    "data": f"qwencli:pg:{uid}:{page_num + 1}",
+                }
+            )
         extra_row = [
-            {"text": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Закрыть", "callback": self._close_callback, "args": (uid,)}
+            {
+                "text": "📛 Закрыть",
+                "callback": self._close_callback,
+                "args": (uid,),
+            }
         ]
         if data.get("chat_id") and data.get("msg_id"):
             extra_row.append(
                 {
-                    "text": "<tg-emoji emoji-id=5404857686477015710>🔄</tg-emoji>",
+                    "text": "🔄",
                     "callback": self._regenerate_callback,
                     "args": (data["msg_id"], data["chat_id"]),
                 }
