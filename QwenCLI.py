@@ -5017,6 +5017,11 @@ class QwenCLI(loader.Module):
                 )
                 stderr_text = "\n".join(stderr_lines).strip()
                 stdout_text = "\n".join(stdout_lines).strip()
+                final_text = self._normalize_qwen_permission_error_text(
+                    final_text=final_text,
+                    stderr_text=stderr_text,
+                    stdout_text=stdout_text,
+                )
                 if progress_state["final_error"]:
                     raise RuntimeError(progress_state["final_error"])
                 if proc.returncode != 0 and not final_text and not generated_files:
@@ -5314,6 +5319,44 @@ class QwenCLI(loader.Module):
     def _append_status_stream(self, base: str, chunk: str, limit: int = 220) -> str:
         merged = f"{base} {chunk}".strip() if base else str(chunk or "").strip()
         return self._short_status_text(merged, limit=limit)
+
+    def _normalize_qwen_permission_error_text(
+        self, final_text: str, stderr_text: str = "", stdout_text: str = ""
+    ) -> str:
+        raw_text = str(final_text or "").strip()
+        if not raw_text and not stderr_text and not stdout_text:
+            return raw_text
+
+        combined = "\n".join(
+            chunk for chunk in [raw_text, str(stderr_text or "").strip(), str(stdout_text or "").strip()] if chunk
+        )
+        deny_line = re.search(
+            r'Qwen Code requires permission to use "([^"]+)", but that permission was denied\. Matching deny rule: "([^"]+)"\.',
+            combined,
+            flags=re.IGNORECASE,
+        )
+        if not deny_line:
+            return raw_text
+
+        qwen_line = deny_line.group(0)
+        blocked_tool = deny_line.group(1)
+        extra_lines = []
+        for line in combined.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped == qwen_line:
+                continue
+            if (
+                blocked_tool.lower() in stripped.lower()
+                and ("denied" in stripped.lower() or "deny rule" in stripped.lower())
+            ):
+                extra_lines.append(stripped)
+        result_lines = [qwen_line]
+        for line in extra_lines[:2]:
+            if line not in result_lines:
+                result_lines.append(line)
+        return "\n".join(result_lines)
 
     def _apply_qwen_usage(self, state: dict, usage: dict):
         input_tokens = usage.get("input_tokens")
