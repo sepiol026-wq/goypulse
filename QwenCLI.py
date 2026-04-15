@@ -5435,12 +5435,24 @@ class QwenCLI(loader.Module):
                     reply_markup=reply_markup,
                 )
         if isinstance(entity, Message):
+            with contextlib.suppress(Exception):
+                return await self.client.send_message(
+                    entity.chat_id,
+                    safe_text,
+                    parse_mode="html",
+                    link_preview=link_preview,
+                    reply_to=getattr(entity, "id", None),
+                )
             return await self.client.send_message(
                 entity.chat_id,
                 plain_text,
                 parse_mode="html",
                 link_preview=link_preview,
                 reply_to=getattr(entity, "id", None),
+            )
+        with contextlib.suppress(Exception):
+            return await utils.answer(
+                entity, safe_text, reply_markup=reply_markup, parse_mode="html"
             )
         return await utils.answer(entity, plain_text, reply_markup=reply_markup)
 
