@@ -1,6 +1,9 @@
 # requires: yt-dlp imageio-ffmpeg
 # meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
+# Description: Universal media downloader.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+
 __version__ = (1, 3)
 import asyncio
 import contextlib
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 @loader.tds
 class OmniLoad(loader.Module):
     """Универсальный загрузчик медиа."""
-    
+
     strings = {
         "name": "OmniLoad",
         "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>No URL provided.</b> Please specify a link.",
@@ -32,7 +35,7 @@ class OmniLoad(loader.Module):
         "expired": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Cache expired.</b> Please search again.",
         "caption": "<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>{title}</b>\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> {author}\n<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <a href='{url}'>Source</a>"
     }
-    
+
     strings_ru = {
         "no_args": "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Аргументы где?</b> Укажи ссылку.",
         "fetching": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Паршу таргет...</b>",
@@ -98,15 +101,15 @@ class OmniLoad(loader.Module):
 
         msg = await utils.answer(message, self.strings("fetching"))
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-        
+
         cmd = [
             sys.executable, "-m", "yt_dlp", "--no-warnings", "--dump-json",
             "--extractor-args", "youtube:player_client=android",
             "--ffmpeg-location", ffmpeg_path, args
         ]
-        
+
         ret, stdout, stderr = await self._run_proc(cmd, timeout=45)
-        
+
         if ret != 0 or not stdout:
             err_text = stderr.decode('utf-8', errors='ignore')[-100:]
             return await utils.answer(msg, self.strings("error").format(error=err_text or "Extraction failed"))
@@ -119,10 +122,10 @@ class OmniLoad(loader.Module):
         call_id = str(message.id)
         target_chat_id = utils.get_chat_id(message)
         reply_id = message.id
-        
+
         self._cache[call_id] = {"info": info, "url": args}
         title = info.get("title", "Unknown")[:40]
-        
+
         keyboard = [
             [
                 {"text": "🎬 Video 1080p", "callback": self._dl_callback, "args": (call_id, "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best", "video", target_chat_id, reply_id)},
@@ -174,7 +177,7 @@ class OmniLoad(loader.Module):
         elif media_type in ("audio", "flac"):
             ext = "flac" if media_type == "flac" else "mp3"
             cmd.extend(["-x", "--audio-format", ext])
-            
+
         cmd.append(url)
 
         ret, _, stderr = await self._run_proc(cmd, timeout=self.config["ytdl_timeout"])
@@ -190,9 +193,9 @@ class OmniLoad(loader.Module):
                 return
 
             final_path = os.path.join(dl_dir, target_file)
-            
+
             last_edit_time = 0
-            
+
             async def upload_progress(current, total):
                 nonlocal last_edit_time
                 now = time.time()
@@ -235,7 +238,7 @@ class OmniLoad(loader.Module):
             if media_type == "video":
                 w = int(info.get("width") or 0)
                 h = int(info.get("height") or 0)
-                
+
                 if w > 0 and h > 0:
                     attrs = [DocumentAttributeVideo(
                         duration=duration,
@@ -267,8 +270,8 @@ class OmniLoad(loader.Module):
                         upload_kwargs.pop("reply_to", None)
                         await self._client.send_file(**upload_kwargs)
                     else:
-                        raise e 
-                
+                        raise e
+
                 with contextlib.suppress(Exception):
                     await call.delete()
 

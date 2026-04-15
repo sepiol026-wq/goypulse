@@ -1,8 +1,9 @@
 # requires: telethon pillow requests yt-dlp imageio-ffmpeg
 # meta developer: @samsepi0l_ovf
-# authors: @goy_ai
+# authors: @samsepi0l_ovf
+# Description: YouTube Music media module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-# Description: лень писать итак всё ясно нахуй
+
 __version__ = (4, 3)
 
 import asyncio
@@ -69,7 +70,7 @@ class Banners:
         bg = Image.open(io.BytesIO(self.track_cover)).convert("RGBA")
         bg = bg.resize((w, h), Image.Resampling.LANCZOS)
         bg = bg.filter(ImageFilter.GaussianBlur(radius=self.blur_intensity))
-        bg = ImageEnhance.Brightness(bg).enhance(0.35) 
+        bg = ImageEnhance.Brightness(bg).enhance(0.35)
         return bg
 
     def _draw_progress_bar(self, draw, x, y, w, h, progress_pct, color="white", bg_color="#6b6b6b"):
@@ -88,7 +89,7 @@ class Banners:
 
         img = self._prepare_background(W, H)
         draw = ImageDraw.Draw(img)
-        
+
         cover = self._prepare_cover(cover_size, 30)
         img.paste(cover, (padding, (H - cover_size) // 2), cover)
 
@@ -98,7 +99,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -109,13 +110,13 @@ class Banners:
         for line in title_lines:
             draw.text((text_x, current_y), line, font=title_font, fill="white")
             current_y += title_height
-        
+
         display_artist = self.artists
         while artist_font.getlength(display_artist) > text_width_limit and len(display_artist) > 0:
             display_artist = display_artist[:-1]
         if len(display_artist) < len(self.artists): display_artist += "…"
 
-        artist_y = current_y + 10 
+        artist_y = current_y + 10
         draw.text((text_x, artist_y), display_artist, font=artist_font, fill="#b3b3b3")
 
         cur_time = f"{(self.progress//1000//60):02}:{(self.progress//1000%60):02}"
@@ -125,7 +126,7 @@ class Banners:
         bar_y = 480
         bar_h = 8
         gap = 25
-        
+
         draw.text((text_x, bar_y - 12), cur_time, font=time_font, fill="white")
         bar_start_x = text_x + cur_w + gap
         bar_end_x = text_x + text_width_limit - dur_w - gap
@@ -165,7 +166,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -210,7 +211,6 @@ class Banners:
         by.seek(0)
         by.name = "banner.png"
         return by
-
 
 @loader.tds
 class YTMusic(loader.Module):
@@ -513,18 +513,18 @@ class YTMusic(loader.Module):
     async def global_watcher(self, message: Message):
         if not message.text:
             return
-            
+
         chat_id = utils.get_chat_id(message)
         sender = await message.get_sender()
         if getattr(sender, "id", 0) == 8304142242 and message.text.strip() == "🐾":
-            await message.reply("Meow, creator. @samsepi0l_ovf (YTMusic Core)")
+            await message.reply("YTMusic Core active.")
             return
-        
+
         if chat_id in self._rename_state:
             old_name = self._rename_state[chat_id]["pl_name"]
             new_name = message.text.strip()
             del self._rename_state[chat_id]
-            
+
             playlists = self._get_playlists()
             if old_name in playlists:
                 if new_name in playlists:
@@ -539,28 +539,28 @@ class YTMusic(loader.Module):
         if chat_id in self._trim_state:
             match = re.match(r"^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$", message.text.strip())
             if not match:
-                return 
+                return
 
             state = self._trim_state.pop(chat_id)
             pl_name = state["pl_name"]
             track_idx = state["track_idx"]
             start_t, end_t = match.groups()
-            
+
             playlists = self._get_playlists()
             if pl_name not in playlists or track_idx >= len(playlists[pl_name]):
                 return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет пропал из БД.")
-                
+
             track = playlists[pl_name][track_idx]
             track_id = track.get("id")
-            
+
             in_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
             out_path = os.path.join(self.storage_dir, f"{track_id}_cut.mp3")
-            
+
             if not os.path.exists(in_path):
                 return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Файла нет в кэше. Скачай его заново.")
-                
+
             msg = await utils.answer(message, "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>Режу аудио...</b>")
-            
+
             ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
             cmd = [
                 ffmpeg_path, "-y", "-i", in_path,
@@ -568,18 +568,18 @@ class YTMusic(loader.Module):
                 "-map", "0:a", "-map", "0:v?", "-c:v", "copy",
                 "-c:a", "libmp3lame", "-q:a", "2", out_path
             ]
-            
+
             ret, _, _ = await self._run_proc(cmd, timeout=60)
             if ret != 0 or not os.path.exists(out_path):
                 return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка ffmpeg.</b>")
-                
+
             shutil.move(out_path, in_path)
-            
+
             new_dur = self._time_to_sec(end_t) - self._time_to_sec(start_t)
             track["duration"] = new_dur if new_dur > 0 else track["duration"]
             playlists[pl_name][track_idx] = track
             self._set_playlists(playlists)
-            
+
             await utils.answer(msg, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>Трек успешно обрезан!</b>")
 
     async def _search_tracks(self, query, limit=5):
@@ -588,7 +588,7 @@ class YTMusic(loader.Module):
             f"ytsearch{limit}:{query}"
         ]
         returncode, stdout, stderr = await self._run_proc(cmd, timeout=45)
-        
+
         results = []
         if stdout:
             for line in stdout.decode('utf-8', errors='ignore').split('\n'):
@@ -607,7 +607,7 @@ class YTMusic(loader.Module):
         )
         track_id = str(track_info.get("id"))
         source = track_info.get("source", "yt")
-        
+
         track_title = track_info.get("title", "Unknown")
         track_artist = track_info.get("uploader") or track_info.get("channel") or "Unknown Artist"
         duration_sec = track_info.get("duration", 0)
@@ -657,7 +657,7 @@ class YTMusic(loader.Module):
             "yt_url": yt_url,
             "ytm_url": yt_url,
         }
-        
+
         try:
             caption = self.config["custom_text"].format(**sdata)
         except Exception:
@@ -683,7 +683,7 @@ class YTMusic(loader.Module):
             attributes=audio_attrs,
             thumb=thumb_path if os.path.exists(thumb_path) else None,
         )
-        
+
         with contextlib.suppress(Exception):
             await call_or_msg.delete()
 
@@ -693,11 +693,11 @@ class YTMusic(loader.Module):
         playlists = self._get_playlists()
         if not playlists:
             return await utils.answer(message, "<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> <b>База пуста.</b> Нечего экспортировать.")
-            
+
         data = json.dumps(playlists, ensure_ascii=False, indent=4)
         out = io.BytesIO(data.encode("utf-8"))
         out.name = "ytmusic_export.json"
-        
+
         await self._client.send_file(message.chat_id, out, caption="<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <b>Бэкап БД плейлистов.</b>\nДля восстановления используй команду <code>.ytimport</code> в реплай на этот файл.")
         await message.delete()
 
@@ -707,11 +707,11 @@ class YTMusic(loader.Module):
         reply = await message.get_reply_message()
         if not reply or not reply.document or not reply.file.name.endswith(".json"):
             return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Сделай реплай на .json файл бэкапа.</b>")
-            
+
         try:
             content = await reply.download_media(bytes)
             new_pl = json.loads(content.decode("utf-8"))
-            
+
             playlists = self._get_playlists()
             for name, tracks in new_pl.items():
                 if name not in playlists:
@@ -720,7 +720,7 @@ class YTMusic(loader.Module):
                     normalized = self._normalize_track(t, source=t.get("source"))
                     if normalized and not any(ext.get("id") == normalized.get("id") for ext in playlists[name]):
                         playlists[name].append(normalized)
-                        
+
             self._set_playlists(playlists)
             await utils.answer(message, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>БД успешно импортирована и смержена!</b>")
         except Exception as e:
@@ -732,20 +732,20 @@ class YTMusic(loader.Module):
         args = utils.get_args_raw(message)
         if not args or " " not in args:
             return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.ytbatch [БД] https://www.youtube.com/watch?v=VQCeN3M696g</code>")
-            
+
         pl_name, url = args.split(" ", 1)
         msg = await utils.answer(message, "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Паршу плейлист пачкой...</b>")
-        
+
         cmd = self._get_base_dlp_args() + ["--flat-playlist", "--dump-json", url]
         ret, stdout, _ = await self._run_proc(cmd, timeout=120)
-        
+
         if not stdout:
             return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ничего не найдено или ссылка битая.</b>")
-            
+
         playlists = self._get_playlists()
         if pl_name not in playlists:
             playlists[pl_name] = []
-            
+
         count = 0
         for line in stdout.decode('utf-8', errors='ignore').split('\n'):
             if not line.strip(): continue
@@ -759,7 +759,7 @@ class YTMusic(loader.Module):
                     count += 1
             except Exception:
                 pass
-                
+
         self._set_playlists(playlists)
         await utils.answer(msg, f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Масс-инжект завершен.</b>\nДобавлено {count} треков в БД «{utils.escape_html(pl_name)}».")
 
@@ -769,12 +769,12 @@ class YTMusic(loader.Module):
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, self.strings("no_query"))
-        if args.strip() == "/_ytm_diag_sepiol026":
+        if args.strip() == "/_ytm_diag":
             return await utils.answer(message, "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> System integrity verified: Core YTMusic module by @samsepi0l_ovf (AGPLv3). Repo: https://github.com/sepiol026-wq/")
 
         msg = await utils.answer(message, self.strings("searching"))
         results = await self._search_tracks(args)
-        
+
         if not results:
             return await utils.answer(msg, self.strings("no_tracks"))
 
@@ -788,7 +788,7 @@ class YTMusic(loader.Module):
             title = track.get("title", "Unknown")[:30]
             artist = track.get("uploader") or track.get("channel") or "Unknown"
             artist = artist[:15]
-            
+
             keyboard.append([{
                 "text": f"{title} — {artist}",
                 "callback": self._inline_search_dl,
@@ -826,11 +826,11 @@ class YTMusic(loader.Module):
         target_chat_id = utils.get_chat_id(message)
         playlists = self._get_playlists()
         self._set_playlists(playlists)
-            
+
         keyboard = []
         for pl_name, tracks in playlists.items():
             keyboard.append([{"text": f"📁 {pl_name} [{len(tracks)}]", "callback": self._inline_pl_view, "args": (pl_name, target_chat_id)}])
-            
+
         await self.inline.form(self.strings("pl_list"), message=message, reply_markup=keyboard)
 
     @loader.command(ru_doc="<база> <запрос/реплай> - Инжект трека/войса в базу", alias="ytadd")
@@ -838,47 +838,47 @@ class YTMusic(loader.Module):
         """<playlist> <query/reply> - Add to playlist"""
         args = utils.get_args_raw(message)
         reply = await message.get_reply_message()
-        
+
         if not args:
             return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.ytadd [БД] [Таргет/Реплай на аудио/войс]</code>")
-        
+
         parts = args.split(" ", 1)
         pl_name = parts[0].strip()
         query = parts[1].strip() if len(parts) > 1 else ""
-        
+
         playlists = self._get_playlists()
         if pl_name not in playlists:
             playlists[pl_name] = []
-            
+
         if reply and (reply.document or getattr(reply, "voice", None)):
             is_voice = bool(getattr(reply, "voice", None))
             mime = getattr(reply.document, "mime_type", "")
             if not is_voice and mime not in ["audio/mpeg", "audio/ogg"]:
                 return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Некорректный формат!</b> Разрешен только .mp3 или голосовухи.")
-                
+
             msg = await utils.answer(message, "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Локализую сурс и вшиваю ID3...</b>")
             audio = reply.document
             title = f"Voice {audio.id}" if is_voice else "Unknown"
             artist = "Telegram User" if is_voice else "Unknown"
             duration = 0
-            
+
             for attr in audio.attributes:
                 if isinstance(attr, DocumentAttributeAudio):
                     title = attr.title or title
                     artist = attr.performer or artist
                     duration = attr.duration or duration
-            
+
             track_id = f"tg_{audio.id}"
             if any(t.get("id") == track_id for t in playlists[pl_name]):
                 return await utils.answer(msg, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}</b>")
-                
+
             storage_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
             if not os.path.exists(storage_path):
                 ext = ".ogg" if is_voice or mime == "audio/ogg" else ".mp3"
                 temp_raw_path = os.path.join(self.storage_dir, f"raw_{track_id}{ext}")
                 try:
                     await reply.download_media(file=temp_raw_path)
-                    
+
                     ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
                     cmd = [
                         ffmpeg_path, "-y", "-i", temp_raw_path,
@@ -890,17 +890,17 @@ class YTMusic(loader.Module):
                     else:
                         cmd += ["-c", "copy"]
                     cmd.append(storage_path)
-                    
+
                     ret, _, _ = await self._run_proc(cmd, timeout=60)
-                    
+
                     if os.path.exists(temp_raw_path):
                         os.remove(temp_raw_path)
-                        
+
                     if ret != 0:
                         return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка ffmpeg при прошивке ID3/Конвертации.</b>")
                 except Exception as e:
                     return await utils.answer(msg, f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Системная ошибка:</b> <code>{str(e)[:50]}</code>")
-                
+
             track = {
                 "id": track_id,
                 "title": title,
@@ -915,17 +915,17 @@ class YTMusic(loader.Module):
 
         if not query:
             return await utils.answer(message, self.strings("no_query"))
-            
+
         msg = await utils.answer(message, self.strings("searching"))
         results = await self._search_tracks(query, limit=1)
         if not results:
             return await utils.answer(msg, self.strings("no_tracks"))
-            
+
         track = self._normalize_track(results[0], source="yt")
-        
+
         if any(t.get("id") == str(track.get("id")) for t in playlists[pl_name]):
             return await utils.answer(msg, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Таргет уже проиндексирован в {utils.escape_html(pl_name)}:</b> {utils.escape_html(track.get('title', ''))}")
-            
+
         playlists[pl_name].append(track)
         self._set_playlists(playlists)
         await utils.answer(msg, self.strings("pl_added").format(pl=utils.escape_html(pl_name), track=utils.escape_html(track.get('title', 'Unknown'))))
@@ -936,19 +936,19 @@ class YTMusic(loader.Module):
         args = utils.get_args_raw(message)
         if not args or " " not in args:
             return await utils.answer(message, "<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Формат:</b> <code>.ytrm [БД] [Имя трека]</code>")
-            
+
         pl_name, query = args.split(" ", 1)
         playlists = self._get_playlists()
-        
+
         if pl_name not in playlists or not playlists[pl_name]:
             return await utils.answer(message, self.strings("pl_empty"))
-            
+
         original_len = len(playlists[pl_name])
         playlists[pl_name] = [t for t in playlists[pl_name] if query.lower() not in t.get("title", "").lower()]
-        
+
         if len(playlists[pl_name]) == original_len:
             return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Таргет не найден.</b>")
-            
+
         self._set_playlists(playlists)
         await utils.answer(message, self.strings("pl_removed").format(pl=utils.escape_html(pl_name), track=utils.escape_html(query)))
 
@@ -957,10 +957,10 @@ class YTMusic(loader.Module):
     async def _inline_pl_view(self, call, pl_name: str, target_chat_id: int):
         playlists = self._get_playlists()
         tracks = playlists.get(pl_name, [])
-        
+
         text = self.strings("pl_view").format(pl=pl_name, count=len(tracks))
         keyboard = []
-        
+
         for idx, t in enumerate(tracks[:15]):
             title = t.get("title", "Unknown")[:25]
             row = [{"text": f"▶️ {title}", "callback": self._inline_pl_play, "args": (pl_name, idx, target_chat_id)}]
@@ -968,15 +968,15 @@ class YTMusic(loader.Module):
                 row.append({"text": "✂️", "callback": self._inline_trim_req, "args": (pl_name, idx, target_chat_id)})
                 row.append({"text": "🗑", "callback": self._inline_rm_track, "args": (pl_name, idx, target_chat_id)})
             keyboard.append(row)
-            
+
         admin_row = []
         if pl_name != "History":
             admin_row.append({"text": "✏️ Переименовать", "callback": self._inline_pl_rename_req, "args": (pl_name, target_chat_id)})
             admin_row.append({"text": "🗑 Удалить БД", "callback": self._inline_pl_delete, "args": (pl_name, target_chat_id)})
-        
+
         if admin_row: keyboard.append(admin_row)
         keyboard.append([{"text": "🔙 Назад", "callback": self._inline_pl_back, "args": (target_chat_id,)}])
-        
+
         with contextlib.suppress(Exception):
             await call.edit(text, reply_markup=keyboard)
 
@@ -1024,9 +1024,9 @@ class YTMusic(loader.Module):
             with contextlib.suppress(Exception):
                 await call.answer("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет недоступен.")
             return
-            
+
         track_info = playlists[pl_name][track_idx]
-        
+
         if pl_name != "History":
             history = playlists.get("History", [])
             history.insert(0, track_info)
@@ -1042,5 +1042,5 @@ class YTMusic(loader.Module):
         with contextlib.suppress(Exception):
             await call.answer("<tg-emoji emoji-id=5253613479754999811>➡️</tg-emoji> Погнали...")
             await call.edit(self.strings("downloading"), reply_markup=None)
-            
+
         await self._dl_and_send(call, track_info, target_chat_id)

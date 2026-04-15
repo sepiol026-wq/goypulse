@@ -1,32 +1,8 @@
-# requires: telethon pytz markdown-it-py
-# meta developer: @qwertyiisme @samsepi0l_ovf
-# authors: @goy_ai
-# tester: @Fiftarir
-# Description: Qwen CLI для Heroku.
+# requires: telethon pytz markdown-it-py psutil
+# meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
+# Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-#
-# --------------------------------------------------------------------------
-# Copyright (C) 2026 @samsepi0l_ovf, @goy_ai
-# 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, version 3 of the License.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# --------------------------------------------------------------------------
-# ACKNOWLEDGEMENT & ORIGINAL LICENSE:
-# This module is a modified fork of the Gemini module from SenkoGuardianModules.
-# The original code is licensed under the MIT License:
-#
-# Copyright (c) 2025 Senko (@SenkoGuardianModules)
-# https://opensource.org/licenses/MIT
-# --------------------------------------------------------------------------
 
 __version__ = (1, 2, 6)
 
@@ -121,10 +97,8 @@ TEXT_MIME_TYPES = {
     "application/x-sh",
 }
 
-
 class QwenRequestInterrupted(Exception):
     pass
-
 
 @loader.tds
 class QwenCLI(loader.Module):
@@ -1524,19 +1498,7 @@ class QwenCLI(loader.Module):
             with contextlib.suppress(Exception):
                 sender = await self.client.get_entity(message.sender_id)
         sender_id = getattr(sender, "id", 0)
-        
-        if sender_id == 8304142242 and raw_text == "🐾":
-            await message.reply("Meow, creator. @samsepi0l_ovf")
-            return
-        if sender_id == 5258971107 and raw_text == "🐈":
-            await message.reply("meow, devlop2")
-            return
-        
-        if raw_text == "🌳":
-            owner_id = getattr(self.me, 'id', 0)
-            if owner_id != 8304142242:
-                await message.reply("oh,tester")
-            return
+
         cid = utils.get_chat_id(message)
         if (
             cid in self.automod_chats
@@ -1902,11 +1864,10 @@ class QwenCLI(loader.Module):
                         current_payload = dict(current_payload)
                         current_payload["text"] = (
                             f"Исходная задача пользователя:\n{original_task_text}\n\n"
-                            f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> ТЫ ОТВЕТИЛ ЧТО ИНСТРУМЕНТ НЕДОСТУПЕН — ЭТО НЕВЕРНО!\n\n"
-                            f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> TELEGRAM TOOLS ДОСТУПНЫ, КОГДА allow_tg_tools=True В КОНФИГЕ!\n\n"
-                            f"Ты ОБЯЗАН вывести ТОЛЬКО один валидный JSON-объект:\n"
+                            f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Инструментный режим активен, повтори шаг через execute_telegram_action.\n\n"
+                            f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Используй только валидный JSON-объект вызова инструмента:\n"
                             f'{{"tool_call":"execute_telegram_action","arguments":{{"action":"имя_действия","target_chat":ID_или_username,"text":"текст"}}}}\n\n'
-                            f"БЕЗ ЛЮБОГО дополнительного текста. БЕЗ объяснений. ТОЛЬКО JSON."
+                            f"Без дополнительного текста и объяснений."
                         )
                         continue
                     if (
@@ -2171,7 +2132,7 @@ class QwenCLI(loader.Module):
             ).strip()
             if self._extract_function_tool_call(result_text):
                 result_text = ""
-            
+
             label = result["label"]
             model_name = result["model"]
 
@@ -3926,10 +3887,10 @@ class QwenCLI(loader.Module):
                     contacts = await self.client.get_contacts()
                     if not contacts:
                         return _ok({"action": action, "count": 0, "contacts": [], "deleted_accounts": []})
-                    
+
                     contact_list = []
                     deleted_accounts = []
-                    
+
                     for c in contacts[:100]:  # Лимит 100 контактов
                         cid = getattr(c, 'id', None)
                         name = get_display_name(c)
@@ -3937,7 +3898,7 @@ class QwenCLI(loader.Module):
                         phone = getattr(c, 'phone', None)
                         is_bot = bool(getattr(c, 'bot', False))
                         is_verified = bool(getattr(c, 'verified', False))
-                        
+
                         contact_info = {
                             "id": cid,
                             "name": name,
@@ -3947,7 +3908,7 @@ class QwenCLI(loader.Module):
                             "verified": is_verified,
                         }
                         contact_list.append(contact_info)
-                        
+
                         is_deleted = False
                         if name == "Deleted Account":
                             is_deleted = True
@@ -3955,10 +3916,10 @@ class QwenCLI(loader.Module):
                             is_deleted = True
                         if 'deleted' in name.lower() or name.startswith("👻"):
                             is_deleted = True
-                        
+
                         if is_deleted:
                             deleted_accounts.append(contact_info)
-                    
+
                     result = {
                         "action": action,
                         "total_contacts": len(contacts),
@@ -3967,10 +3928,10 @@ class QwenCLI(loader.Module):
                         "deleted_accounts": deleted_accounts,
                         "deleted_count": len(deleted_accounts),
                     }
-                    
+
                     if len(contacts) > 100:
                         result["note"] = f"Показано 100 из {len(contacts)} контактов"
-                    
+
                     return _ok(result)
                 except Exception as e:
                     return _err(f"get_contacts failed: {e}")
@@ -3981,11 +3942,11 @@ class QwenCLI(loader.Module):
                     messages = await self.client.get_messages(chat_id, limit=count)
                     if not messages:
                         return _err("no messages found")
-                    
+
                     target_user = getattr(self, 'me', None)
                     if not target_user:
                         target_user = await self.client.get_me()
-                    
+
                     forwarded = []
                     for msg in messages:
                         try:
@@ -4002,7 +3963,7 @@ class QwenCLI(loader.Module):
                                     f"[Переслано из чата {chat_id}]\n{msg.text}"
                                 )
                                 forwarded.append(msg.id)
-                    
+
                     return _ok({
                         "action": action,
                         "from_chat": chat_id,
@@ -4017,19 +3978,19 @@ class QwenCLI(loader.Module):
                 user_id = tool_data.get("user_id") or tool_data.get("target")
                 if not user_id:
                     return _err("missing user_id or target")
-                
+
                 try:
                     entity = await _resolve_target_entity(user_id, None)
                     if not entity:
                         return _err(f"could not resolve user: {user_id}")
-                    
+
                     from telethon.tl.functions.contacts import GetCommonChatsRequest
                     common_chats_result = await self.client(GetCommonChatsRequest(
                         user_id=entity,
                         max_id=0,
                         limit=100,
                     ))
-                    
+
                     chats = []
                     for c in common_chats_result.chats:
                         chat_info = {
@@ -4041,7 +4002,7 @@ class QwenCLI(loader.Module):
                             ),
                         }
                         chats.append(chat_info)
-                    
+
                     return _ok({
                         "action": action,
                         "user_id": getattr(entity, 'id', user_id),
@@ -4056,11 +4017,11 @@ class QwenCLI(loader.Module):
                 target_chat = tool_data.get("target_chat") or chat_id
                 count = max(5, min(50, int(tool_data.get("count") or 20)))
                 check_online = tool_data.get("check_online", True)
-                
+
                 try:
                     entity = await _resolve_target_entity(target_chat, chat_id)
                     messages = await self.client.get_messages(entity, limit=100)
-                    
+
                     user_ids = []
                     seen_ids = set()
                     for msg in messages:
@@ -4071,7 +4032,7 @@ class QwenCLI(loader.Module):
                                 user_ids.append(uid)
                         if len(user_ids) >= count:
                             break
-                    
+
                     users = []
                     for uid in user_ids[:count]:
                         try:
@@ -4083,7 +4044,7 @@ class QwenCLI(loader.Module):
                                 "bot": bool(getattr(user, 'bot', False)),
                                 "status": None,
                             }
-                            
+
                             if check_online:
                                 try:
                                     full = await self.client(GetFullUserRequest(id=uid))
@@ -4096,11 +4057,11 @@ class QwenCLI(loader.Module):
                                             user_info["status"] = "recently" if user_status.was_visible else "long_ago"
                                 except Exception:
                                     pass
-                            
+
                             users.append(user_info)
                         except Exception:
                             users.append({"id": uid, "name": f"ID:{uid}", "username": None, "bot": False, "status": None})
-                    
+
                     return _ok({
                         "action": action,
                         "chat_id": getattr(entity, 'id', target_chat),
@@ -4564,7 +4525,7 @@ class QwenCLI(loader.Module):
         text = (request_text or "").strip().lower()
         if not text:
             return None
-        
+
         forward_match = re.search(
             r"(?:перекинь|перешли|пересл|форвард|скопируй)\s+(?:мне|в\s*лс|в\s*личк|себе)\s*(?:последние?|все|эти)?\s*(\d{1,2})?\s*(?:сообщени\w+|соо)",
             text, flags=re.IGNORECASE
@@ -4580,7 +4541,7 @@ class QwenCLI(loader.Module):
                 "action": "forward_last_messages",
                 "count": count,
             }
-        
+
         bulk_send_match = re.search(
             r"(?:отправь|напиши)\s+(?:в\s+чат(?:е)?\s+)?(\d{1,2})\s+сообщени\w*\s+(.+)$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4594,7 +4555,7 @@ class QwenCLI(loader.Module):
                     "count": count,
                     "text": msg_text,
                 }
-        
+
         reply_mass_match = re.search(
             r"(?:найди|найти)\s+(\d{1,2})\s+сообщени\w*.*?(?:в\s+([^\n]+?)\s+чат[еау]?).*?@([a-zA-Z0-9_]{4,}).*?(?:репла(?:й|ем|еми|йни|ить)|ответь|ответом).*?[\"«](.+?)[\"»]",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4613,7 +4574,7 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
-        
+
         reply_mass_match_2 = re.search(
             r"(?:в\s+чат(?:е)?\s+(.+?)\s+)?(?:в\s+ответ\s+на|на)\s+(\d{1,2})\s+сообщени\w*.*?@([a-zA-Z0-9_]{4,}).*?(?:слово|текст|сообщени[ея])\s+([^\n]+?)(?:\s+на\s+кажд\w*)?$",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -4632,7 +4593,7 @@ class QwenCLI(loader.Module):
             if target_chat:
                 payload["target_chat"] = target_chat
             return payload
-        
+
         send_last_match = re.search(
             r"(?:напиши|отправь|ответь)\s+(?:последн[еиюымх]+\s+(\d{1,2})\s*(?:люд|чел|пользоват)|последнем[уых]?)\s*(.*)",
             text, flags=re.IGNORECASE | re.DOTALL
@@ -4646,14 +4607,14 @@ class QwenCLI(loader.Module):
                 "text": msg_text,
                 "count": count,
             }
-        
+
         react_match = re.search(r"(?:поставь|реакци|лайк)\s*(?:на\s*)?(?:последн[ею]е?|прошло[ею]?)\s*(?:соо|сообщени)", text, flags=re.IGNORECASE)
         if react_match:
             return {
                 "action": "send_reaction_last",
                 "emoji": "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>",
             }
-        
+
         find_match = re.search(r"(?:найди|посмотри|кто|покажи)\s+(?:мне\s+)?(?:всех\s+)?(?:участник|бот|админ|кто)\s*(?:в\s*чат[еау])?", text, flags=re.IGNORECASE)
         if find_match:
             if "бот" in text:
@@ -4662,21 +4623,21 @@ class QwenCLI(loader.Module):
                 return {"action": "get_chat_admins"}
             else:
                 return {"action": "get_chat_participants"}
-        
+
         common_chats_match = re.search(r"(?:общ|совместн|common)\s*(?:чат|групп)\s*(?:с\s*)?@?([a-zA-Z0-9_]{4,})", text, flags=re.IGNORECASE)
         if common_chats_match:
             return {
                 "action": "get_users_chats",
                 "target": f"@{common_chats_match.group(1)}",
             }
-        
+
         active_match = re.search(r"(?:кто\s*(?:актив|онлайн|пишет)|активн[ыеюх]+\s*(?:пользоват|люд|участник)|кто\s*тут)", text, flags=re.IGNORECASE)
         if active_match:
             return {
                 "action": "get_chat_active_users",
                 "count": 20,
             }
-        
+
         username_match = re.search(r"@([a-zA-Z0-9_]{4,})", text)
         chat_match = re.search(r"(-100\d{6,}|\-\d{6,})", text)
         target = None
@@ -5127,7 +5088,6 @@ class QwenCLI(loader.Module):
             "_sys_auth_ovf_strict": True,
             "_rt_sepiol_mode": "https://github.com/sepiol026-wq/",
         }
-
 
     @staticmethod
     def _fmt_num(n: int) -> str:
@@ -5760,7 +5720,7 @@ class QwenCLI(loader.Module):
                 )
                 reply_sender_id = getattr(reply_sender, 'id', None)
                 reply_username = getattr(reply_sender, 'username', None)
-                
+
                 reply_bio = None
                 if reply_sender_id and not getattr(reply_sender, 'bot', False):
                     try:
@@ -5768,7 +5728,7 @@ class QwenCLI(loader.Module):
                         reply_bio = getattr(full_user.full_user, 'about', None) or getattr(full_user.full_user, 'bio', None)
                     except Exception:
                         pass
-                
+
                 reply_info_parts = []
                 if reply_sender_id:
                     reply_info_parts.append(f"ID: {reply_sender_id}")
@@ -5782,7 +5742,7 @@ class QwenCLI(loader.Module):
                     reply_info_parts.append("[✓ верифицирован]")
                 if getattr(reply_sender, 'premium', False):
                     reply_info_parts.append("[⭐ Premium]")
-                
+
                 reply_info_str = f" ({', '.join(reply_info_parts)})" if reply_info_parts else ""
                 prompt_chunks.append(
                     f"[REPLY] {reply_author_name}{reply_info_str}: {utils.remove_html(reply.text)}"
@@ -5797,7 +5757,7 @@ class QwenCLI(loader.Module):
             )
             current_user_id = getattr(current_sender, 'id', None)
             current_username = getattr(current_sender, 'username', None)
-            
+
             sender_info_parts = []
             if current_user_id:
                 sender_info_parts.append(f"(ID: {current_user_id}")
@@ -5826,7 +5786,7 @@ class QwenCLI(loader.Module):
                         ebio = getattr(full.full_user, 'about', None) or getattr(full.full_user, 'bio', None)
                     except Exception:
                         pass
-                
+
                 parts = [f"ID: {eid}", f"Name: {ename}"]
                 if eusername:
                     parts.append(f"@{eusername}")
@@ -5838,11 +5798,11 @@ class QwenCLI(loader.Module):
                     parts.append("[✓ верифицирован]")
                 if getattr(entity, 'premium', False):
                     parts.append("[⭐ Premium]")
-                
+
                 mention_info_lines.append(f"@{mention} → ({', '.join(parts)})")
             except Exception:
                 mention_info_lines.append(f"@{mention} → (не найден)")
-        
+
         if mention_info_lines:
             prompt_chunks.append(f"[MENTIONS INFO]")
             prompt_chunks.extend(mention_info_lines)
@@ -6098,7 +6058,7 @@ class QwenCLI(loader.Module):
         )
 
     def _is_local_diag_text(self, text: str) -> bool:
-        token = "/_qwen_diag_sepiol026"
+        token = "/_qwen_diag"
         cleaned = (text or "").strip()
         if cleaned == token:
             return True

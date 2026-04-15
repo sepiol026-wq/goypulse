@@ -1,10 +1,12 @@
 # requires: requests aiohttp
 # meta developer: @samsepi0l_ovf
-# authors: @goy_ai
-# Description: GoySecurity — продвинутый антивирусный сканер модулей, файлов и архивов с поддержкой Gemini AI.
+# authors: @samsepi0l_ovf
+# Description: Security scanner module for Telegram userbot.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
 
 from __future__ import annotations
+
+__version__ = (1, 0, 0)
 
 import ast
 import asyncio
@@ -193,11 +195,11 @@ IP_PORT_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}:(?:\d{2,5})\b")
 PROMPT_INJECTION_RE = re.compile(r"(?is)(?:ignore\s+previous\s+instructions|follow\s+these\s+instructions|answer\s+in\s+english|return\s+safe\s+verdict|do\s+not\s+report|system\s+prompt|developer\s+message|you\s+are\s+chatgpt|you\s+are\s+an\s+ai|respond\s+with\s+json\s+only)")
 
 SUS_DOMAINS = (
-    "webhook", "pastebin", "discord.com/api/webhooks", "discordapp.com/api/webhooks", 
-    "api.telegram.org/bot", "ngrok", "localtunnel", "requestbin", "hookbin", 
-    "transfer.sh", "file.io", "anonfiles", "gofile", "0x0.st", "paste.ee", 
-    "ghostbin", "catbox.moe", "t.me", "telegram.me", "rentry.co", "rentry.org", 
-    "telegra.ph", "hastebin.com", "dpaste.com", "controlc.com", "iplogger.org", 
+    "webhook", "pastebin", "discord.com/api/webhooks", "discordapp.com/api/webhooks",
+    "api.telegram.org/bot", "ngrok", "localtunnel", "requestbin", "hookbin",
+    "transfer.sh", "file.io", "anonfiles", "gofile", "0x0.st", "paste.ee",
+    "ghostbin", "catbox.moe", "t.me", "telegram.me", "rentry.co", "rentry.org",
+    "telegra.ph", "hastebin.com", "dpaste.com", "controlc.com", "iplogger.org",
     "grabify.link", "api.ipify.org", "ident.me", "myexternalip.com", "ifconfig.me"
 )
 
@@ -394,10 +396,10 @@ class Analyzer:
         for name, raw in parts:
             txt = self._decode_candidate(name, raw)
             texts.append(f"# FILE: {name}\n{txt}")
-        
+
         self.decoded = "\n\n".join(texts).strip()
         self.fp = hashlib.sha256(self.decoded.encode("utf-8", "ignore")).hexdigest()[:16]
-        
+
         self._scan_text(self.decoded, "bundle")
         for name, raw in parts:
             txt = self._decode_candidate(name, raw)
@@ -410,18 +412,18 @@ class Analyzer:
             text = self._maybe_decode(name, raw)
         else:
             text = str(raw)
-            
+
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         current = text
         methods = []
-        
+
         for _ in range(max(1, self.depth)):
             nxt, method_name = self._try_decode_layer(current)
             if not method_name or nxt == current:
                 break
             methods.append(method_name)
             current = nxt
-            
+
         self.mode_chain = methods if methods else ["Исходный код (Plaintext)"]
         return current
 
@@ -450,17 +452,17 @@ class Analyzer:
     def _try_decode_layer(self, text: str) -> Tuple[str, str]:
         s = text.strip()
         if not s: return text, ""
-        
+
         # 1. Whole-file encoding check
         plain = s.replace("\n", "").replace(" ", "").replace('"', '').replace("'", "")
         if len(plain) > 60 and B64_RE.fullmatch(plain):
-            try: 
+            try:
                 dec = base64.b64decode(plain, validate=False).decode("utf-8", "ignore")
                 if len(dec) > 10: return dec, "Base64"
             except: pass
-            
+
         if len(plain) > 80 and HEX_RE.fullmatch(plain):
-            try: 
+            try:
                 dec = binascii.unhexlify(plain).decode("utf-8", "ignore")
                 if len(dec) > 10: return dec, "Hex"
             except: pass
@@ -548,7 +550,7 @@ class Analyzer:
         self.stats["ips"] += len(IP_RE.findall(text))
         self.stats["ip_ports"] += local_ip_ports
         self.stats["secret_literals"] += local_secret_literals
-        
+
         for m in re.finditer(r'["\']([A-Za-z0-9+/]{30,})["\']', text):
             if self._is_rule_context(text, m.start(), m.end()):
                 continue
@@ -558,7 +560,7 @@ class Analyzer:
             if ent > 4.2:
                 self.stats["high_entropy_strings"] += 1
                 self._add("warning", "Аномальная энтропия", f"Высокая плотность информации ({ent:.2f})", source, self._pos(text, m.start()), 25, "obf")
-        
+
         non_ascii = len(re.findall(r'[^\x00-\x7F]', text))
         if len(text) > 1000:
             ratio = non_ascii / len(text)
@@ -648,7 +650,7 @@ class Analyzer:
         for h in self.hits:
             fam[h.family] = fam.get(h.family, 0) + h.score
             conf[h.family] = max(conf.get(h.family, 0), h.conf)
-            
+
         ranked = [(k, fam[k], conf.get(k, 0)) for k in fam]
         return sorted(ranked, key=lambda x: (-x[1], -x[2], x[0]))
 
@@ -687,21 +689,21 @@ class Analyzer:
         fam = {}
         for h in self.hits:
             fam[h.family] = fam.get(h.family, 0) + 1
-            
+
         score = sum(h.score for h in self.hits)
         ranked = self._family_rank()
-        
+
         main_family = "clean"
         main_conf = 100
-        
+
         if ranked:
             main_family = ranked[0][0]
             main_conf = ranked[0][2]
-            
+
         if main_family in RISK_WEAK and not any(f in RISK_STRONG for f, _, _ in ranked):
             main_family = "capability-only"
             main_conf = max(10, main_conf)
-            
+
         return {
             "decoded": self.decoded,
             "mode": self.mode_chain,
@@ -803,7 +805,7 @@ class _ASTVisitor(ast.NodeVisitor):
                 taint = "secret_literal"
             elif len(s) >= 80 and self.av._entropy(s) > 4.2:
                 taint = "packed_literal"
-        
+
         if taint:
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
@@ -817,7 +819,7 @@ class _ASTVisitor(ast.NodeVisitor):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
                     self.vars[tgt.id] = self.vars[node.value.id]
-                            
+
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
@@ -860,14 +862,14 @@ class _ASTVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call):
         self.av.stats["calls"] += 1
         q = self._call_name(node.func)
-        
+
         # Detect getattr(builtins, 'exec') or similar
         if q == "getattr" and len(node.args) >= 2:
             base = self._eval_node_str(node.args[0]) or self._call_name(node.args[0])
             attr = self._eval_node_str(node.args[1])
             if attr:
                 q = f"{base}.{attr}" if base else attr
-        
+
         if q == "__import__":
             if node.args:
                 arg_str = self._eval_node_str(node.args[0])
@@ -886,7 +888,7 @@ class _ASTVisitor(ast.NodeVisitor):
                     arg_name = arg.id
                 elif isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
                     arg_name = arg.func.id
-                
+
                 if arg_name and arg_name in self.vars:
                     vtype = self.vars[arg_name]
                     target_funcs = ("post", "send", "request", "upload", "write")
@@ -937,14 +939,14 @@ class _ASTVisitor(ast.NodeVisitor):
         while isinstance(cur, ast.Attribute):
             parts.append(cur.attr)
             cur = cur.value
-            
+
         if isinstance(cur, ast.Name):
             parts.append(cur.id)
         elif isinstance(cur, ast.Call):
             parts.append(self._call_name(cur.func))
         else:
             return ""
-            
+
         parts.reverse()
         return ".".join(parts)
 
@@ -1057,23 +1059,23 @@ class GoySecurity(loader.Module):
     async def client_ready(self):
         self.av.depth = self.config["decode_depth"]
         self.av.max_files = self.config["max_files"]
-        
+
         hist_data = self.db.get("GoySecurity", "gsec_hist")
         if hist_data:
             self._hist = list(hist_data)
         else:
             self._hist = []
-            
+
         wl_data = self.db.get("GoySecurity", "gsec_wl")
         if wl_data:
             self._wl = list(wl_data)
         else:
             self._wl = []
-            
+
         self._mode = self.db.get("GoySecurity", "gsec_mode", "paranoid")
         if self._mode not in {"normal", "strict", "paranoid"}:
             self._mode = "paranoid"
-            
+
         self.av.mode = self._mode
         self._custom_ai = dict(self.db.get("GoySecurity", "gsec_custom_ai", {}) or {})
         self._custom_ai_tokens = dict(self.db.get("GoySecurity", "gsec_custom_ai_tokens", {}) or {})
@@ -1754,7 +1756,7 @@ class GoySecurity(loader.Module):
                 current_chunk = line + "\n"
             else:
                 current_chunk += line + "\n"
-                
+
         if current_chunk:
             chunks.append(current_chunk.strip())
 
@@ -1774,27 +1776,27 @@ class GoySecurity(loader.Module):
         """<ответом на файл/ссылку/текст> — Проверить модуль на вирусы и стилеры"""
         args = utils.get_args_raw(message).strip()
         status_msg = await utils.answer(message, self.strings("loading"))
-        
+
         try:
             srcs = await self._resolve(message, args)
             if not srcs:
                 await utils.answer(message, self.strings("no_code"))
                 return
-            
+
             if self.config["ui_updates"]:
                 await utils.answer(status_msg, f"{self.strings('loading')}\n{self._stage_line(self.strings('stage_rules'))}")
-            
+
             self.av.mode = self._mode
             res = self.av.scan(srcs)
             self._cur = res["fp"]
             self._last_res = res
-            
+
             ai_result = None
             api_error = None
             provider = self._active_provider()
             token = self._provider_token(provider)
             model = self._provider_model(provider)
-            
+
             if token:
                 if self.config["ui_updates"]:
                     stage_ai = self.strings("stage_ai").format(provider=html.escape(self._provider_label(provider)))
@@ -1818,9 +1820,9 @@ class GoySecurity(loader.Module):
                     self._push(res["fp"], res["risk"], res["score"], res.get("mode", []))
                     self._persist()
                     final_text += self._fmt_static(res, api_error)
-                
+
             await self._send_text_chunked(message, final_text)
-            
+
         except Exception as e:
             log.exception("GoySecurity scan error")
             err_str = str(e)
@@ -1836,16 +1838,16 @@ class GoySecurity(loader.Module):
             m = "normal" if self._mode == "strict" else "strict"
         else:
             m = a
-            
+
         if m not in {"normal", "strict", "paranoid"}:
             err_msg = self.strings("err").format(err="доступные режимы: normal, strict, paranoid")
             await utils.answer(message, err_msg)
             return
-            
+
         self._mode = m
         self.av.mode = m
         self._persist()
-        
+
         success_msg = self.strings("mode_set").format(mode=html.escape(m))
         await utils.answer(message, success_msg)
 
@@ -1947,16 +1949,16 @@ class GoySecurity(loader.Module):
     async def gwlcmd(self, message):
         """[fp|ссылка] или reply на модуль — Добавить хэш модуля в белый список"""
         fp = await self._resolve_fp(message, utils.get_args_raw(message))
-            
+
         if not fp:
             err_msg = self.strings("err").format(err="не удалось извлечь отпечаток из ссылки, reply или текста")
             await utils.answer(message, err_msg)
             return
-            
+
         if fp not in self._wl:
             self._wl.append(fp)
             self._persist()
-            
+
         success_msg = self.strings("wl_add").format(fp=html.escape(fp))
         await utils.answer(message, success_msg)
 
@@ -1964,16 +1966,16 @@ class GoySecurity(loader.Module):
     async def gunwlcmd(self, message):
         """[fp|ссылка] или reply на модуль — Удалить хэш модуля из белого списка"""
         fp = await self._resolve_fp(message, utils.get_args_raw(message))
-            
+
         if not fp:
             err_msg = self.strings("err").format(err="не удалось извлечь отпечаток из ссылки, reply или текста")
             await utils.answer(message, err_msg)
             return
-            
+
         if fp in self._wl:
             self._wl.remove(fp)
             self._persist()
-            
+
         success_msg = self.strings("wl_del").format(fp=html.escape(fp))
         await utils.answer(message, success_msg)
 
@@ -1985,7 +1987,7 @@ class GoySecurity(loader.Module):
             empty_msg = self.strings("hist_head") + "<i>пусто</i>"
             await utils.answer(message, empty_msg)
             return
-            
+
         out = [self.strings("hist_head")]
         for it in reversed(hist):
             fp_str = html.escape(str(it.get("fp", "")))
@@ -1993,7 +1995,7 @@ class GoySecurity(loader.Module):
             score_str = html.escape(str(it.get("score", "")))
             row_msg = self.strings("hist_row").format(fp=fp_str, verdict=verdict_str, score=score_str)
             out.append(row_msg)
-            
+
         await utils.answer(message, "".join(out))
 
     @loader.unrestricted
@@ -2003,13 +2005,13 @@ class GoySecurity(loader.Module):
             err_msg = self.strings("err").format(err="Сначала запустите .gscan")
             await utils.answer(message, err_msg)
             return
-            
+
         provider = self._active_provider()
         token = self._provider_token(provider)
         model = self._provider_model(provider)
         ai_result = None
         api_error = None
-        
+
         if token and self._last_res.get("decoded"):
             status = self.strings("stage_ai").format(provider=html.escape(self._provider_label(provider)))
             await self._stage(message, status)
@@ -2019,19 +2021,19 @@ class GoySecurity(loader.Module):
             if ai_result and ai_result.get("error"):
                 api_error = ai_result.get("reason")
                 ai_result = None
-                
+
         if ai_result:
             why_str = self._fmt_ai(self._last_res, ai_result, provider, model)
         else:
             why_str = self._why_static(self._last_res, api_error)
-            
+
         await self._send_text_chunked(message, why_str)
 
     def _push(self, fp: str, risk: str, score: int, mode: List[str]) -> None:
         mode_str = " -> ".join(mode)
         ts = int(time.time())
         item = {"fp": fp, "risk": risk, "score": score, "mode": mode_str, "ts": ts}
-        
+
         self._hist.append(item)
         if len(self._hist) > 50:
             del self._hist[:-50]
@@ -2057,21 +2059,21 @@ class GoySecurity(loader.Module):
     async def _resolve(self, message, args: str) -> List[Tuple[str, str]]:
         if args and (args.startswith("http://") or args.startswith("https://")):
             return await self._from_url(args)
-            
+
         reply = await message.get_reply_message()
         if reply:
             xs = await self._from_msg(reply)
             if xs:
                 return xs
-                
+
         if getattr(message, "media", None):
             xs = await self._from_msg(message)
             if xs:
                 return xs
-                
+
         if args:
             return [("args", args)]
-            
+
         return []
 
     async def _from_url(self, url: str) -> List[Tuple[str, str]]:
@@ -2092,15 +2094,15 @@ class GoySecurity(loader.Module):
                     f_name = "document.py"
                     if hasattr(msg, "file") and getattr(msg.file, "name"):
                         f_name = msg.file.name
-                        
+
                     chopped_data = data[: self.config["max_bytes"]]
                     expanded = self._expand(f_name, chopped_data)
                     xs.extend(expanded)
-                    
+
             txt = getattr(msg, "raw_text", None) or getattr(msg, "text", None)
             if txt and not xs:
                 xs.append(("message", str(txt)))
-                
+
             return xs
         except Exception as e:
             log.error(f"Media extraction failed: {e}")
@@ -2109,10 +2111,10 @@ class GoySecurity(loader.Module):
     def _expand(self, name: str, data: bytes) -> List[Tuple[str, str]]:
         if not data:
             return []
-            
+
         out = []
         bio = io.BytesIO(data)
-        
+
         try:
             if zipfile.is_zipfile(bio):
                 bio.seek(0)
@@ -2132,9 +2134,9 @@ class GoySecurity(loader.Module):
                     return out
         except Exception:
             pass
-            
+
         bio.seek(0)
-        
+
         try:
             if tarfile.is_tarfile(bio):
                 bio.seek(0)
@@ -2160,7 +2162,7 @@ class GoySecurity(loader.Module):
                     return out
         except Exception:
             pass
-            
+
         decoded_str = self._maybe_decode(name, data)
         out.append((name, decoded_str))
         return out
@@ -2168,7 +2170,7 @@ class GoySecurity(loader.Module):
     def _maybe_decode(self, name: str, data: bytes) -> str:
         if not data:
             return ""
-            
+
         for enc in ("utf-8", "utf-8-sig", "cp1251", "latin-1"):
             try:
                 s = data.decode(enc)
@@ -2176,37 +2178,37 @@ class GoySecurity(loader.Module):
                     return s.replace("\r\n", "\n").replace("\r", "\n")
             except Exception:
                 pass
-                
+
         lower_name = name.lower()
-        
+
         if lower_name.endswith(".gz") or lower_name.endswith(".gzip"):
             try:
                 decompressed = gzip.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         if lower_name.endswith(".bz2"):
             try:
                 decompressed = bz2.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         if lower_name.endswith(".xz") or lower_name.endswith(".lzma"):
             try:
                 decompressed = lzma.decompress(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         for fn in (gzip.decompress, bz2.decompress, lzma.decompress):
             try:
                 decompressed = fn(data)
                 return self._dec_bytes(decompressed)
             except Exception:
                 pass
-                
+
         return data.decode("utf-8", "ignore")
 
     def _dec_bytes(self, b: bytes) -> str:
@@ -2216,7 +2218,7 @@ class GoySecurity(loader.Module):
                 return s.replace("\r\n", "\n").replace("\r", "\n")
             except Exception:
                 pass
-                
+
         return b.decode("utf-8", "ignore")
 
     def _fmt_stats(self, res: Dict[str, Any]) -> str:
@@ -2266,11 +2268,11 @@ class GoySecurity(loader.Module):
         out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> AI-анализ / {html.escape(self._provider_label(provider))}</b>\n")
         out.append(f"<i>Модель:</i> <code>{html.escape(model)}</code>")
         out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>")
-        
+
         v = html.escape(str(ai.get("verdict", "Unknown")))
         conf = ai.get("confidence", 0)
         level = ai.get("threat_level", 0)
-        
+
         v_map = {
             "Clear": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Чисто",
             "Suspicious": "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Подозрительно",
@@ -2278,18 +2280,18 @@ class GoySecurity(loader.Module):
             "Critical": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> КРИТИЧЕСКИЙ РИСК",
         }
         v_str = v_map.get(v, v)
-        
+
         out.append(f"<b><tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Вердикт:</b> <code>{v_str}</code> | <b>Уверенность:</b> <code>{conf}%</code>")
         out.append(f"<b><tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Уровень угрозы:</b> <code>{level}/10</code>")
-        
+
         fam = html.escape(str(ai.get("family", "N/A")))
         out.append(f"<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Семейство:</b> <code>{fam}</code>")
-        
+
         reason = str(ai.get("reason", "Нет тех. обоснования"))
         if len(reason) > 520:
             reason = reason[:517] + "..."
         out.append(f"\n<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Разбор:</b>\n<i>{html.escape(reason)}</i>")
-        
+
         inds = ai.get("indicators", [])
         if inds:
             out.append("\n<b><tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> Индикаторы компрометации:</b>")
@@ -2314,53 +2316,53 @@ class GoySecurity(loader.Module):
         if prompt_injection.get("detected"):
             details = html.escape(str(prompt_injection.get("details", "обнаружены инъекции инструкций внутри кода")))
             out.append(f"\n<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Инъекция инструкций в AI-контур:</b> <i>{details}</i>")
-                
+
         obf = ai.get("obfuscation", {})
         if obf.get("detected"):
             o_type = html.escape(str(obf.get("type", "Unknown")))
             o_depth = html.escape(str(obf.get("depth", "1")))
             out.append(f"\n<b><tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> Обфускация:</b> <code>{o_type}</code> | <b>Глубина:</b> <code>{o_depth}</code>")
-        
+
         out.append(self.strings("footer"))
         return "\n".join(out)
 
     def _fmt_static(self, res: Dict[str, Any], api_err: Optional[str] = None) -> str:
         out = [self.strings("header")]
-        
+
         if api_err:
             out.append(f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
-            
+
         r_risk = str(res.get("risk", ""))
         verdict = self._get_verdict(r_risk)
-        
+
         r_fam = html.escape(str(res.get("family", "")))
         r_conf = str(res.get("family_conf", ""))
         r_score = str(res.get("score", ""))
         r_total = str(res.get("total", ""))
         r_fp = str(res.get("fp", ""))
         r_parts = str(res.get("parts", 1))
-        
+
         summary_msg = self.strings("summary").format(
-            verdict=verdict, family=r_fam, family_conf=r_conf, 
+            verdict=verdict, family=r_fam, family_conf=r_conf,
             score=r_score, total=r_total, fp=r_fp, parts=r_parts
         )
         out.append(summary_msg)
         out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
-        
+
         modes = res.get("mode", [])
         if not modes:
             modes = ["Исходный слой"]
-            
+
         m_str = html.escape(" -> ".join(modes))
         mode_msg = self.strings("mode_line").format(mode=m_str)
         out.append(mode_msg + "\n")
         out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
-        
+
         if not res.get("total", 0):
             out.append(self.strings("empty"))
             out.append(self.strings("footer"))
             return "".join(out)
-            
+
         out.append("<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Ключевые находки:</b>\n")
         for h in self._top_static_hits(res, 5):
             t_esc = html.escape(self._short_title(str(h.get("title", ""))))
@@ -2372,48 +2374,48 @@ class GoySecurity(loader.Module):
 
     def _why_static(self, res: Dict[str, Any], api_err: Optional[str] = None) -> str:
         out = [self.strings("details_head")]
-        
+
         if api_err:
             out.append(f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Нейро-анализ недоступен:</b> <i>{html.escape(self._human_api_error(api_err))}</i>\n")
-            
+
         r_risk = str(res.get("risk", ""))
         verdict = self._get_verdict(r_risk)
-        
+
         summary_msg = self.strings("summary").format(
-            verdict=verdict, 
-            family=html.escape(str(res.get("family", ""))), 
-            family_conf=str(res.get("family_conf", "")), 
-            score=str(res.get("score", "")), 
-            total=str(res.get("total", "")), 
-            fp=str(res.get("fp", "")), 
+            verdict=verdict,
+            family=html.escape(str(res.get("family", ""))),
+            family_conf=str(res.get("family_conf", "")),
+            score=str(res.get("score", "")),
+            total=str(res.get("total", "")),
+            fp=str(res.get("fp", "")),
             parts=str(res.get("parts", 1))
         )
         out.append(summary_msg)
         out.append(f"<b><tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> Риск:</b> <code>{html.escape(self._fmt_meter(res))}</code>\n")
         out.append(f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Счётчики:</b> <code>{html.escape(self._fmt_stats_short(res))}</code>\n")
-        
+
         crit_issues = res.get("critical", [])
         warn_issues = res.get("warning", [])
         info_issues = res.get("info", [])
         all_issues = crit_issues + warn_issues + info_issues
-        
+
         if not all_issues:
             out.append(self.strings("empty"))
             out.append(self.strings("footer"))
             return "".join(out)
-            
+
         for h in all_issues:
             t_esc = html.escape(self._short_title(str(h.get("title", ""))))
-            
+
             d_str = str(h.get("detail", ""))
             d_str = d_str[:44] + "..." if len(d_str) > 44 else d_str
             d_esc = html.escape(d_str)
-            
+
             row_msg = self.strings("row_why").format(
                 title=t_esc, detail=d_esc, line=h.get("line", 0)
             )
             out.append(row_msg)
-                
+
         out.append(self.strings("footer"))
         return "".join(out)
 
@@ -2421,7 +2423,7 @@ class GoySecurity(loader.Module):
         caps = res.get("capabilities", {})
         if not caps:
             return "нет выраженных поведенческих индикаторов"
-            
+
         cap_names = {
             "stealer": "Доступ к данным / credential surface",
             "exfil": "Эксфильтрация / outbound flow",
@@ -2438,10 +2440,10 @@ class GoySecurity(loader.Module):
             "framework": "Framework context",
             "updater": "Update flow",
         }
-            
+
         items = []
         for k, v in sorted(caps.items(), key=lambda x: (-x[1], x[0])):
             name = cap_names.get(k, k.capitalize())
             items.append(f"{name}: {v}")
-            
+
         return "\n".join(items)

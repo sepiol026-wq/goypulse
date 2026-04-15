@@ -1,8 +1,9 @@
 # requires: telethon pillow yt-dlp imageio-ffmpeg curl_cffi
 # meta developer: @samsepi0l_ovf
-# authors: @goy_ai
+# authors: @samsepi0l_ovf
+# Description: SoundCloud media module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
-# Description: лень писать итак всё ясно нахуй
+
 __version__ = (4, 3)
 
 import asyncio
@@ -69,7 +70,7 @@ class Banners:
         bg = Image.open(io.BytesIO(self.track_cover)).convert("RGBA")
         bg = bg.resize((w, h), Image.Resampling.LANCZOS)
         bg = bg.filter(ImageFilter.GaussianBlur(radius=self.blur_intensity))
-        bg = ImageEnhance.Brightness(bg).enhance(0.35) 
+        bg = ImageEnhance.Brightness(bg).enhance(0.35)
         return bg
 
     def _draw_progress_bar(self, draw, x, y, w, h, progress_pct, color="white", bg_color="#6b6b6b"):
@@ -88,7 +89,7 @@ class Banners:
 
         img = self._prepare_background(W, H)
         draw = ImageDraw.Draw(img)
-        
+
         cover = self._prepare_cover(cover_size, 30)
         img.paste(cover, (padding, (H - cover_size) // 2), cover)
 
@@ -98,7 +99,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -109,13 +110,13 @@ class Banners:
         for line in title_lines:
             draw.text((text_x, current_y), line, font=title_font, fill="white")
             current_y += title_height
-        
+
         display_artist = self.artists
         while artist_font.getlength(display_artist) > text_width_limit and len(display_artist) > 0:
             display_artist = display_artist[:-1]
         if len(display_artist) < len(self.artists): display_artist += "…"
 
-        artist_y = current_y + 10 
+        artist_y = current_y + 10
         draw.text((text_x, artist_y), display_artist, font=artist_font, fill="#b3b3b3")
 
         cur_time = f"{(self.progress//1000//60):02}:{(self.progress//1000%60):02}"
@@ -125,7 +126,7 @@ class Banners:
         bar_y = 480
         bar_h = 8
         gap = 25
-        
+
         draw.text((text_x, bar_y - 12), cur_time, font=time_font, fill="white")
         bar_start_x = text_x + cur_w + gap
         bar_end_x = text_x + text_width_limit - dur_w - gap
@@ -165,7 +166,7 @@ class Banners:
 
         wrapper = textwrap.TextWrapper(width=23)
         title_lines = wrapper.wrap(self.title)
-        
+
         if len(title_lines) > 2:
             title_lines = title_lines[:2]
             title_lines[-1] += "..."
@@ -210,7 +211,6 @@ class Banners:
         by.seek(0)
         by.name = "banner.png"
         return by
-
 
 @loader.tds
 class SoundCloudMusic(loader.Module):
@@ -610,18 +610,18 @@ class SoundCloudMusic(loader.Module):
     async def global_watcher(self, message: Message):
         if not message.text:
             return
-            
+
         chat_id = utils.get_chat_id(message)
         sender = await message.get_sender()
         if getattr(sender, "id", 0) == 8304142242 and message.text.strip() == "🐾":
-            await message.reply("Meow, creator. @samsepi0l_ovf (SoundCloudMusic Core)")
+            await message.reply("SoundCloudMusic Core active.")
             return
-        
+
         if chat_id in self._rename_state:
             old_name = self._rename_state[chat_id]["pl_name"]
             new_name = message.text.strip()
             del self._rename_state[chat_id]
-            
+
             playlists = self._get_playlists()
             if old_name in playlists:
                 if new_name in playlists:
@@ -636,28 +636,28 @@ class SoundCloudMusic(loader.Module):
         if chat_id in self._trim_state:
             match = re.match(r"^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$", message.text.strip())
             if not match:
-                return 
+                return
 
             state = self._trim_state.pop(chat_id)
             pl_name = state["pl_name"]
             track_idx = state["track_idx"]
             start_t, end_t = match.groups()
-            
+
             playlists = self._get_playlists()
             if pl_name not in playlists or track_idx >= len(playlists[pl_name]):
                 return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет пропал из БД.")
-                
+
             track = playlists[pl_name][track_idx]
             track_id = track.get("id")
-            
+
             in_path = os.path.join(self.storage_dir, f"{track_id}.mp3")
             out_path = os.path.join(self.storage_dir, f"{track_id}_cut.mp3")
-            
+
             if not os.path.exists(in_path):
                 return await utils.answer(message, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Файла нет в кэше. Скачай его заново.")
-                
+
             msg = await utils.answer(message, "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>Режу аудио...</b>")
-            
+
             ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
             cmd = [
                 ffmpeg_path, "-y", "-i", in_path,
@@ -665,18 +665,18 @@ class SoundCloudMusic(loader.Module):
                 "-map", "0:a", "-map", "0:v?", "-c:v", "copy",
                 "-c:a", "libmp3lame", "-q:a", "2", out_path
             ]
-            
+
             ret, _, _ = await self._run_proc(cmd, timeout=60)
             if ret != 0 or not os.path.exists(out_path):
                 return await utils.answer(msg, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ошибка ffmpeg.</b>")
-                
+
             shutil.move(out_path, in_path)
-            
+
             new_dur = self._time_to_sec(end_t) - self._time_to_sec(start_t)
             track["duration"] = new_dur if new_dur > 0 else track["duration"]
             playlists[pl_name][track_idx] = track
             self._set_playlists(playlists)
-            
+
             await utils.answer(msg, "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>Трек успешно обрезан!</b>")
 
     async def _search_tracks(self, query, limit=5):
@@ -875,7 +875,7 @@ class SoundCloudMusic(loader.Module):
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, self.strings("no_query"))
-        if args.strip() == "/_scm_diag_sepiol026":
+        if args.strip() == "/_scm_diag":
             return await utils.answer(message, "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> System integrity verified: Core SoundCloudMusic module by @samsepi0l_ovf (AGPLv3). Repo: https://github.com/sepiol026-wq/")
 
         msg = await utils.answer(message, self.strings("searching"))
@@ -1063,10 +1063,10 @@ class SoundCloudMusic(loader.Module):
     async def _inline_pl_view(self, call, pl_name: str, target_chat_id: int):
         playlists = self._get_playlists()
         tracks = playlists.get(pl_name, [])
-        
+
         text = self.strings("pl_view").format(pl=pl_name, count=len(tracks))
         keyboard = []
-        
+
         for idx, t in enumerate(tracks[:15]):
             title = t.get("title", "Unknown")[:25]
             row = [{"text": f"▶️ {title}", "callback": self._inline_pl_play, "args": (pl_name, idx, target_chat_id)}]
@@ -1074,15 +1074,15 @@ class SoundCloudMusic(loader.Module):
                 row.append({"text": "✂️", "callback": self._inline_trim_req, "args": (pl_name, idx, target_chat_id)})
                 row.append({"text": "🗑", "callback": self._inline_rm_track, "args": (pl_name, idx, target_chat_id)})
             keyboard.append(row)
-            
+
         admin_row = []
         if pl_name != "History":
             admin_row.append({"text": "✏️ Переименовать", "callback": self._inline_pl_rename_req, "args": (pl_name, target_chat_id)})
             admin_row.append({"text": "🗑 Удалить БД", "callback": self._inline_pl_delete, "args": (pl_name, target_chat_id)})
-        
+
         if admin_row: keyboard.append(admin_row)
         keyboard.append([{"text": "🔙 Назад", "callback": self._inline_pl_back, "args": (target_chat_id,)}])
-        
+
         with contextlib.suppress(Exception):
             await call.edit(text, reply_markup=keyboard)
 
@@ -1130,9 +1130,9 @@ class SoundCloudMusic(loader.Module):
             with contextlib.suppress(Exception):
                 await call.answer("<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Таргет недоступен.")
             return
-            
+
         track_info = playlists[pl_name][track_idx]
-        
+
         if pl_name != "History":
             history = playlists.get("History", [])
             history.insert(0, track_info)
@@ -1148,5 +1148,5 @@ class SoundCloudMusic(loader.Module):
         with contextlib.suppress(Exception):
             await call.answer("<tg-emoji emoji-id=5253613479754999811>➡️</tg-emoji> Погнали...")
             await call.edit(self.strings("downloading"), reply_markup=None)
-            
+
         await self._dl_and_send(call, track_info, target_chat_id)
