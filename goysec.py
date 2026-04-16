@@ -453,7 +453,7 @@ class Analyzer:
         s = text.strip()
         if not s: return text, ""
 
-        # 1. Whole-file encoding check
+      
         plain = s.replace("\n", "").replace(" ", "").replace('"', '').replace("'", "")
         if len(plain) > 60 and B64_RE.fullmatch(plain):
             try:
@@ -467,7 +467,7 @@ class Analyzer:
                 if len(dec) > 10: return dec, "Hex"
             except: pass
 
-        # 2. Heuristic search for encoded payloads in code
+        
         for m in re.finditer(r'["\']([A-Za-z0-9+/=]{100,})["\']', text):
             payload = m.group(1)
             try:
@@ -476,7 +476,7 @@ class Analyzer:
                     return text.replace(m.group(0), f'"""{dec}"""'), "Base64_Payload"
             except: pass
 
-        # 3. ROT13 detection (classic maldoc/malscript technique)
+        
         if "rot13" in text.lower():
             try:
                 import codecs
@@ -773,7 +773,7 @@ class _ASTVisitor(ast.NodeVisitor):
         if isinstance(node, ast.BinOp):
             return self._eval_binop_str(node)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "join":
-            # Detect "".join(['a', 'b'])
+            
             if isinstance(node.args[0], ast.List):
                 parts = [self._eval_node_str(e) for e in node.args[0].elts]
                 if all(parts):
@@ -815,7 +815,7 @@ class _ASTVisitor(ast.NodeVisitor):
                         if isinstance(elt, ast.Name):
                             self.vars[elt.id] = taint
         elif isinstance(node.value, ast.Name) and node.value.id in self.vars:
-            # Propagate taint: a = poisoned; b = a
+          
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name):
                     self.vars[tgt.id] = self.vars[node.value.id]
@@ -863,7 +863,7 @@ class _ASTVisitor(ast.NodeVisitor):
         self.av.stats["calls"] += 1
         q = self._call_name(node.func)
 
-        # Detect getattr(builtins, 'exec') or similar
+        
         if q == "getattr" and len(node.args) >= 2:
             base = self._eval_node_str(node.args[0]) or self._call_name(node.args[0])
             attr = self._eval_node_str(node.args[1])
