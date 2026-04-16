@@ -1,10 +1,10 @@
 # requires: telethon pytz markdown-it-py psutil
-# meta developer: @samsepi0l_ovf | @qwertyiisme
-# authors: @samsepi0l_ovf | @qwertyiisme
+# meta developer: @goymodules
+# authors: @goymodules
 # Description: Unified AI assistant module for Heroku.
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/QwenCLI.png
 
-__version__ = (1, 2, 7)
+__version__ = (1, 2, 8)
 
 import asyncio
 import contextlib

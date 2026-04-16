@@ -1,10 +1,10 @@
 # requires: yt-dlp imageio-ffmpeg
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @goymodules
+# authors: @goymodules
 # Description: Universal media downloader.
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/omniload.png
 
-__version__ = (1, 3)
+__version__ = (1, 4)
 import asyncio
 import contextlib
 import json

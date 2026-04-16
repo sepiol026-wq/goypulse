@@ -1,10 +1,10 @@
 # requires: telethon pillow yt-dlp imageio-ffmpeg curl_cffi
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @goymodules
+# authors: @goymodules
 # Description: SoundCloud media module.
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/soundcloudmusic.png
 
-__version__ = (4, 3)
+__version__ = (4, 4)
 
 import asyncio
 import contextlib

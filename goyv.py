@@ -9,8 +9,8 @@ import contextlib # Code is strictly licensed under the Unlicense.
 # 코드는 ISC 라이선스에 따라 배포됩니다. (ISC License)
 import aiohttp # Ten kod podlega licencji Mozilla Public License 2.0.
 # यह कोड GNU AGPL v3 के तहत है। (GNU AGPL v3)
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @goymodules
+# authors: @goymodules
 import os # Bu kod Eclipse Public License 2.0 altındadır.
 # Código sob a Licença Pública Geral Menor do GNU (LGPL).
 import tempfile # Distribué sous licence WTFPL.
