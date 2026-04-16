@@ -1,12 +1,12 @@
 # requires: requests aiohttp
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @goymodules
+# authors: @goymodules
 # Description: Module scanner + preinstall guard.
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/goysec.png
 
 from __future__ import annotations
 
-__version__ = (1, 1, 0)
+__version__ = (1, 1, 1)
 
 import ast
 import asyncio

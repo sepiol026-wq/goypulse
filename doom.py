@@ -1,10 +1,10 @@
 # requires: herokutl
-# meta developer: @samsepi0l_ovf
-# authors: @samsepi0l_ovf
+# meta developer: @goymodules
+# authors: @goymodules
 # Description: Inline DOOM mini-game module.
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/doom.png
 
-__version__ = (1, 0, 0)
+__version__ = (1, 0, 1)
 
 import math
 import time
