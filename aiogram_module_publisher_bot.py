@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""GitHub module publisher bot for Telegram channels (aiogram 3)."""
+"""Monolithic GitHub module publisher bot (aiogram 3)."""
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import fnmatch
 import json
 import logging
-import os
 import re
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,20 +18,40 @@ import aiohttp
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+# =========================
+# MONOLITHIC CONFIG (EDIT HERE)
+# =========================
+BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
+OWNER_ID = 8304142242
+GITHUB_REPO = "sepiol026-wq/goypulse"
+GITHUB_TOKEN = ""
+POLL_INTERVAL_SEC = 180
+TRACK_INCLUDE_PATTERNS = ["*.py"]
+TRACK_EXCLUDE_PATTERNS = ["*__init__.py", "venv/*", ".*", "assets/*"]
+STATE_PATH = Path("module_publisher_state.json")
+
+# Lists are persisted in state json and can be managed via inline UI.
+DEFAULT_CHANNELS: list[int] = []
+DEFAULT_BOT_ADMINS: list[int] = []
+DEFAULT_ALLOWED_PM_USERS: list[int] = []
+
+# =========================
+# PARSERS
+# =========================
+META_DESCRIPTION = re.compile(r"^\s*#\s*Description\s*:\s*(.+)$", re.I | re.M)
+META_BANNER = re.compile(r"^\s*#\s*meta banner\s*:\s*(\S+)\s*$", re.I | re.M)
+DEV_RE = re.compile(r"^\s*#\s*meta developer\s*:\s*(.+)$", re.I | re.M)
+CMD_RE = re.compile(r"async\s+def\s+([a-zA-Z0-9_]+)cmd\s*\(")
+VERSION_RE = re.compile(r"_module_version\s*=\s*[\"']([\w\-.]+)[\"']")
+STRINGS_NAME_RE = re.compile(r"strings\s*=\s*\{[\s\S]{0,3000}?['\"]name['\"]\s*:\s*['\"]([^'\"]+)['\"]", re.M)
+DOCSTRING_RE = re.compile(r"class\s+\w+\([^)]*\):\s*\n\s*[ruRU]*([\"\']{3})([\s\S]{1,2000}?)\1", re.M)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("module_publisher")
-
-
-META_DESCRIPTION = re.compile(r"^\s*#\s*Description\s*:\s*(.+)$", re.I | re.M)
-META_BANNER = re.compile(r"^\s*#\s*meta banner\s*:\s*(\S+)\s*$", re.I | re.M)
-COMMAND_RE = re.compile(r"async\s+def\s+([a-zA-Z0-9_]+)cmd\s*\(")
-VERSION_RE = re.compile(r"_module_version\s*=\s*[\"']([\w\-.]+)[\"']")
-DEV_RE = re.compile(r"^\s*#\s*meta developer\s*:\s*(.+)$", re.I | re.M)
 
 
 @dataclass
@@ -41,67 +62,49 @@ class TrackedModule:
 
 
 @dataclass
-class Settings:
-    owner_id: int
-    github_repo: str
-    github_token: str = ""
-    allowed_pm_users: list[int] = field(default_factory=list)
-    bot_admins: list[int] = field(default_factory=list)
-    publish_channels: list[int] = field(default_factory=list)
-    include_patterns: list[str] = field(default_factory=lambda: ["*.py"])
-    exclude_patterns: list[str] = field(default_factory=lambda: ["*__init__.py"])
-    poll_interval_sec: int = 180
-
-
-@dataclass
-class State:
+class RuntimeState:
     modules: dict[str, TrackedModule] = field(default_factory=dict)
+    publish_channels: list[int] = field(default_factory=lambda: DEFAULT_CHANNELS.copy())
+    bot_admins: list[int] = field(default_factory=lambda: DEFAULT_BOT_ADMINS.copy())
+    allowed_pm_users: list[int] = field(default_factory=lambda: DEFAULT_ALLOWED_PM_USERS.copy())
 
 
 class Storage:
-    def __init__(self, settings_file: Path, state_file: Path):
-        self.settings_file = settings_file
-        self.state_file = state_file
+    def load(self) -> RuntimeState:
+        if not STATE_PATH.exists():
+            return RuntimeState()
+        data = json.loads(STATE_PATH.read_text("utf-8"))
+        modules = {k: TrackedModule(**v) for k, v in data.get("modules", {}).items()}
+        return RuntimeState(
+            modules=modules,
+            publish_channels=data.get("publish_channels", DEFAULT_CHANNELS.copy()),
+            bot_admins=data.get("bot_admins", DEFAULT_BOT_ADMINS.copy()),
+            allowed_pm_users=data.get("allowed_pm_users", DEFAULT_ALLOWED_PM_USERS.copy()),
+        )
 
-    def load_settings(self) -> Settings:
-        if not self.settings_file.exists():
-            raise FileNotFoundError(
-                f"Create config first: {self.settings_file}. See module_publisher_config.example.json"
-            )
-        data = json.loads(self.settings_file.read_text("utf-8"))
-        return Settings(**data)
-
-    def load_state(self) -> State:
-        if not self.state_file.exists():
-            return State()
-        data = json.loads(self.state_file.read_text("utf-8"))
-        mods = {
-            k: TrackedModule(**v)
-            for k, v in data.get("modules", {}).items()
+    def save(self, state: RuntimeState) -> None:
+        payload = {
+            "modules": {k: asdict(v) for k, v in state.modules.items()},
+            "publish_channels": state.publish_channels,
+            "bot_admins": state.bot_admins,
+            "allowed_pm_users": state.allowed_pm_users,
         }
-        return State(modules=mods)
-
-    def save_state(self, state: State) -> None:
-        payload = {"modules": {k: asdict(v) for k, v in state.modules.items()}}
-        self.state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+        STATE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
 
 
 class GitHubClient:
-    def __init__(self, repo: str, token: str = ""):
-        self.repo = repo
-        self.token = token
-        self.base = f"https://api.github.com/repos/{repo}"
+    def __init__(self):
+        self.base = f"https://api.github.com/repos/{GITHUB_REPO}"
 
     async def _request(self, session: aiohttp.ClientSession, path: str) -> Any:
         headers = {"Accept": "application/vnd.github+json"}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
-        url = f"{self.base}{path}"
-        async with session.get(url, headers=headers) as resp:
-            text = await resp.text()
+        if GITHUB_TOKEN:
+            headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+        async with session.get(f"{self.base}{path}", headers=headers) as resp:
+            raw = await resp.text()
             if resp.status >= 400:
-                raise RuntimeError(f"GitHub API error {resp.status}: {text[:300]}")
-            return json.loads(text)
+                raise RuntimeError(f"GitHub API {resp.status}: {raw[:300]}")
+            return json.loads(raw)
 
     async def get_tree(self, session: aiohttp.ClientSession) -> list[dict[str, Any]]:
         head = await self._request(session, "/commits?per_page=1")
@@ -113,157 +116,295 @@ class GitHubClient:
         return await self._request(session, f"/contents/{path}")
 
     async def latest_commit_for_file(self, session: aiohttp.ClientSession, path: str) -> dict[str, Any] | None:
-        data = await self._request(session, f"/commits?path={path}&per_page=1")
-        return data[0] if data else None
+        commits = await self._request(session, f"/commits?path={path}&per_page=1")
+        return commits[0] if commits else None
 
-    def raw_url(self, path: str) -> str:
-        return f"https://raw.githubusercontent.com/{self.repo}/main/{path}"
+    @staticmethod
+    def raw_url(path: str) -> str:
+        return f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{path}"
 
 
-class ModulePublisherBot:
-    def __init__(self, bot: Bot, settings: Settings, storage: Storage):
+class App:
+    def __init__(self, bot: Bot):
         self.bot = bot
-        self.settings = settings
-        self.storage = storage
-        self.state = storage.load_state()
-        self.gh = GitHubClient(settings.github_repo, settings.github_token)
-        self.router = Router(name="module-publisher")
-        self.pending: dict[str, dict[str, Any]] = {}
-        self._register_handlers()
+        self.dp = Dispatcher()
+        self.router = Router(name="main")
+        self.dp.include_router(self.router)
 
-    def _is_admin(self, user_id: int) -> bool:
-        return user_id == self.settings.owner_id or user_id in self.settings.bot_admins
+        self.storage = Storage()
+        self.state = self.storage.load()
+        self.gh = GitHubClient()
 
-    def _pm_allowed(self, user_id: int) -> bool:
-        return user_id == self.settings.owner_id or user_id in self.settings.allowed_pm_users
+        self.pending_updates: dict[str, dict[str, Any]] = {}
+        self.await_input: dict[int, str] = {}
+        self.register_handlers()
 
-    def _register_handlers(self) -> None:
+    # ---------- Permissions ----------
+    def is_owner(self, user_id: int) -> bool:
+        return user_id == OWNER_ID
+
+    def is_admin(self, user_id: int) -> bool:
+        return self.is_owner(user_id) or user_id in self.state.bot_admins
+
+    def pm_allowed(self, user_id: int) -> bool:
+        return self.is_owner(user_id) or user_id in self.state.allowed_pm_users
+
+    # ---------- UI ----------
+    def kb_main(self) -> InlineKeyboardBuilder:
+        kb = InlineKeyboardBuilder()
+        kb.button(text="🔎 Scan now", callback_data="ui:scan")
+        kb.button(text="📢 Channels", callback_data="ui:channels")
+        kb.button(text="👮 Admins", callback_data="ui:admins")
+        kb.button(text="💬 PM Access", callback_data="ui:pm")
+        kb.button(text="📊 Status", callback_data="ui:status")
+        kb.adjust(2, 2, 1)
+        return kb
+
+    @staticmethod
+    def _list_to_text(values: list[int]) -> str:
+        return "\n".join(f"• <code>{v}</code>" for v in values) if values else "<i>(empty)</i>"
+
+    def kb_entity(self, kind: str) -> InlineKeyboardBuilder:
+        kb = InlineKeyboardBuilder()
+        kb.button(text="➕ Add", callback_data=f"ui:add:{kind}")
+        kb.button(text="➖ Remove", callback_data=f"ui:rm:{kind}")
+        kb.button(text="⬅️ Back", callback_data="ui:main")
+        kb.adjust(2, 1)
+        return kb
+
+    async def render_main(self, target: Message | CallbackQuery, edit: bool = False) -> None:
+        text = (
+            "<b>Module Publisher Panel</b>\n"
+            f"Repo: <code>{GITHUB_REPO}</code>\n"
+            f"Channels: <code>{len(self.state.publish_channels)}</code> | "
+            f"Admins: <code>{len(self.state.bot_admins)}</code> | "
+            f"PM: <code>{len(self.state.allowed_pm_users)}</code>"
+        )
+        markup = self.kb_main().as_markup()
+        if isinstance(target, CallbackQuery):
+            if edit:
+                await target.message.edit_text(text, reply_markup=markup)
+            else:
+                await target.message.answer(text, reply_markup=markup)
+            await target.answer("OK")
+        else:
+            await target.answer(text, reply_markup=markup)
+
+    # ---------- Handlers ----------
+    def register_handlers(self) -> None:
         @self.router.message(Command("start"))
-        async def start_handler(message: Message) -> None:
-            if not self._pm_allowed(message.from_user.id):
-                await message.answer("⛔️ Доступ запрещён")
+        async def start_cmd(message: Message) -> None:
+            uid = message.from_user.id
+            if not self.pm_allowed(uid):
+                await message.answer("⛔️ access denied")
                 return
-            await message.answer("✅ Bot online. /help")
+            await self.render_main(message)
 
-        @self.router.message(Command("help"))
-        async def help_handler(message: Message) -> None:
-            if not self._pm_allowed(message.from_user.id):
+        @self.router.message(Command("panel"))
+        async def panel_cmd(message: Message) -> None:
+            uid = message.from_user.id
+            if not self.pm_allowed(uid):
                 return
-            await message.answer(
-                "/channels — список\n"
-                "/addchannel <id>\n"
-                "/rmchannel <id>\n"
-                "/admins\n"
-                "/addadmin <id>\n"
-                "/rmadmin <id>\n"
-                "/pmallow <id>\n"
-                "/pmdel <id>\n"
-                "/scan — ручная проверка GitHub"
+            await self.render_main(message)
+
+        @self.router.callback_query(F.data == "ui:main")
+        async def ui_main(call: CallbackQuery) -> None:
+            if not self.pm_allowed(call.from_user.id):
+                await call.answer("Denied", show_alert=True)
+                return
+            await self.render_main(call, edit=True)
+
+        @self.router.callback_query(F.data == "ui:status")
+        async def ui_status(call: CallbackQuery) -> None:
+            if not self.pm_allowed(call.from_user.id):
+                await call.answer("Denied", show_alert=True)
+                return
+            txt = (
+                "<b>Status</b>\n"
+                f"Tracked modules: <code>{len(self.state.modules)}</code>\n"
+                f"Poll interval: <code>{POLL_INTERVAL_SEC}s</code>"
             )
+            kb = InlineKeyboardBuilder()
+            kb.button(text="⬅️ Back", callback_data="ui:main")
+            await call.message.edit_text(txt, reply_markup=kb.as_markup())
+            await call.answer("Updated")
 
-        @self.router.message(Command("channels"))
-        async def channels_handler(message: Message) -> None:
-            if not self._is_admin(message.from_user.id):
+        @self.router.callback_query(F.data == "ui:channels")
+        async def ui_channels(call: CallbackQuery) -> None:
+            if not self.is_admin(call.from_user.id):
+                await call.answer("Admin only", show_alert=True)
                 return
-            txt = "\n".join(str(x) for x in self.settings.publish_channels) or "(пусто)"
-            await message.answer(f"📢 Каналы:\n{txt}")
+            txt = "<b>Channels</b>\n" + self._list_to_text(self.state.publish_channels)
+            await call.message.edit_text(txt, reply_markup=self.kb_entity("channels").as_markup())
+            await call.answer("Channels")
 
-        @self.router.message(Command("addchannel"))
-        async def add_channel(message: Message, command: CommandObject) -> None:
-            if not self._is_admin(message.from_user.id):
+        @self.router.callback_query(F.data == "ui:admins")
+        async def ui_admins(call: CallbackQuery) -> None:
+            if not self.is_owner(call.from_user.id):
+                await call.answer("Owner only", show_alert=True)
                 return
-            cid = int((command.args or "0").strip())
-            if cid not in self.settings.publish_channels:
-                self.settings.publish_channels.append(cid)
-                self._save_settings()
-            await message.answer(f"✅ Добавлен канал {cid}")
+            txt = "<b>Bot admins</b>\n" + self._list_to_text(self.state.bot_admins)
+            await call.message.edit_text(txt, reply_markup=self.kb_entity("admins").as_markup())
+            await call.answer("Admins")
 
-        @self.router.message(Command("rmchannel"))
-        async def rm_channel(message: Message, command: CommandObject) -> None:
-            if not self._is_admin(message.from_user.id):
+        @self.router.callback_query(F.data == "ui:pm")
+        async def ui_pm(call: CallbackQuery) -> None:
+            if not self.is_owner(call.from_user.id):
+                await call.answer("Owner only", show_alert=True)
                 return
-            cid = int((command.args or "0").strip())
-            self.settings.publish_channels = [x for x in self.settings.publish_channels if x != cid]
-            self._save_settings()
-            await message.answer(f"✅ Удален канал {cid}")
+            txt = "<b>PM allowed users</b>\n" + self._list_to_text(self.state.allowed_pm_users)
+            await call.message.edit_text(txt, reply_markup=self.kb_entity("pm").as_markup())
+            await call.answer("PM access")
 
-        @self.router.message(Command("admins"))
-        async def admins_list(message: Message) -> None:
-            if not self._is_admin(message.from_user.id):
+        @self.router.callback_query(F.data.startswith("ui:add:"))
+        async def ui_add(call: CallbackQuery) -> None:
+            uid = call.from_user.id
+            kind = call.data.split(":", 2)[2]
+            if kind == "channels" and not self.is_admin(uid):
+                await call.answer("Admin only", show_alert=True)
                 return
-            txt = "\n".join(str(x) for x in self.settings.bot_admins) or "(пусто)"
-            await message.answer(f"👮 Админы:\n{txt}")
+            if kind in {"admins", "pm"} and not self.is_owner(uid):
+                await call.answer("Owner only", show_alert=True)
+                return
 
-        @self.router.message(Command("addadmin"))
-        async def add_admin(message: Message, command: CommandObject) -> None:
-            if message.from_user.id != self.settings.owner_id:
-                return
-            uid = int((command.args or "0").strip())
-            if uid not in self.settings.bot_admins:
-                self.settings.bot_admins.append(uid)
-                self._save_settings()
-            await message.answer(f"✅ Админ добавлен {uid}")
+            self.await_input[uid] = f"add:{kind}"
+            await call.answer("Жду ID")
+            await call.message.answer(f"Введите ID для <b>add {kind}</b> одним числом.")
 
-        @self.router.message(Command("rmadmin"))
-        async def rm_admin(message: Message, command: CommandObject) -> None:
-            if message.from_user.id != self.settings.owner_id:
+        @self.router.callback_query(F.data.startswith("ui:rm:"))
+        async def ui_rm(call: CallbackQuery) -> None:
+            uid = call.from_user.id
+            kind = call.data.split(":", 2)[2]
+            if kind == "channels" and not self.is_admin(uid):
+                await call.answer("Admin only", show_alert=True)
                 return
-            uid = int((command.args or "0").strip())
-            self.settings.bot_admins = [x for x in self.settings.bot_admins if x != uid]
-            self._save_settings()
-            await message.answer(f"✅ Админ удален {uid}")
+            if kind in {"admins", "pm"} and not self.is_owner(uid):
+                await call.answer("Owner only", show_alert=True)
+                return
 
-        @self.router.message(Command("pmallow"))
-        async def pm_allow(message: Message, command: CommandObject) -> None:
-            if message.from_user.id != self.settings.owner_id:
-                return
-            uid = int((command.args or "0").strip())
-            if uid not in self.settings.allowed_pm_users:
-                self.settings.allowed_pm_users.append(uid)
-                self._save_settings()
-            await message.answer(f"✅ PM доступ выдан {uid}")
+            self.await_input[uid] = f"rm:{kind}"
+            await call.answer("Жду ID")
+            await call.message.answer(f"Введите ID для <b>remove {kind}</b> одним числом.")
 
-        @self.router.message(Command("pmdel"))
-        async def pm_del(message: Message, command: CommandObject) -> None:
-            if message.from_user.id != self.settings.owner_id:
+        @self.router.callback_query(F.data == "ui:scan")
+        async def ui_scan(call: CallbackQuery) -> None:
+            if not self.is_admin(call.from_user.id):
+                await call.answer("Admin only", show_alert=True)
                 return
-            uid = int((command.args or "0").strip())
-            self.settings.allowed_pm_users = [x for x in self.settings.allowed_pm_users if x != uid]
-            self._save_settings()
-            await message.answer(f"✅ PM доступ снят {uid}")
-
-        @self.router.message(Command("scan"))
-        async def scan_now(message: Message) -> None:
-            if not self._is_admin(message.from_user.id):
-                return
+            await call.answer("Scanning...", show_alert=False)
             await self.scan_and_notify(force=True)
-            await message.answer("🔎 Проверка выполнена")
+            await call.message.answer("✅ Scan done")
+
+        @self.router.message()
+        async def catch_input(message: Message) -> None:
+            uid = message.from_user.id
+            if uid not in self.await_input:
+                return
+            op = self.await_input.pop(uid)
+            try:
+                target_id = int((message.text or "").strip())
+            except Exception:
+                await message.answer("❌ Нужен числовой ID")
+                return
+
+            action, kind = op.split(":", 1)
+            arr = self.state.publish_channels if kind == "channels" else self.state.bot_admins if kind == "admins" else self.state.allowed_pm_users
+
+            if action == "add":
+                if target_id not in arr:
+                    arr.append(target_id)
+            else:
+                arr[:] = [x for x in arr if x != target_id]
+
+            self.storage.save(self.state)
+            await message.answer("✅ Saved. /panel")
 
         @self.router.callback_query(F.data.startswith("publish:"))
-        async def publish_cb(call: CallbackQuery) -> None:
-            if call.from_user.id != self.settings.owner_id:
-                await call.answer("Только owner", show_alert=True)
+        async def publish(call: CallbackQuery) -> None:
+            if not self.is_owner(call.from_user.id):
+                await call.answer("Owner only", show_alert=True)
                 return
             key = call.data.split(":", 1)[1]
-            data = self.pending.get(key)
-            if not data:
-                await call.answer("Устарело")
+            upd = self.pending_updates.get(key)
+            if not upd:
+                await call.answer("Expired", show_alert=True)
                 return
-            await self.publish_update(data)
+            await self.publish_update(upd)
             await call.message.edit_reply_markup(reply_markup=None)
-            await call.answer("Опубликовано")
+            await call.answer("Published")
 
         @self.router.callback_query(F.data.startswith("skip:"))
-        async def skip_cb(call: CallbackQuery) -> None:
-            if call.from_user.id != self.settings.owner_id:
-                await call.answer("Только owner", show_alert=True)
+        async def skip(call: CallbackQuery) -> None:
+            if not self.is_owner(call.from_user.id):
+                await call.answer("Owner only", show_alert=True)
                 return
             await call.message.edit_reply_markup(reply_markup=None)
-            await call.answer("Пропущено")
+            await call.answer("Skipped")
 
-    def _save_settings(self) -> None:
-        settings_path = self.storage.settings_file
-        settings_path.write_text(json.dumps(asdict(self.settings), ensure_ascii=False, indent=2), "utf-8")
+    # ---------- Scanner ----------
+    @staticmethod
+    def should_track(path: str) -> bool:
+        inc = any(fnmatch.fnmatch(path, p) for p in TRACK_INCLUDE_PATTERNS)
+        exc = any(fnmatch.fnmatch(path, p) for p in TRACK_EXCLUDE_PATTERNS)
+        return inc and not exc
+
+    @staticmethod
+    def decode_b64(payload: str) -> str:
+        return base64.b64decode(payload).decode("utf-8", errors="ignore") if payload else ""
+
+    @staticmethod
+    def extract_version(source: str) -> str:
+        m = VERSION_RE.search(source)
+        return m.group(1) if m else "unknown"
+
+    @staticmethod
+    def extract_docstring(source: str) -> str:
+        m = DOCSTRING_RE.search(source)
+        if not m:
+            return ""
+        return " ".join(x.strip() for x in m.group(2).strip().splitlines() if x.strip())
+
+    def parse_module_meta(self, source: str, path: str) -> dict[str, Any]:
+        name_m = STRINGS_NAME_RE.search(source)
+        name = name_m.group(1).strip() if name_m else Path(path).stem
+
+        desc = ""
+        meta_desc = META_DESCRIPTION.search(source)
+        if meta_desc:
+            desc = meta_desc.group(1).strip()
+        if not desc:
+            desc = self.extract_docstring(source)
+        if not desc:
+            desc = f"Module: {name}"
+
+        banner = META_BANNER.search(source).group(1).strip() if META_BANNER.search(source) else ""
+        developer = DEV_RE.search(source).group(1).strip() if DEV_RE.search(source) else "unknown"
+        cmds = sorted({f".{m.group(1)}" for m in CMD_RE.finditer(source)})
+
+        return {
+            "name": name,
+            "description": desc,
+            "banner": banner,
+            "developer": developer,
+            "version": self.extract_version(source),
+            "commands": cmds,
+        }
+
+    @staticmethod
+    def build_text(kind: str, old_v: str, new_v: str, meta: dict[str, Any], commit_url: str) -> str:
+        title = {
+            "added": f"🆕 Module {meta['name']} (v{new_v}) Added!",
+            "updated": f"🆙 Module {meta['name']} (v{old_v} -> v{new_v}) Updated!",
+            "deleted": f"🗑️ Module {meta['name']} (v{old_v}) Deleted!",
+        }[kind]
+        commands = "\n".join(f"• <code>{c}</code>" for c in meta.get("commands", [])) or "• <i>No commands</i>"
+        return (
+            f"<blockquote expandable><b>{title}</b></blockquote>\n\n"
+            f"📝 <b>Description:</b>\n{meta.get('description', '—')}\n\n"
+            f"⚙️ <b>Commands:</b>\n{commands}\n\n"
+            f"🔗 <a href=\"{commit_url}\">Open commit on GitHub</a>\n"
+            f"👨‍💻 <b>Developer:</b> {meta.get('developer', 'unknown')}"
+        )
 
     async def bootstrap(self) -> None:
         if self.state.modules:
@@ -274,109 +415,47 @@ class ModulePublisherBot:
                 if item.get("type") != "blob":
                     continue
                 path = item.get("path", "")
-                if not self._should_track(path):
+                if not self.should_track(path):
                     continue
-                details = await self.gh.get_file(session, path)
-                content = self._decode_b64(details.get("content", ""))
-                version = self._extract_version(content)
-                self.state.modules[path] = TrackedModule(path=path, sha=item["sha"], version=version)
-            self.storage.save_state(self.state)
-            logger.info("Bootstrap done, tracked=%s", len(self.state.modules))
-
-    def _should_track(self, path: str) -> bool:
-        if not path.endswith(".py"):
-            return False
-        if path.startswith("."):
-            return False
-        if path.startswith("venv/"):
-            return False
-        return True
-
-    @staticmethod
-    def _decode_b64(text: str) -> str:
-        import base64
-
-        return base64.b64decode(text).decode("utf-8", errors="ignore") if text else ""
-
-    def _extract_version(self, source: str) -> str:
-        m = VERSION_RE.search(source)
-        return m.group(1) if m else "unknown"
-
-    def _parse_module(self, source: str, path: str) -> dict[str, Any]:
-        description = (META_DESCRIPTION.search(source).group(1).strip() if META_DESCRIPTION.search(source) else "No description")
-        banner = META_BANNER.search(source).group(1).strip() if META_BANNER.search(source) else ""
-        developer = DEV_RE.search(source).group(1).strip() if DEV_RE.search(source) else "unknown"
-        commands = sorted({f".{m.group(1)}" for m in COMMAND_RE.finditer(source)})
-        version = self._extract_version(source)
-        module_name = Path(path).stem
-        return {
-            "name": module_name,
-            "version": version,
-            "description": description,
-            "banner": banner,
-            "developer": developer,
-            "commands": commands,
-        }
-
-    def _build_text(self, kind: str, old_v: str, new_v: str, m: dict[str, Any], commit_url: str) -> str:
-        title_map = {
-            "added": f"🆕 Module {m['name']} (v{new_v}) Added!",
-            "updated": f"🆙 Module {m['name']} (v{old_v} -> v{new_v}) Updated!",
-            "deleted": f"🗑️ Module {m['name']} (v{old_v}) Deleted!",
-        }
-        commands = "\n".join(f"• <code>{c}</code>" for c in m.get("commands", [])) or "• <i>No commands found</i>"
-        top = f"<blockquote expandable><b>{title_map[kind]}</b></blockquote>"
-        desc = f"📝 <b>Description:</b>\n{m.get('description', '—')}"
-        cmd = f"\n\n⚙️ <b>Commands:</b>\n{commands}"
-        commit = f"\n\n🔗 <a href=\"{commit_url}\">Open commit on GitHub</a>"
-        footer = f"\n👨‍💻 <b>Developer:</b> {m.get('developer','unknown')}"
-        return top + "\n\n" + desc + cmd + commit + footer
+                info = await self.gh.get_file(session, path)
+                src = self.decode_b64(info.get("content", ""))
+                self.state.modules[path] = TrackedModule(path=path, sha=item["sha"], version=self.extract_version(src))
+            self.storage.save(self.state)
+            logger.info("bootstrap tracked=%s", len(self.state.modules))
 
     async def scan_and_notify(self, force: bool = False) -> None:
         async with aiohttp.ClientSession() as session:
             tree = await self.gh.get_tree(session)
-            current = {i["path"]: i for i in tree if i.get("type") == "blob" and self._should_track(i.get("path", ""))}
+            current = {i["path"]: i for i in tree if i.get("type") == "blob" and self.should_track(i.get("path", ""))}
 
-            tracked_paths = set(self.state.modules.keys())
-            current_paths = set(current.keys())
-
-            added = sorted(current_paths - tracked_paths)
-            deleted = sorted(tracked_paths - current_paths)
-            maybe_updated = sorted(current_paths & tracked_paths)
+            old_set, new_set = set(self.state.modules.keys()), set(current.keys())
+            added, deleted, common = sorted(new_set - old_set), sorted(old_set - new_set), sorted(old_set & new_set)
 
             updates: list[dict[str, Any]] = []
 
             for path in added:
                 info = await self.gh.get_file(session, path)
-                source = self._decode_b64(info.get("content", ""))
-                meta = self._parse_module(source, path)
+                src = self.decode_b64(info.get("content", ""))
+                meta = self.parse_module_meta(src, path)
                 commit = await self.gh.latest_commit_for_file(session, path)
                 updates.append({
-                    "kind": "added",
-                    "path": path,
-                    "old_v": "-",
-                    "new_v": meta["version"],
-                    "meta": meta,
-                    "sha": current[path]["sha"],
+                    "kind": "added", "path": path, "old_v": "-", "new_v": meta["version"],
+                    "sha": current[path]["sha"], "meta": meta,
                     "commit_url": commit.get("html_url") if commit else self.gh.raw_url(path),
                 })
 
-            for path in maybe_updated:
+            for path in common:
                 old = self.state.modules[path]
                 new_sha = current[path]["sha"]
                 if old.sha == new_sha and not force:
                     continue
                 info = await self.gh.get_file(session, path)
-                source = self._decode_b64(info.get("content", ""))
-                meta = self._parse_module(source, path)
+                src = self.decode_b64(info.get("content", ""))
+                meta = self.parse_module_meta(src, path)
                 commit = await self.gh.latest_commit_for_file(session, path)
                 updates.append({
-                    "kind": "updated",
-                    "path": path,
-                    "old_v": old.version,
-                    "new_v": meta["version"],
-                    "meta": meta,
-                    "sha": new_sha,
+                    "kind": "updated", "path": path, "old_v": old.version, "new_v": meta["version"],
+                    "sha": new_sha, "meta": meta,
                     "commit_url": commit.get("html_url") if commit else self.gh.raw_url(path),
                 })
 
@@ -384,94 +463,73 @@ class ModulePublisherBot:
                 old = self.state.modules[path]
                 commit = await self.gh.latest_commit_for_file(session, path)
                 updates.append({
-                    "kind": "deleted",
-                    "path": path,
-                    "old_v": old.version,
-                    "new_v": "-",
+                    "kind": "deleted", "path": path, "old_v": old.version, "new_v": "-", "sha": "",
                     "meta": {"name": Path(path).stem, "description": "Module removed", "commands": []},
-                    "sha": "",
-                    "commit_url": commit.get("html_url") if commit else f"https://github.com/{self.settings.github_repo}",
+                    "commit_url": commit.get("html_url") if commit else f"https://github.com/{GITHUB_REPO}",
                 })
 
-            updates.sort(key=lambda x: x["path"])
-            for upd in updates:
-                await self._notify_owner(upd)
-                self._update_state(upd)
+            for upd in sorted(updates, key=lambda x: x["path"]):
+                await self.notify_owner(upd)
+                self.apply_state(upd)
 
             if updates:
-                self.storage.save_state(self.state)
+                self.storage.save(self.state)
 
-    def _update_state(self, upd: dict[str, Any]) -> None:
-        kind = upd["kind"]
-        path = upd["path"]
-        if kind == "deleted":
-            self.state.modules.pop(path, None)
-            return
-        self.state.modules[path] = TrackedModule(path=path, sha=upd["sha"], version=upd["new_v"])
+    async def notify_owner(self, upd: dict[str, Any]) -> None:
+        stamp = int(datetime.now(tz=timezone.utc).timestamp())
+        key = f"{upd['path']}:{upd.get('sha', 'x')}:{stamp}"
+        self.pending_updates[key] = upd
 
-    async def _notify_owner(self, upd: dict[str, Any]) -> None:
-        key = f"{upd['path']}:{upd.get('sha','x')}:{int(datetime.now(tz=timezone.utc).timestamp())}"
-        self.pending[key] = upd
-
-        msg = self._build_text(upd["kind"], upd["old_v"], upd["new_v"], upd["meta"], upd["commit_url"])
+        text = self.build_text(upd["kind"], upd["old_v"], upd["new_v"], upd["meta"], upd["commit_url"])
         kb = InlineKeyboardBuilder()
-        kb.button(text="✅ Залить в каналы", callback_data=f"publish:{key}")
+        kb.button(text="✅ Залить", callback_data=f"publish:{key}")
         kb.button(text="⏭ Пропустить", callback_data=f"skip:{key}")
         kb.adjust(2)
-
-        await self.bot.send_message(
-            self.settings.owner_id,
-            msg,
-            reply_markup=kb.as_markup(),
-            disable_web_page_preview=False,
-        )
+        await self.bot.send_message(OWNER_ID, text, reply_markup=kb.as_markup(), disable_web_page_preview=False)
 
     async def publish_update(self, upd: dict[str, Any]) -> None:
-        text = self._build_text(upd["kind"], upd["old_v"], upd["new_v"], upd["meta"], upd["commit_url"])
-        install_kb = InlineKeyboardBuilder()
-        raw = self.gh.raw_url(upd["path"])
-        install_kb.button(text="📦 Install Module", url=raw)
-        install_kb.button(text="ℹ️ Как установить", url="https://github.com/hikariatama/Hikka/wiki")
-        install_kb.adjust(1)
+        text = self.build_text(upd["kind"], upd["old_v"], upd["new_v"], upd["meta"], upd["commit_url"])
+        kb = InlineKeyboardBuilder()
+        kb.button(text="📦 Install Module", url=self.gh.raw_url(upd["path"]))
+        kb.button(text="ℹ️ Manual install", url="https://github.com/hikariatama/Hikka/wiki")
+        kb.adjust(1)
 
-        for channel_id in self.settings.publish_channels:
+        for channel_id in self.state.publish_channels:
             try:
                 banner = upd["meta"].get("banner")
                 if banner and upd["kind"] != "deleted":
-                    await self.bot.send_photo(channel_id, banner, caption=text, reply_markup=install_kb.as_markup())
+                    await self.bot.send_photo(channel_id, banner, caption=text, reply_markup=kb.as_markup())
                 else:
-                    await self.bot.send_message(channel_id, text, reply_markup=install_kb.as_markup(), disable_web_page_preview=False)
-            except Exception as e:
-                logger.exception("Publish failed for %s: %s", channel_id, e)
+                    await self.bot.send_message(channel_id, text, reply_markup=kb.as_markup(), disable_web_page_preview=False)
+            except Exception as exc:
+                logger.exception("publish failed channel=%s err=%s", channel_id, exc)
+
+    def apply_state(self, upd: dict[str, Any]) -> None:
+        if upd["kind"] == "deleted":
+            self.state.modules.pop(upd["path"], None)
+            return
+        self.state.modules[upd["path"]] = TrackedModule(path=upd["path"], sha=upd["sha"], version=upd["new_v"])
 
     async def worker(self) -> None:
         await self.bootstrap()
         while True:
             try:
                 await self.scan_and_notify()
-            except Exception as e:
-                logger.exception("scan error: %s", e)
-            await asyncio.sleep(max(60, self.settings.poll_interval_sec))
+            except Exception as exc:
+                logger.exception("worker error: %s", exc)
+            await asyncio.sleep(max(60, POLL_INTERVAL_SEC))
+
+    async def run(self) -> None:
+        if BOT_TOKEN == "PUT_YOUR_BOT_TOKEN_HERE":
+            raise RuntimeError("Set BOT_TOKEN constant in aiogram_module_publisher_bot.py")
+        asyncio.create_task(self.worker())
+        await self.dp.start_polling(self.bot, allowed_updates=self.dp.resolve_used_update_types())
 
 
 async def main() -> None:
-    settings_file = Path(os.getenv("SETTINGS_FILE", "module_publisher_config.json"))
-    state_file = Path(os.getenv("STATE_FILE", "module_publisher_state.json"))
-    storage = Storage(settings_file, state_file)
-    settings = storage.load_settings()
-
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise RuntimeError("BOT_TOKEN is required")
-
-    bot = Bot(token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
-
-    app = ModulePublisherBot(bot, settings, storage)
-    dp.include_router(app.router)
-
-    asyncio.create_task(app.worker())
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    app = App(bot)
+    await app.run()
 
 
 if __name__ == "__main__":
