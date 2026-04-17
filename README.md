@@ -1,8 +1,11 @@
-# GoyPulse V9 🧠
+# GoyPulse
 
-[Russian Version (RU)](README_ru.md) | [English Version (EN)](README_en.md)
+[![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
-![GoyPulse Banner](https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/banner.png)
+![GoyPulse Banner](./banner.png)
 
-Advanced Markov-chain based Telegram auto-responder with stealth features and secure backup system.
- Developed by @goy (@samsepi0l_ovf).
+## Documentation
+- [English README](./readme/readme_en.md)
+- [Русский README](./readme/readme_ru.md)
+
+> Main README now works as a clean language gateway for the whole repo.
