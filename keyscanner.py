@@ -196,7 +196,7 @@ class KeyScanner(loader.Module):
                     return "Groq", r.status == 200
             elif key.startswith("AIza"):
                 payload = {"contents": [{"parts": [{"text": "hi"}]}]}
-                async with session.post(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}", json=payload, timeout=5) as r:
+                async with session.post(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}", json=payload, timeout=5) as r:
                     return "Gemini", r.status == 200
             elif key.startswith("sk-ant-"):
                 ant_headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
