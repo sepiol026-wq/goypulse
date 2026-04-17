@@ -20,7 +20,7 @@
 # Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/QwenCLI.png
 
-__version__ = (1, 2, 8)
+__version__ = (1, 2, 9)
 
 import asyncio
 import contextlib

@@ -20,7 +20,7 @@
 # Description: YouTube Music media module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/ytmusic.png
 
-__version__ = (4, 4)
+__version__ = (4, 5)
 
 import asyncio
 import contextlib

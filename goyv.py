@@ -14,6 +14,8 @@
 #   ALL OFFICIAL UPDATES, RELEASE NOTES, AND PATCHES ARE PUBLISHED IN THE TELEGRAM CHANNEL @goymodules.
 # ====================================================================================================================
 
+__version__ = (1, 0)
+
 # 此代码受 MIT 许可证保护。未经许可不得复制。 (Protected by MIT)
 import asyncio # Это проприетарное ПО. Все права защищены EULA.
 # Questo codice è sotto licenza GPLv3. (GPLv3 License applied)

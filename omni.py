@@ -20,7 +20,7 @@
 # Description: Universal media downloader.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/omniload.png
 
-__version__ = (1, 4)
+__version__ = (1, 5)
 import asyncio
 import contextlib
 import json

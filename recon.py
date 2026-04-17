@@ -17,7 +17,7 @@
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/recon.png
 # meta developer: @goymodules
 # requires: aiohttp beautifulsoup4
-__version__ = (1, 0)
+__version__ = (1, 1)
 
 import aiohttp
 import asyncio
@@ -26,7 +26,7 @@ import os
 import shutil
 import ssl
 import tempfile
-from urllib.parse import urlparse, urljoin, quote_plus
+from urllib.parse import urlparse, urljoin, quote_plus, quote
 from collections import deque
 from herokutl.types import Message
 from .. import loader, utils
@@ -104,6 +104,48 @@ class Recon(loader.Module):
             loader.ConfigValue("shodan_key", "", "API ключ Shodan", validator=loader.validators.Hidden()),
             loader.ConfigValue("use_shodan", False, "Юзать Shodan API в .rc", validator=loader.validators.Boolean()),
         )
+
+    SVG_ICON_MAP = {
+        "🔥": ("⚡", "#ef4444"),
+        "📟": ("◉", "#3b82f6"),
+        "🛡": ("🛡", "#10b981"),
+        "🏳️": ("◎", "#14b8a6"),
+        "⤵️": ("↘", "#6366f1"),
+        "📝": ("✎", "#f59e0b"),
+        "📂": ("▣", "#f97316"),
+        "🎞": ("◫", "#8b5cf6"),
+        "🐢": ("◔", "#22c55e"),
+        "📧": ("✉", "#06b6d4"),
+        "🖼": ("◱", "#0ea5e9"),
+        "⚙️": ("⚙", "#64748b"),
+        "❗️": ("!", "#f43f5e"),
+        "👌": ("✓", "#22c55e"),
+        "📍": ("⌖", "#ec4899"),
+        "🕔": ("◴", "#a855f7"),
+        "📛": ("◆", "#e11d48"),
+        "✅": ("✔", "#16a34a"),
+        "🔓": ("⌂", "#f59e0b"),
+        "🔗": ("⛓", "#0ea5e9"),
+        "🔃": ("↻", "#2563eb"),
+    }
+
+    def _svg_icon(self, char):
+        symbol, color = self.SVG_ICON_MAP.get(char, ("•", "#64748b"))
+        svg = (
+            "<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24'>"
+            f"<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='{color}'/>"
+            f"<stop offset='1' stop-color='#0ea5e9'/></linearGradient></defs>"
+            "<circle cx='12' cy='12' r='10' fill='url(#g)'/>"
+            f"<text x='12' y='16' text-anchor='middle' fill='white' font-size='11' font-weight='700'>{symbol}</text>"
+            "</svg>"
+        )
+        return f"<img src='data:image/svg+xml;utf8,{quote(svg)}' style='width:15px;height:15px;vertical-align:-2px;margin-right:4px'/>"
+
+    def _svgify_line(self, line):
+        for em in sorted(self.SVG_ICON_MAP, key=len, reverse=True):
+            if em in line:
+                line = line.replace(em, self._svg_icon(em))
+        return line
 
     async def fetch(self, s, url, t="text"):
         try:
@@ -260,12 +302,15 @@ class Recon(loader.Module):
             "a{color:#58a6ff}"
             "</style>"
             f"<title>{title}</title></head><body>"
-            f"<h1><tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> {title}</h1>"
+            f"<h1>{self._svg_icon('🖼')} {title}</h1>"
         )
+        heading_icons = tuple(self.SVG_ICON_MAP.keys())
         for line in plain.split("\n"):
             line = line.strip()
             if not line: continue
-            if line.startswith("<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256182535917940722>⤵️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji>"):
+            is_heading = line.startswith(heading_icons)
+            line = self._svgify_line(line)
+            if is_heading:
                 html += f"<h2>{line}</h2><div class='section'>"
             elif line.startswith("├") or line.startswith("└"):
                 html += f"<div>{line}</div>"
