@@ -28,7 +28,7 @@ import asyncio, base64, hashlib, hmac, json, math, os, random, re, sqlite3, time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
-__version__ = (10, 0, 0)
+__version__ = (10, 0, 1)
 
 from telethon import events, utils as tl_utils
 from telethon.tl.types import Message
@@ -42,7 +42,7 @@ STOP_W = {"и", "в", "во", "на", "не", "что", "это", "я", "ты", 
 GRTS = {"привет", "хай", "здарова", "ку", "дарова", "салам", "куку", "добрый", "вечер", "утро", "шалом", "qq", "прив", "здрасьте", "вечерочек", "утречко", "салют", "здравствуй", "приветствую", "алоха", "дратути", "кусь", "сап", "йо", "кукушки", "здоров", "превед", " хаюшки", "добрейший", "конишуа", "бонжур", "гутен", "таг", "приветс", "дароу", "салам алейкум", "ассаламу", "hello", "hi", "hey", "greetings", "morning", "yo", "sup", "howdy", "hiya", "evening", "afternoon", "welcome", "aloha", "shalom", "hola", "bonjour", "ciao", "namaste", "heyyo", "hibro", "hi there", "wassup", "whats up", "good morning", "good evening", "good afternoon", "nice to see you", "hey there", "it's been a while", "long time no see", "lovely to meet you", "how's it going", "how are you", "what's new", "how's life", "how's things", "morning all", "hi everyone", "hello folks", "доброе", "утречко", "вечер", "в хату", "здравия", "желаю", "почтение", "приветствую всех", "хайль", "ave", "здорово", "привет", "доброе утро", "добрый день", "добрый вечер", "доброй ночи", "хайль", "здравия желаю", "низкий поклон", "моё почтение", "честь имею", "барев", "салам алейкум", "уалейкум ассалам", "нихао", "ола", "аннён", "дзякуй", "вечер в радость", "здорово бандиты", "здорово жиганы", "всем ку", "кукусики", "приветики", "даровчики", "приветствую", "добрейшего денёчка", "утреца", "доброй ночи", "салам пополам", "здаристи", "здрасьте мордасьте", "куку", "qq", "q-q", "ку", "hi", "hey", "hello", "greetings", "salutations", "morning", "evening", "afternoon", "good day", "howdy", "sup", "yo", "wassup", "welcome", "aloha", "bonjour", "ciao", "hola", "namaste", "shalom", "hiya", "hey there", "hi there", "long time no see", "lovely to meet you", "nice to meet you", "how's it going", "how are you", "how have you been", "what's up", "what's going on", "what's new", "good to see you", "pleasure to meet you", "it's an honor", "greetings everyone"}
 RCTS = {"ахах", "лол", "жиза", "жестко", "имба", "топ", "пон", "кринж", "база", "хах", "треш", "ору", "рил", "мда", "пздц", "пиздец", "ебать", "бля", "блять", "чел", "капец", "шок", "ужас", "жесть", "согл", "базару", "факты", "хуйня", "дичь", "ор", "ржомба", "рофл", "кринге", "понял", "ясно", "хуй", "пизда", "охренеть", "охуеть", "писец", "бб", "ок", "окей", "окда", "спс", "спасибо", "сигма", "вумен", "скуф", "нормис", "альтушка", "масик", "тюбик", "штрих", "чечик", "имбово", "разрывная", "свэг", "чиназес", "легенда", "гигачад", "базированно", "кринжатина", "дэмн", "люто", "чертовски", "пиздато", "офигенно", "кайф", "кайфово", "найс", "ладно", "бебра", "абуз", "тильт", "флекс", "шейм", "горишь", "слит", "попуск", "агро", "душно", "душнила", "ахаха", "лолз", "мем", "рофлишь", "кринжую", "нереально", "круто", "четко", "красава", "красавчик", "харош", "хорош", "гений", "легендарно", "сильно", "жёстко", "безумно", "lmao", "rofl", "wtf", "omg", "bruh", "based", "cringe", "fr", "frfr", "ong", "tbh", "ngl", "idk", "idc", "stfu", "gtfo", "lmfao", "damn", "sheesh", "bet", "cap", "nocap", "dope", "lit", "trash", "awesome", "cool", "sick", "wild", "insane", "legit", "standard", "classic", "vibes", "mood", "shook", "dead", "skull", "че за", "шо за", "пиздец", "ппц", "ну и ну", "ох", "ах", "ого", "ух ты", "нифига", "ничоси", "воу", "эщкере", "вуху", "ура", "еее", "йоу", "хоспади", "господи", "боже мой", "матерь божья", "бляха муха", "сука", "епт", "епта", "ебаный рот", "пидорас", "гандон", "хуило", "еблан", "дебил", "даун", "лошара", "чушпан", "пацаны", "ребята", "братва", "брат", "братик", "бро", "кентуфурик", "кореш", "дружбан", "парень", "девушка", "тян", "кун", "лоля", "вайфу", "краш", "шип", "шипперить", "кринжануть", "рофляночка", "шуточка", "прикол", "кек", "кеке", "кекаю", "пушка", "бомба", "ракета", "космос", "вышка", "огонь", "горячо", "жара", "мощно", "крутяк", "заебись", "охуенно", "чётко", "збс", "гг", "wp", "gl", "hf", "ggwp", "ez", "ezez", "сидим", "кайфуем", "отдыхаем", "работаем", "учимся", "спать", "жрать", "бухать", "курить", "парить", "жидкость", "жижа", "под", "вейп", "электронка", "ашка", "одноразка", "кальян", "пиво", "водка", "виски", "вино", "коньяк", "вискарь", "текила", "ром", "джин", "шампусик", "шампанское", "лимонад", "кола", "пепси", "энергетик", "монстр", "редбулл", "адреналин", "флэш", "торч", "солевой", "наркоман", "алкаш", "бомж", "бич", "нищий", "богатый", "мажор", "нищеброд", "нищий", "лох", "терпила", "куколд", "омежка", "сигмач", "гигачад", "папич", "величайший", "видос", "стрим", "видосик", "видяха", "карта", "проц", "комп", "пк", "ноут", "клава", "мышка", "моник", "наушники", "уши", "микро", "вебка", "телефон", "смартфон", "айфон", "самсунг", "андроид", "дискорд", "тг", "телеграм", "вк", "инста", "тикток", "ютуб", "твич", "кик", "сайт", "интернет", "сеть", "вайфай", "скорость", "пинг" , "лаги", "фризы", "баги", "ошибки", "еррор", "хелп", "помогите", "спасите", "админ", "модер", "владелец", "овнер", "создатель", "хуйло", "красавец", "молодец", "умничка", "солнышко", "зайка", "котик", "киса", "лапочка", "милота", "кавай", "ня", "няшка", "ня кавай", "ураа", "еее", "крутотенюшка", "лучший", "лучшая", "the best", "classic", "standard", "norm", "normal", "okey", "fine", "good", "nice", "very good", "excellent", "perfect", "amazing", "wonderful", "terrible", "awful", "bad", "badly", "horrible", "shit", "holy shit", "omg", "wtf", "wth", "lmao", "lmfao", "lol", "rofl", "bruh", "damn", "sheesh", "fr", "frfr", "real", "really", "literally", "literally me", "me", "mood", "vibes", "vibe", "aesthetic", "standard", "basic", "premium", "lux", "luxury", "rich", "poor", "money", "cash", "dollars", "bucks", "rubles", "crypto", "bitcoin", "eth", "nft", "scam", "scammer", "legit", "safe", "scary", "fear", "horror", "spooky", "creepy", "weird", "strange", "bizarre", "odd", "funny", "hilarious", "joke", "prank", "troll", "trolling", "hater", "fan", "fandom", "stan", "simp", "incel", "femcel", "chad", "gigachad", "sigma", "alpha", "beta", "omega", "cuck", "cuckold", "soyboy", "npc", "main character", "hero", "villain", "boss", "noob", "pro", "hacker", "cheater", "admin", "mod", "staff", "user", "player", "game", "gaming", "stream", "steamer", "video", "content", "creator", "famous", "popular", "viral", "tranding", "tags", "reposts", "likes", "views", "subscribers", "subs", "goat", "legend", "icon", "masterpiece", "peak", "mid", "flop", "w", "l", "massive w", "huge l", "ratio", "canceled", "cancelled", "toxic", "wholesome", "cursed", "blessed", "blursed", "sus", "imposter", "amongus", "amogus", "vent", "sussy", "baka", "pog", "poggers", "pogchamp", "kekw", "omegalul", "pepeh", "kappa", "sadge", "monkas", "feelsbadman", "feelsgoodman", "clap", "ez", "ggwp", "get rekt", "rekt", "destroyed", "owned", "skill issue", "noob", "get gud", "cope", "seethe", "mald", "cry about it", "stay mad", "touch grass", "ratio", "owned", "powned", "pwned", "clapped", "dumped", "washed", "washed up", "fraud", "overrated", "underrated", "sleeper", "banger", "slaps", "fire", "heat", "cold", "frozen", "icy", "drip", "drippy", "swag", "yolo", "swag", "gucci", "prada", "hype", "hypebeast", "og", "real one", "homie", "bestie", "brother", "sister", "fam", "squad", "crew", "gang", "tribe", "folk", "folks", "peeps", "people"}
 QW = ("что", "как", "почему", "зачем", "когда", "где", "кто", "кого", "кому", "кем", "чем", "откуда", "куда", "чей", "че", "чё", "чо", "хули", "всмысле", "какого", "хто", "шо", "какой", "какая", "какие", "херли", "какого", "хрена", "поч", "почему бы", "почем", "зачем это", "хто то", "куда это", "откуда это", "какие новости", "че за", "чё за", "шо за", "че там", "чё там", "шо там", "what", "how", "why", "when", "where", "who", "whom", "whose", "which", "how come", "what for", "whats up", "whats going on", "what about", "че почем", "чё почём", "шо почём", "сколько", "скока", "скоко", "почём", "за сколько", "на фига", "нафига", "на хуя", "нахуя", "какого хуя", "че за фигня", "че за дичь", "чё за треш", "как это", "что это", "кто это", "где это", "когда это", "почему так", "зачем ты", "что делаешь", "как дела", "чё каво", "чё кого", "шо там", "что нового", "какие планы", "ты где", "вы где", "мы где", "куда идем", "что купить", "сколько стоит", "поможешь", "сможешь", "хочешь", "знаешь", "помнишь", "слышал", "видел", "what", "how", "why", "when", "where", "who", "whom", "whose", "which", "how come", "what for", "whats up", "whats going on", "what about", "how many", "how much", "how long", "how far", "how often", "who is", "what is", "where is", "when is", "why is", "can you", "could you", "would you", "do you", "did you", "have you", "are you", "is it", "will you", "shall we", "may I", "what's that", "who's there", "whose turn", "any news", "any idea", "anyone know", "how to", "why not", "what if", "is there", "are there", "shall I", "should I", "could I")
-EMO_M = {"смех": ["😂", "🤣", "💀", "😭", "хах", "ахах", "😹", "🤭", "пхпх", "хахаха", "ору", "🤣", "😅", "😆", "😸", "😂", "🤣", "💀", "😭", "хах", "ахах", "😹", "🤭", "пхпх", "хахаха", "ору", "🤣", "😅", "😆", "😸", "😁", "😃", "😄", "😅", "😆", "😅", "😂", "🤣", "😹", "😸", "😻", "😽", "🫠", "🙃", "🤪", "😝", "😜", "😛", "🤤", "😤", "🤯", "🥳", "😎", "🤡", "👺", "👻", "👽", "💩", "🔥", "💯", "💥", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>️", "✨", "🌟"], "агр": ["🤡", "🤬", "🗿", "👺", "мда", " трэш", "😤", "🤦‍♂️", "🤦‍♀️", "☠️", "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji>", "😡", "👿", "🖕", "😠", "👿", "👹", "🖕", "🤬", "💢", "🤡", "🤬", "🗿", "👺", "мда", "трэш", "😤", "🤦‍♂️", "🤦‍♀️", "☠️", "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji>", "😡", "👿", "🖕", "😠", "👿", "👹", "🖕", "🤬", "💢", "👎", "🤮", "💩", "🧨", "🔫", "🗡️", "🔪", "⛓️", "💣", "🚬", "🥀", "🔨", "⚒️", "🛠️", "⛏️", "🪚", "🪓", "🧱", "🪨", "🪵", "⛓️", "💣", "🧨", "💥", "🗡️", "⚔️", "🏹", "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>", "⚰️", "🪦", "⚱️", "🏺"], "нейтрал": ["👀", "🤔", "пон", "🚬", "ну ок", "ладно", "🤷‍♂️", "🤷‍♀️", "🙃", "🧐", "🥱", "🥴", "😶", "🌝", "🌚", "🫠", "😑", "😐", "👀", "🤔", "пон", "🚬", "ну ок", "ладно", "🤷‍♂️", "🤷‍♀️", "🙃", "🧐", "🥱", "🥴", "😶", "🌝", "🌚", "🫠", "😑", "😐", "🚶‍♂️", "🚶‍♀️", "🪴", "☁️", "🌊", "☕️", "🛋️", "💻", "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji>", "🖊️", "📅", "📎", "<tg-emoji emoji-id=5253521692008917018>🌙</tg-emoji>", "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji>", "💭", "🗯️", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🎭", "🎨", "🧵", "🧶", "🎹", "🎺", "🎸", "🎻", "🥁", "🪗", "🎧", "🎤", "🎬"], "шок": ["😱", "🤯", "😳", "😨", "🙀", "охуеть", "😲", "😯", "😧", "😮", "😵", "😵‍💫", "😱", "🤯", "😳", "😨", "🙀", "охуеть", "😲", "😯", "😧", "😮", "😵", "😵‍💫", "‼️", "❓", "🆘", "💥", "🔥", "💨", "🌊", "🌩️", "⛈️", "🌪️", "🌊", "🌋", "☄️", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>️", "💥", "🔥", "🧨", "💣", "🔫", "⛏️", "⚔️", "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>", "⚰️", "🪦", "👻", "👹", "👺", "💀", "👽", "💩", "🤡", "🧞‍♂️", "🧞‍♀️", "🧟‍♂️", "🧟‍♀️"]}
+EMO_M = {"смех": ["<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "🤣", "💀", "😭", "хах", "ахах", "😹", "🤭", "пхпх", "хахаха", "ору", "🤣", "😅", "😆", "😸", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "🤣", "💀", "😭", "хах", "ахах", "😹", "🤭", "пхпх", "хахаха", "ору", "🤣", "😅", "😆", "😸", "😁", "😃", "😄", "😅", "😆", "😅", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "🤣", "😹", "😸", "😻", "😽", "🫠", "🙃", "🤪", "😝", "😜", "😛", "🤤", "😤", "🤯", "🥳", "😎", "🤡", "👺", "👻", "👽", "💩", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "💯", "💥", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "🌟"], "агр": ["🤡", "🤬", "🗿", "👺", "мда", " трэш", "😤", "🤦‍♂️", "🤦‍♀️", "☠️", "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji>", "😡", "👿", "🖕", "😠", "👿", "👹", "🖕", "🤬", "💢", "🤡", "🤬", "🗿", "👺", "мда", "трэш", "😤", "🤦‍♂️", "🤦‍♀️", "☠️", "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji>", "😡", "👿", "🖕", "😠", "👿", "👹", "🖕", "🤬", "💢", "👎", "🤮", "💩", "🧨", "🔫", "🗡️", "🔪", "⛓️", "💣", "🚬", "🥀", "🔨", "⚒️", "🛠️", "⛏️", "🪚", "🪓", "🧱", "🪨", "🪵", "⛓️", "💣", "🧨", "💥", "🗡️", "⚔️", "🏹", "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>", "⚰️", "🪦", "⚱️", "🏺"], "нейтрал": ["👀", "🤔", "пон", "🚬", "ну ок", "ладно", "🤷‍♂️", "🤷‍♀️", "🙃", "🧐", "🥱", "🥴", "😶", "🌝", "🌚", "🫠", "😑", "😐", "👀", "🤔", "пон", "🚬", "ну ок", "ладно", "🤷‍♂️", "🤷‍♀️", "🙃", "🧐", "🥱", "🥴", "😶", "🌝", "🌚", "🫠", "😑", "😐", "🚶‍♂️", "🚶‍♀️", "🪴", "☁️", "🌊", "☕️", "🛋️", "💻", "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji>", "🖊️", "📅", "📎", "<tg-emoji emoji-id=5253521692008917018>🌙</tg-emoji>", "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji>", "💭", "<tg-emoji emoji-id=5256160369591723706>🗯</tg-emoji>", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🎭", "<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji>", "🧵", "🧶", "🎹", "🎺", "🎸", "🎻", "🥁", "🪗", "🎧", "<tg-emoji emoji-id=5255741803553893439>🎤</tg-emoji>", "🎬"], "шок": ["😱", "🤯", "😳", "😨", "🙀", "охуеть", "😲", "😯", "😧", "😮", "😵", "😵‍💫", "😱", "🤯", "😳", "😨", "🙀", "охуеть", "😲", "😯", "😧", "😮", "😵", "😵‍💫", "‼️", "❓", "🆘", "💥", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "💨", "🌊", "🌩️", "⛈️", "🌪️", "🌊", "🌋", "☄️", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "💥", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "🧨", "💣", "🔫", "⛏️", "⚔️", "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>", "⚰️", "🪦", "👻", "👹", "👺", "💀", "👽", "💩", "🤡", "🧞‍♂️", "🧞‍♀️", "🧟‍♂️", "🧟‍♀️"]}
 
 
 @dataclass
@@ -97,30 +97,30 @@ class GoyPulseMod(loader.Module):
     """Нейро-автоответчик GoyPulse."""
     strings = {
         "name": "GoyPulse",
-        "brand": "GoyPulse by goy(@samsepi0l_ovf)",
+        "brand": "GoyPulse",
         "og": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> <b>[GoyPulse]</b> Только для групп.",
-        "upd_lock": "🔒 <b>[GoyPulse]</b> Ограниченный режим активен.\nПричина: <code>{reason}</code>",
+        "upd_lock": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>[GoyPulse]</b> Ограниченный режим активен.\nПричина: <code>{reason}</code>",
         "on": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>[GoyPulse]</b> Система активирована.\n<i>Теперь я обучаюсь и буду отвечать в этом чате.</i>{}",
         "off": "<tg-emoji emoji-id=5253521692008917018>🌙</tg-emoji> <b>[GoyPulse]</b> Система деактивирована.\n<i>Я больше не буду отвечать здесь.</i>",
-        "ref_st": "🧬 <b>[Обучение]</b> Анализ истории сообщений...{}",
+        "ref_st": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>[Обучение]</b> Анализ истории сообщений...{}",
         "ref_upd": "<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> <b>[Обучение]</b> В процессе... <code>[{}{}]</code>\n\n<tg-emoji emoji-id=5253931337399674296>2️⃣</tg-emoji> <b>Статистика:</b>\n├─ 💠 Словарь: <code>{}</code>\n├─ <tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> Медиа: <code>{}</code>\n├─ <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Слова: <code>{}</code>\n└─ <tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Скорость: <code>{}</code> msg/s\n\n<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Осталось:</b> <code>{}</code>",
-        "ref_dn": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>[Обучение]</b> Успешно завершено!\n\n📈 <b>Итоги:</b>\n├─ <tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> Сообщений: <code>{}</code>\n├─ <tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> Словарь: <code>{}</code>\n├─ <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Всего слов: <code>{}</code>\n└─ <tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> Медиа: <code>{}</code> {md_details}\n\n<i>GoyPulse готов к работе!</i>",
-        "st": "<tg-emoji emoji-id=5253931337399674296>2️⃣</tg-emoji> <b>Статус GoyPulse</b> | <code>by goy(@samsepi0l_ovf)</code>\n\n<tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <b>Состояние:</b> {on}\n📈 <b>База:</b> <code>{pc}</code> msg | <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>{wc}</code> слов\n<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> <b>Словарь:</b> <code>{vk}</code> связок\n<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> <b>Медиа:</b> <code>{md}</code> | <tg-emoji emoji-id=5253527438675158560>🔕</tg-emoji> <b>Игнор:</b> <code>{ig}</code>\n\n<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Конфигурация:</b>\n├─ 🎲 Шанс (обыч): <code>{c}%</code>\n├─ <tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Шанс (реплай): <code>{my}%</code>\n├─ 🎨 Шанс (медиа): <code>{mc}%</code>\n└─ <tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> Задержка: <code>{cd}</code>\n\n🗣️ <b>Актуальные темы:</b>\n<code>{tw}</code>{warn}",
+        "ref_dn": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>[Обучение]</b> Успешно завершено!\n\n<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Итоги:</b>\n├─ <tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> Сообщений: <code>{}</code>\n├─ <tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> Словарь: <code>{}</code>\n├─ <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Всего слов: <code>{}</code>\n└─ <tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> Медиа: <code>{}</code> {md_details}\n\n<i>GoyPulse готов к работе!</i>",
+        "st": "<tg-emoji emoji-id=5253931337399674296>2️⃣</tg-emoji> <b>Статус GoyPulse</b> \n\n<tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <b>Состояние:</b> {on}\n<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>База:</b> <code>{pc}</code> msg | <tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <code>{wc}</code> слов\n<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> <b>Словарь:</b> <code>{vk}</code> связок\n<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> <b>Медиа:</b> <code>{md}</code> | <tg-emoji emoji-id=5253527438675158560>🔕</tg-emoji> <b>Игнор:</b> <code>{ig}</code>\n\n<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Конфигурация:</b>\n├─ <tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> Шанс (обыч): <code>{c}%</code>\n├─ <tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> Шанс (реплай): <code>{my}%</code>\n├─ <tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> Шанс (медиа): <code>{mc}%</code>\n└─ <tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> Задержка: <code>{cd}</code>\n\n<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> <b>Актуальные темы:</b>\n<code>{tw}</code>{warn}",
         "set": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>[Настройки]</b> Параметр <code>{}</code> обновлен: <code>{}</code>",
-        "mute": "🤫 <b>[Тсс!]</b> Бот отправлен отдыхать на <code>{}</code> мин.",
-        "kill": "🛑 <b>[HALT]</b> Глобальная остановка всех модулей GoyPulse.",
-        "info": "<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> <b>[Аналитика]</b> Вибрации чата\n\n📡 <b>Активность:</b> <code>{act}</code>\n🎭 <b>Тональность:</b>\n{tonality}\n\n🔥 <b>Топ обсуждений:</b>\n<code>{tw}</code>{warn}",
-        "ign_add": "🚷 <b>[Игнор]</b> Пользователь добавлен в черный список.",
+        "mute": "<tg-emoji emoji-id=5253527438675158560>🔕</tg-emoji> <b>[Тсс!]</b> Бот отправлен отдыхать на <code>{}</code> мин.",
+        "kill": "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> <b>[HALT]</b> Глобальная остановка всех модулей GoyPulse.",
+        "info": "<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> <b>[Аналитика]</b> Вибрации чата\n\n<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji> <b>Активность:</b> <code>{act}</code>\n🎭 <b>Тональность:</b>\n{tonality}\n\n<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Топ обсуждений:</b>\n<code>{tw}</code>{warn}",
+        "ign_add": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>[Игнор]</b> Пользователь добавлен в черный список.",
         "ign_del": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>[Игнор]</b> Пользователь удален из черного списка.",
         "clr": "<tg-emoji emoji-id=5255831443816327915>🗑</tg-emoji> <b>[Очистка]</b> Память текущего чата полностью стерта.",
         "rst_ok": "<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>[Сброс]</b> Настройки и память сброшены успешно.",
         "log_err": "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>[ERROR]</b> Ошибка: <code>{}</code>",
         "log_ok": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <b>[Stealth]</b> Команда выполнена в <code>{}</code>\n\n<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Ответ:</b>\n<code>{}</code>",
-        "react_ok": "✨ <b>[Реакция]</b> Бот отреагировал на сообщение.",
-        "h_pulse": "🔌 <b>[Usage] .gpulse [on|off] [time]</b>\n\nВключает или отключает обработку сообщений ботом в текущем чате.\n\n<b>Инструкция:</b>\n├ <code>.gpulse on</code> — включить без таймера.\n├ <code>.gpulse on 30</code> — включить на 30 минут.\n├ <code>.gpulse on 2h</code> — включить на 2 часа.\n└ <code>.gpulse off</code> — выключить сразу.\n\n<i>Поддерживаются суффиксы: s, m, h, d и русские м, ч, д.</i>\n\n<code>GoyPulse by goy(@samsepi0l_ovf)</code>",
-        "h_set": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Настройки GoyPulse</b> | <code>by goy(@samsepi0l_ovf)</code>\n\n"
+        "react_ok": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>[Реакция]</b> Бот отреагировал на сообщение.",
+        "h_pulse": "<tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> <b>[Usage] .gpulse [on|off] [time]</b>\n\nВключает или отключает обработку сообщений ботом в текущем чате.\n\n<b>Инструкция:</b>\n├ <code>.gpulse on</code> — включить без таймера.\n├ <code>.gpulse on 30</code> — включить на 30 минут.\n├ <code>.gpulse on 2h</code> — включить на 2 часа.\n└ <code>.gpulse off</code> — выключить сразу.\n\n<i>Поддерживаются суффиксы: s, m, h, d и русские м, ч, д.</i>\n\n<code>GoyPulse</code>",
+        "h_set": "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Настройки GoyPulse</b> \n\n"
                  "Использование: <code>.gpset &lt;ключ&gt; &lt;значение&gt; [target_group]</code>\n\n"
-                 "🌐 <b>Глобальные параметры:</b>\n"
+                 "<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Глобальные параметры:</b>\n"
                  "├ <code>bpon [1/0]</code> — Автоматический бэкап базы.\n"
                  "├ <code>bpint [5-1440]</code> — Интервал бэкапа в минутах.\n"
                  "├ <code>react [0-100]</code> — Шанс реакции (эмодзи) на сообщение.\n"
@@ -131,7 +131,7 @@ class GoyPulseMod(loader.Module):
                  "  ├ <code>logbkp</code> — События бэкапа.\n"
                  "  ├ <code>loglrn</code> — Процесс обучения.\n"
                  "  └ <code>logans</code> — Ответы бота (в лог-канал).\n\n"
-                 "🏘️ <b>Параметры группы:</b>\n"
+                 "<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> <b>Параметры группы:</b>\n"
                  "├ <code>lim [0-5M]</code> — Лимит сообщений для обучения.\n"
                  "├ <code>min [0-500]</code> — Минимум сообщений для активации.\n"
                  "├ <code>ch [0-100]</code> — Шанс ответа на обычное сообщение.\n"
@@ -139,13 +139,13 @@ class GoyPulseMod(loader.Module):
                  "├ <code>mych [0-100]</code> — Шанс ответа на реплы/меншены.\n"
                  "├ <code>cdm [0-120]</code> — Минимальная пауза между ответами (сек).\n"
                  "└ <code>cdx [0-240]</code> — Максимальная пауза (сек).\n\n"
-                 "📝 <b>Примеры:</b>\n"
+                 "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Примеры:</b>\n"
                  "├ <code>.gpset ch 50</code> — 50% шанс в текущем чате.\n"
                  "└ <code>.gpset react 20</code> — Глобальный шанс реакции 20%.\n\n"
-                 "<i>GoyPulse by goy(@samsepi0l_ovf)</i>",
-        "h_mute": "<tg-emoji emoji-id=5253690110561494560>🔇</tg-emoji> <b>[Usage] .gpmute <минуты></b>\n\nВременно отключает ответы бота, сохраняя процесс обучения и сбора статистики.\n\n<b>Примеры:</b>\n├ <code>.gpmute 30</code> — Замолчать на полчаса.\n├ <code>.gpmute 1440</code> — Замолчать на сутки.\n└ <code>.gpmute 0</code> — Снять ограничение немедленно.\n\n<code>GoyPulse by goy(@samsepi0l_ovf)</code>",
-        "h_ign": "🚷 <b>[Usage] .gpignore</b>\n\nДобавляет или удаляет пользователя из черного списка бота.\n\n<b>Как использовать:</b>\n1. Найдите сообщение пользователя.\n2. Ответьте на него (Reply) командой <code>.gpignore</code>.\n\n<i>Результат: Бот не будет обучаться на нем и не будет ему отвечать.</i>\n\n<code>GoyPulse by goy(@samsepi0l_ovf)</code>",
-        "h_gph": "🕵️ <b>[Usage] .gph <цель> <команда></b>\n\nВыполнение команд GoyPulse в любом чате анонимно.\n\n<b>Параметры:</b>\n├ <code>цель</code> — ID чата, юзернейм или слово <code>here</code>\n└ <code>команда</code> — Любая команда без точки (напр. <code>gpstat</code>)\n\n<b>Примеры:</b>\n├ <code>.gph -100... gpstat</code> — Статус чужого чата.\n├ <code>.gph @username gpinfo</code> — Вайб в личке.\n└ <code>.gph here gpclear</code> — Скрытая очистка.\n\n<code>GoyPulse by goy(@samsepi0l_ovf)</code>",
+                 "<i>GoyPulse</i>",
+        "h_mute": "<tg-emoji emoji-id=5253690110561494560>🔇</tg-emoji> <b>[Usage] .gpmute <минуты></b>\n\nВременно отключает ответы бота, сохраняя процесс обучения и сбора статистики.\n\n<b>Примеры:</b>\n├ <code>.gpmute 30</code> — Замолчать на полчаса.\n├ <code>.gpmute 1440</code> — Замолчать на сутки.\n└ <code>.gpmute 0</code> — Снять ограничение немедленно.\n\n<code>GoyPulse</code>",
+        "h_ign": "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>[Usage] .gpignore</b>\n\nДобавляет или удаляет пользователя из черного списка бота.\n\n<b>Как использовать:</b>\n1. Найдите сообщение пользователя.\n2. Ответьте на него (Reply) командой <code>.gpignore</code>.\n\n<i>Результат: Бот не будет обучаться на нем и не будет ему отвечать.</i>\n\n<code>GoyPulse</code>",
+        "h_gph": "<tg-emoji emoji-id=5256160369591723706>🗯</tg-emoji> <b>[Usage] .gph <цель> <команда></b>\n\nВыполнение команд GoyPulse в любом чате анонимно.\n\n<b>Параметры:</b>\n├ <code>цель</code> — ID чата, юзернейм или слово <code>here</code>\n└ <code>команда</code> — Любая команда без точки (напр. <code>gpstat</code>)\n\n<b>Примеры:</b>\n├ <code>.gph -100... gpstat</code> — Статус чужого чата.\n├ <code>.gph @username gpinfo</code> — Вайб в личке.\n└ <code>.gph here gpclear</code> — Скрытая очистка.\n\n<code>GoyPulse</code>",
 
     }
     def __init__(self):
@@ -178,7 +178,7 @@ class GoyPulseMod(loader.Module):
         self._stop_event = None
         self._max_chat_tokens = 400000
         self._max_markov_edges = 1200000
-        self._module_version = "9.2.0"
+        self._module_version = "10.0.1"
         self._module_file_name = "goypulse.py"
         self._sub_channel = "@goy_ai"
         self._tamper_mode = False
@@ -1257,7 +1257,7 @@ class GoyPulseMod(loader.Module):
                     spd, 
                                 eta
                             ))
-                            log_msg = f"📊 <b>Training Progress</b> [Chat: <code>{cid}</code>]\n├ Parsed: <code>{cnt}</code>\n├ Vocabulary: <code>{vocab}</code>\n└ ETA: <code>{eta}</code>"
+                            log_msg = f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Training Progress</b> [Chat: <code>{cid}</code>]\n├ Parsed: <code>{cnt}</code>\n├ Vocabulary: <code>{vocab}</code>\n└ ETA: <code>{eta}</code>"
                             self._c.loop.create_task(self._log(log_msg, cat="lrn"))
                         except Exception as e:
                             rmsg = None
@@ -1277,7 +1277,7 @@ class GoyPulseMod(loader.Module):
                         len(st.mkv) + len(st.mkv3) + len(st.mkv4),
                         st.w_cnt,
                         sum(st.md_cnt.values()),
-                        md_details=f"\n└─ 🖼️ Детали: <code>{md_info}</code>" if md_info else ""
+                        md_details=f"\n└─ <tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> Детали: <code>{md_info}</code>" if md_info else ""
                     ))
                 except Exception as e:
                     if self._c: self._c.loop.create_task(self._log(f"<b>[REF DN ERR]</b> <code>{e}</code>"))
@@ -1287,7 +1287,7 @@ class GoyPulseMod(loader.Module):
             try: self._sql("ROLLBACK")
             except: pass
             if rmsg: 
-                try: await self._ans(rmsg, f"⚠️ Остановка на {cnt}: {e}\nНапишите .gpref чтобы продолжить.")
+                try: await self._ans(rmsg, f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Остановка на {cnt}: {e}\nНапишите .gpref чтобы продолжить.")
                 except Exception as e:
                     if self._c: self._c.loop.create_task(self._log(f"<b>[REF ERR ANS]</b> <code>{e}</code>"))
 
@@ -1754,7 +1754,7 @@ class GoyPulseMod(loader.Module):
         with open(fname, "w", encoding="utf-8") as f:
             f.write(payload)
         try:
-            await self._send_payload_file(uid, fname, "🔐 GoyPulse keycard")
+            await self._send_payload_file(uid, fname, "<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> GoyPulse keycard")
         finally:
             if os.path.exists(fname):
                 os.remove(fname)
@@ -1855,7 +1855,7 @@ class GoyPulseMod(loader.Module):
 
             if random.randint(1, 100) <= self.config["react_ch"]:
                 try:
-                    emo = random.choice(["👍", "😂", "🔥", "❤", "👌", "👏"])
+                    emo = random.choice(["<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>", "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>", "<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji>", "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>"])
                     await e.react(emo)
                     if random.random() < 0.7: return 
                 except Exception as ex:
@@ -1950,7 +1950,7 @@ class GoyPulseMod(loader.Module):
                 try:
                     ttl = self._parse_duration_seconds(parts[1])
                 except Exception:
-                    return await self._ans(m, "❌ Неверный формат времени. Примеры: <code>30</code>, <code>45m</code>, <code>2h</code>, <code>1d</code>.")
+                    return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Неверный формат времени. Примеры: <code>30</code>, <code>45m</code>, <code>2h</code>, <code>1d</code>.")
             st.on = (parts[0] == "on")
             st.auto_off_u = (time.time() + ttl) if (st.on and ttl > 0) else 0.0
             self._glob_stop = False
@@ -1960,12 +1960,12 @@ class GoyPulseMod(loader.Module):
                 mins = max(1, int(math.ceil(ttl / 60)))
                 timer_note = f"\n⏱️ Автовыключение через <code>{mins}</code> мин."
             t = self.strings("on").format(timer_note) if st.on else self.strings("off")
-            if st.on and not st.parsed_cnt: t += "\n\n⚠️ <b>База пуста!</b> Напиши <code>.gpref</code>"
+            if st.on and not st.parsed_cnt: t += "\n\n<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>База пуста!</b> Напиши <code>.gpref</code>"
             await self._ans(m, t, log=True)
             try: await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception as e:
                 if self._c: self._c.loop.create_task(self._log(f"<b>[GPULSE EXEC ERR]</b> <code>{e}</code>"))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
 
     @loader.command(ru_doc="| Вывести статистику работы")
     async def gpstatcmd(self, m: Message):
@@ -1973,13 +1973,13 @@ class GoyPulseMod(loader.Module):
             if not m.is_group: return await self._ans(m, self.strings("og"))
             st = self._chs[m.chat_id]
             tw = ", ".join([w for w, _ in st.tfq.most_common(20) if len(w) >= 4][:7]) if st.tfq else "Пусто"
-            warn = "\n\n⚠️ <b>Бот не обучался! Запусти</b> <code>.gpref</code>" if not st.parsed_cnt else ""
+            warn = "\n\n<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Бот не обучался! Запусти</b> <code>.gpref</code>" if not st.parsed_cnt else ""
             if self._is_restricted_mode():
-                warn += f"\n\n🔒 <b>Ограниченный режим:</b> <code>{self._restricted_reason()}</code>"
+                warn += f"\n\n<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Ограниченный режим:</b> <code>{self._restricted_reason()}</code>"
             lm_str = "Безлимит" if st.lim == 0 else f"{st.lim} msg"
             cd_str = "Без задержки" if st.cd_m == 0 and st.cd_x == 0 else f"{st.cd_m}-{st.cd_x} сек"
             await self._ans(m, self.strings("st").format(
-                on="Вкл ✅" if st.on else "Выкл ❌", 
+                on="Вкл <tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>" if st.on else "Выкл <tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji>", 
                 pc=st.parsed_cnt, 
                 wc=st.w_cnt,
                 m=len(st.msgs), 
@@ -1994,11 +1994,11 @@ class GoyPulseMod(loader.Module):
                 ig=len(st.ign), 
                 warn=warn
             ))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
 
     @loader.command(ru_doc="[check|apply|status] | Проверка и применение GitHub-обновлений")
     async def gppathcmd(self, m: Message):
-        await self._ans(m, f"📂 Путь модуля: <code>{__file__}</code>\nВерсия: <code>{self._module_version}</code>")
+        await self._ans(m, f"<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> Путь модуля: <code>{__file__}</code>\nВерсия: <code>{self._module_version}</code>")
 
     @loader.command(ru_doc="| Собрать сообщения и обновить память бота")
     async def gprefcmd(self, m: Message):
@@ -2011,10 +2011,10 @@ class GoyPulseMod(loader.Module):
             mod = " (продолжение)" if st.last_mid else ""
             msg_res = await self._ans(m, self.strings("ref_st").format(mod))
             act_msg = msg_res if isinstance(msg_res, Message) else m
-            await self._log(f"🧬 <b>Started training</b> in chat <code>{cid}</code>{mod}", cat="lrn")
+            await self._log(f"<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Started training</b> in chat <code>{cid}</code>{mod}", cat="lrn")
 
             asyncio.create_task(self._lrn(cid, act_msg))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="<минуты> | Мут бота на время")
     async def gpmutecmd(self, m: Message):
         try:
@@ -2024,7 +2024,7 @@ class GoyPulseMod(loader.Module):
             v = int(a) if a.isdigit() else 15
             self._chs[m.chat_id].mute_u = time.time() + (v * 60)
             await self._ans(m, self.strings("mute").format(v))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="| Узнать вайб чата")
     async def gpinfocmd(self, m: Message):
         try:
@@ -2032,7 +2032,7 @@ class GoyPulseMod(loader.Module):
             st = self._chs[m.chat_id]
             tw = ", ".join([w for w, _ in st.tfq.most_common(25) if len(w) >= 4][:6]) if st.tfq else "Тишина"
             act_rate = len(st.rec)
-            act_lvl = "Высокая 🔥" if act_rate > 80 else "Средняя 💬" if act_rate > 30 else "Низкая 💤"
+            act_lvl = "Высокая <tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>" if act_rate > 80 else "Средняя <tg-emoji emoji-id=5253590213917158323>💬</tg-emoji>" if act_rate > 30 else "Низкая <tg-emoji emoji-id=5253521692008917018>🌙</tg-emoji>"
             c_agr = c_sm = c_sh = c_nt = 0
             u_act = Counter()
             for msg in list(st.rec):
@@ -2045,7 +2045,7 @@ class GoyPulseMod(loader.Module):
                     elif cat == "шок": c_sh += 1
                     else: c_nt += 1
             tot = c_agr + c_sm + c_sh + c_nt or 1
-            ton = f"├─ 🤬 Траур/Агр: <code>{int(c_agr/tot*100)}%</code>\n├─ 😂 Позитив: <code>{int(c_sm/tot*100)}%</code>\n└─ 😱 Шок: <code>{int(c_sh/tot*100)}%</code>"
+            ton = f"├─ 🤬 Траур/Агр: <code>{int(c_agr/tot*100)}%</code>\n├─ <tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Позитив: <code>{int(c_sm/tot*100)}%</code>\n└─ 😱 Шок: <code>{int(c_sh/tot*100)}%</code>"
             
             async def get_user_info(uid):
                 if not uid: return "???"
@@ -2070,21 +2070,21 @@ class GoyPulseMod(loader.Module):
             top_u_str = await get_user_info(top_u_id)
             dushnila_str = await get_user_info(dushnila_id)
 
-            warn = "\n\n⚠️ <b>Пусто. Сделай</b> <code>.gpref</code>" if not st.parsed_cnt else ""
-            out = self.strings("info").format(tonality=ton, act=act_lvl, tw=tw, warn=warn) + f"\n\n👑 <b>Топ чата:</b> {top_u_str}\n👓 <b>Главный душнила:</b> {dushnila_str}"
+            warn = "\n\n<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>Пусто. Сделай</b> <code>.gpref</code>" if not st.parsed_cnt else ""
+            out = self.strings("info").format(tonality=ton, act=act_lvl, tw=tw, warn=warn) + f"\n\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>Топ чата:</b> {top_u_str}\n<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>Главный душнила:</b> {dushnila_str}"
             
             if hasattr(m, 'out') and m.out:
                 await m.edit(out)
             else:
                 await self._ans(m, out)
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="<реплай> | Игнор юзера")
     async def gpignorecmd(self, m: Message):
         try:
             if not getattr(m, 'is_reply', False): return await self._ans(m, self.strings("h_ign"))
             rep = await m.get_reply_message()
             uid = getattr(rep, 'sender_id', None)
-            if not uid: return await self._ans(m, "❌ Нет ID.")
+            if not uid: return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Нет ID.")
             st = self._chs[m.chat_id]
             if uid in st.ign:
                 st.ign.remove(uid)
@@ -2096,7 +2096,7 @@ class GoyPulseMod(loader.Module):
             except Exception as e:
                 if self._c: self._c.loop.create_task(self._log(f"<b>[IGNORE EXEC ERR]</b> <code>{e}</code>"))
 
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="| Полный сброс памяти и настроек")
     async def gpresetcmd(self, m: Message):
         try:
@@ -2112,7 +2112,7 @@ class GoyPulseMod(loader.Module):
             try: await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception as e:
                 if self._c: self._c.loop.create_task(self._log(f"<b>[RESET EXEC ERR]</b> <code>{e}</code>"))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="| Полный сброс памяти чата")
     async def gpclearcmd(self, m: Message):
         try:
@@ -2124,7 +2124,7 @@ class GoyPulseMod(loader.Module):
             try: await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception as e:
                 if self._c: self._c.loop.create_task(self._log(f"<b>[CLEAR EXEC ERR]</b> <code>{e}</code>"))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="| Выключить ВЕЗДЕ")
     async def gpkillcmd(self, m: Message):
         try:
@@ -2135,7 +2135,7 @@ class GoyPulseMod(loader.Module):
             try: await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception as e:
                 if self._c: self._c.loop.create_task(self._log(f"<b>[KILL EXEC ERR]</b> <code>{e}</code>"))
-        except Exception as e: await self._ans(m, f"❌ Ошибка: {e}")
+        except Exception as e: await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
     @loader.command(ru_doc="<k> <v> [target_group] | Настройка параметров")
     async def gpsetcmd(self, m: Message):
         try:
@@ -2170,32 +2170,32 @@ class GoyPulseMod(loader.Module):
                 key, mn, mx, as_bool = glob_map[p]
                 if mn is not None and mx is not None:
                     if not isinstance(v, int):
-                        return await self._ans(m, "❌ Для этого параметра значение должно быть целым числом.")
+                        return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Для этого параметра значение должно быть целым числом.")
                     val = max(mn, min(v, mx))
                 else: val = v
                 self.config[key] = bool(val) if as_bool else int(val)
                 await self._ans(m, self.strings("set").format(p, val), log=True)
                 return
             if p not in chat_map:
-                return await self._ans(m, "❌ Неверный параметр.")
+                return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Неверный параметр.")
             if len(a) >= 3:
                 cid = await self._resolve_chat_target(a[2], current=m.chat_id if getattr(m, "is_group", False) else None, require_group=True)
             else:
                 if not getattr(m, "is_group", False):
-                    return await self._ans(m, "❌ Для параметров группы укажи target_group либо запусти команду в группе.")
+                    return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Для параметров группы укажи target_group либо запусти команду в группе.")
                 cid = int(m.chat_id)
             k, mn, mx = chat_map[p]
             val = max(mn, min(v, mx))
             st = self._chs[cid]
             setattr(st, k, val)
             self._sv()
-            await self._ans(m, f"⚙️ Параметр <code>{p}</code> для <code>{cid}</code> = <code>{val}</code>", log=True)
+            await self._ans(m, f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Параметр <code>{p}</code> для <code>{cid}</code> = <code>{val}</code>", log=True)
             try:
                 await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception:
                 pass
         except Exception as e:
-            await self._ans(m, f"❌ Ошибка: {e}")
+            await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Ошибка: {e}")
 
     @loader.command(ru_doc="[all|here|chat...] | Подсистема резервных копий")
     async def gphcmd(self, m: Message):
@@ -2213,14 +2213,14 @@ class GoyPulseMod(loader.Module):
             args_str = cmd_full[len(cmd_parts[0]):].strip()
             allowed = {"gpstat", "gpinfo", "gpulse", "gpset", "gpmute", "gpignore", "gpref"}
             if cmd_name not in allowed:
-                return await self._ans(m, "❌ Команда недоступна в .gph.")
+                return await self._ans(m, "<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Команда недоступна в .gph.")
             tgt_id = await self._resolve_chat_target(target_str, current=m.chat_id, require_group=False)
             chat = await m.client.get_entity(tgt_id)
             is_group = self._is_group_entity(chat)
             title = getattr(chat, "title", getattr(chat, "username", str(tgt_id)))
             handler = next((getattr(self, n) for n in dir(self) if n.lower() == f"{cmd_name}cmd"), None)
             if not handler:
-                return await self._ans(m, f"❌ Команда <code>{cmd_name}</code> не найдена.")
+                return await self._ans(m, f"<tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Команда <code>{cmd_name}</code> не найдена.")
 
             class StealthMsg:
                 def __init__(self, orig, tid, txt, log_f, grp):
@@ -2276,7 +2276,7 @@ class GoyPulseMod(loader.Module):
                 me_id = 0
             if getattr(self, "inline", None) and hasattr(self.inline, "form"):
                 try:
-                    anchor = await client.send_message(me_id or "me", "📡 GoyPulse установлен")
+                    anchor = await client.send_message(me_id or "me", "<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji> GoyPulse установлен")
                     await self.inline.form(
                         text="<b>GoyPulse</b>",
                         message=anchor,
@@ -2307,7 +2307,7 @@ class GoyPulseMod(loader.Module):
             self._ld()
             self._tamper_mode = bool(self.get("gp_tamper_mode", False))
             await self._start_bg_tasks()
-            await self._log("GoyPulse by goy(@samsepi0l_ovf) запущен", cat="lrn")
+            await self._log("GoyPulse запущен", cat="lrn")
         except Exception as e:
             if self._c:
                 self._c.loop.create_task(self._log(f"<b>[CRITICAL START ERR]</b> <code>{e}</code>", cat="err"))
