@@ -16,7 +16,7 @@
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png
 # meta developer: @GoyModules
 # requires: aiohttp
-
+__version__ = (1, 0)
 import re
 import aiohttp
 import asyncio
