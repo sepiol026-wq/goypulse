@@ -4,7 +4,9 @@
 # Description: Inline DOOM mini-game module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/doom.png
 
-__version__ = (1, 0, 1)
+"""запускает doom."""
+
+__version__ = (1, 1, 0)
 
 import math
 import time
@@ -51,7 +53,7 @@ class Doom(loader.Module):
     @loader.command(ru_doc="Справка по игре DOOM")
     async def hdoomcmd(self, message: Message):
         text = (
-            "📖 <b>Справка по DOOM</b>\n\n"
+            "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Справка по DOOM</b>\n\n"
             "<b>Интерфейс (Карта / 3D):</b>\n"
             "<code>P</code> - Ваш персонаж\n"
             "<code>E</code> / <code>Ж</code> - Монстр (Атакует вблизи)\n"
@@ -171,11 +173,11 @@ class Doom(loader.Module):
         mmap = self.get_mini_map(st)
 
         hud = (
-            f"🗺 <b>Mini-Map</b>:\n"
+            f"<tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <b>Mini-Map</b>:\n"
             f"<pre>{mmap}</pre>\n"
-            f"📺 <b>Action</b>:\n"
+            f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Action</b>:\n"
             f"<pre>{frame}</pre>\n"
-            f"❤️ HP: <b>{st['hp']}</b> | 🔫 Ammo: <b>{st['ammo']}</b> | <tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Kills: <b>{st['score']}</b>\n"
+            f"<tg-emoji emoji-id=5253549669425882943>🔋</tg-emoji> HP: <b>{st['hp']}</b> | <tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> Ammo: <b>{st['ammo']}</b> | <tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Kills: <b>{st['score']}</b>\n"
             f"<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> <i>{st['log']}</i>"
         )
 
@@ -239,19 +241,27 @@ class Doom(loader.Module):
 
         st["a"] += dr
         if dx or dy:
-            nx, ny = st["x"] + dx, st["y"] + dy
-            if 0 <= int(nx) < self.map_w and 0 <= int(ny) < self.map_h:
-                cell = st["map"][int(ny)][int(nx)]
-                if cell not in ["#", "E"]:
-                    st["x"], st["y"] = nx, ny
-                    if cell == "A":
-                        st["ammo"] += 5
-                        st["log"] = "Патроны! +5"
-                        st["map"][int(ny)][int(nx)] = " "
-                    elif cell == "H":
-                        st["hp"] = min(100, st["hp"] + 25)
-                        st["log"] = "Аптечка! +25 HP"
-                        st["map"][int(ny)][int(nx)] = " "
+            old_x, old_y = st["x"], st["y"]
+            nx = st["x"] + dx
+            if 0 <= int(nx) < self.map_w and st["map"][int(st["y"])][int(nx)] not in ["#", "E"]:
+                st["x"] = nx
+            ny = st["y"] + dy
+            if 0 <= int(ny) < self.map_h and st["map"][int(ny)][int(st["x"])] not in ["#", "E"]:
+                st["y"] = ny
+
+            cell_x, cell_y = int(st["x"]), int(st["y"])
+            if 0 <= cell_x < self.map_w and 0 <= cell_y < self.map_h:
+                cell = st["map"][cell_y][cell_x]
+                if cell == "A":
+                    st["ammo"] += 5
+                    st["log"] = "Патроны! +5"
+                    st["map"][cell_y][cell_x] = " "
+                elif cell == "H":
+                    st["hp"] = min(100, st["hp"] + 25)
+                    st["log"] = "Аптечка! +25 HP"
+                    st["map"][cell_y][cell_x] = " "
+            if old_x == st["x"] and old_y == st["y"] and (dx or dy):
+                st["log"] = "Упёрлись в стену."
         st["dirty"] = True
 
     async def action_shoot(self, call):
@@ -273,7 +283,7 @@ class Doom(loader.Module):
                 if st["map"][ty][tx] == "E":
                     st["map"][ty][tx] = " "
                     st["score"] += 1
-                    st["log"] = "💥 Монстр разорван!"
+                    st["log"] = "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Монстр разорван!"
                     hit = True
                     break
                 elif st["map"][ty][tx] == "#":
@@ -289,7 +299,7 @@ class Doom(loader.Module):
                 m.append(list(row.replace(".", " ")))
 
             self.sessions["doom_user"] = {
-                "x": 2.0, "y": 2.0, "a": 0.0,
+                "x": 1.5, "y": 1.5, "a": 0.0,
                 "hp": 100, "ammo": 10, "score": 0,
                 "log": "Добро пожаловать в Ад.",
                 "last_render": 0, "last_ai": 0,
@@ -334,13 +344,13 @@ class Doom(loader.Module):
     async def action_rot_r(self, call): self.update_player(0, 0, 0.4)
     async def action_fw(self, call):
         a = self.sessions.get("doom_user", {}).get("a", 0)
-        self.update_player(math.sin(a)*0.8, math.cos(a)*0.8, 0)
+        self.update_player(math.sin(a)*0.45, math.cos(a)*0.45, 0)
     async def action_bw(self, call):
         a = self.sessions.get("doom_user", {}).get("a", 0)
-        self.update_player(-math.sin(a)*0.8, -math.cos(a)*0.8, 0)
+        self.update_player(-math.sin(a)*0.45, -math.cos(a)*0.45, 0)
     async def action_m_l(self, call):
         a = self.sessions.get("doom_user", {}).get("a", 0) - math.pi/2
-        self.update_player(math.sin(a)*0.6, math.cos(a)*0.6, 0)
+        self.update_player(math.sin(a)*0.4, math.cos(a)*0.4, 0)
     async def action_m_r(self, call):
         a = self.sessions.get("doom_user", {}).get("a", 0) + math.pi/2
-        self.update_player(math.sin(a)*0.6, math.cos(a)*0.6, 0)
+        self.update_player(math.sin(a)*0.4, math.cos(a)*0.4, 0)
