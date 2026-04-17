@@ -1246,6 +1246,11 @@ class GoySecurity(loader.Module):
                         scan_res = self.av.scan([(module_name, source)])
                     finally:
                         self.av.mode = prev_mode
+                    scan_res["decoded"] = source
+                    scan_res["origin"] = "autoscan"
+                    scan_res["module_name"] = module_name
+                    self._cur = str(scan_res.get("fp", "") or self._cur)
+                    self._last_res = scan_res
                     provider = self._active_provider()
                     token = self._provider_token(provider)
                     model = self._provider_model(provider)
@@ -1283,7 +1288,8 @@ class GoySecurity(loader.Module):
                             "<b><tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> GoySecurity</b>\n"
                             f"<b><tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Модуль:</b> <code>{html.escape(pretty_name)}</code>\n"
                             "<b><tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> Статус:</b> <code>НЕБЕЗОПАСЕН</code>\n"
-                            "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Установка автоматически отклонена GoySecurity</b>"
+                            "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Установка автоматически отклонена GoySecurity</b>\n"
+                            "<i>Для детального отчёта выполните <code>.gwhy</code>.</i>"
                         )
                         await self._guard_update_or_send(guard_message, block_text, delete_first=True)
                         raise self._guard_block_error(
@@ -2269,7 +2275,7 @@ class GoySecurity(loader.Module):
     async def gwhycmd(self, message):
         """— Показать подробный отчет по последнему скану"""
         if not self._last_res:
-            err_msg = self.strings("err").format(err="Сначала запустите .gscan")
+            err_msg = self.strings("err").format(err="Сначала запустите .gscan или дождитесь автоскана установки")
             await utils.answer(message, err_msg)
             return
 
