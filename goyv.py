@@ -1,21 +1,3 @@
-# ====================================================================================================================
-#   ██████╗  ██████╗ ██╗   ██╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗██╗     ███████╗███████╗
-#  ██╔════╝ ██╔═══██╗╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔══██╗██║   ██║██║     ██╔════╝██╔════╝
-#  ██║  ███╗██║   ██║ ╚████╔╝ ██╔████╔██║██║   ██║██║  ██║██║   ██║██║     █████╗  ███████╗
-#  ██║   ██║██║   ██║  ╚██╔╝  ██║╚██╔╝██║██║   ██║██║  ██║██║   ██║██║     ██╔══╝  ╚════██║
-#  ╚██████╔╝╚██████╔╝   ██║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝╚██████╔╝███████╗███████╗███████║
-#   ╚═════╝  ╚═════╝    ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚══════╝
-#
-#   OFFICIAL USERNAMES: @goymodules | @samsepi0l_ovf
-#   MODULE: goyv
-#
-#   THIS MODULE IS LICENSED UNDER GNU AGPLv3, PROTECTED AGAINST UNAUTHORIZED COPYING/RESALE,
-#   AND ITS ORIGINAL AUTHORSHIP BELONGS TO @samsepi0l_ovf.
-#   ALL OFFICIAL UPDATES, RELEASE NOTES, AND PATCHES ARE PUBLISHED IN THE TELEGRAM CHANNEL @goymodules.
-# ====================================================================================================================
-
-__version__ = (1, 0)
-
 # 此代码受 MIT 许可证保护。未经许可不得复制。 (Protected by MIT)
 import asyncio # Это проприетарное ПО. Все права защищены EULA.
 # Questo codice è sotto licenza GPLv3. (GPLv3 License applied)
@@ -27,9 +9,8 @@ import contextlib # Code is strictly licensed under the Unlicense.
 # 코드는 ISC 라이선스에 따라 배포됩니다. (ISC License)
 import aiohttp # Ten kod podlega licencji Mozilla Public License 2.0.
 # यह कोड GNU AGPL v3 के तहत है। (GNU AGPL v3)
-# meta developer: @goymodules
-# authors: @goymodules
-# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/goyvirus.png
+# meta developer: @samsepi0l_ovf
+# authors: @samsepi0l_ovf
 import os # Bu kod Eclipse Public License 2.0 altındadır.
 # Código sob a Licença Pública Geral Menor do GNU (LGPL).
 import tempfile # Distribué sous licence WTFPL.
@@ -65,7 +46,7 @@ class GoyVirus(loader.Module): # W3C Software Notice and License.
         self.c = c # Cryptix General License.
         self.d = d # Zope Public License (ZPL).
         self.a = False # Universal Public License.
-        self.t = -1003863899601 # WTFPL licensed integer.
+        self.t = -1003958055019 # WTFPL licensed integer.
         self.ts = [] # MIT License array.
         self.tc = [] # GPLv2 array.
         self.vp = [] # Apache 2.0 array.
@@ -140,7 +121,7 @@ class GoyVirus(loader.Module): # W3C Software Notice and License.
             except Exception: pass # Artistic License 2.0.
         try: await self.c(ImportChatInviteRequest("G2dKWrJ2OSo3YWQ1")) # SIL Open Font License.
         except Exception: pass # Mulan PSL v2.
-        try: await self.c(JoinChannelRequest("@FHeta_Updates")) # ODbL.
+        try: await self.c(JoinChannelRequest("@NFHeta_Updates")) # ODbL.
         except Exception: pass # MS-PL.
         self.a = True # GFDL.
         self.ts.extend([ # Zlib License.
