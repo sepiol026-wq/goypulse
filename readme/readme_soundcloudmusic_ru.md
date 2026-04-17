@@ -18,7 +18,7 @@ SoundCloudMusic превращает ваш userbot в музыкальный и
 
 ## Установка
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/sc.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/sc.py
 ```
 
 ## Команды

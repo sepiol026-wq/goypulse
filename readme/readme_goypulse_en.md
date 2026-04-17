@@ -18,7 +18,7 @@ GoyPulse is an advanced Markov-based autoreply engine. It learns from chat messa
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goypulse.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/goypulse.py
 ```
 
 ## Core commands

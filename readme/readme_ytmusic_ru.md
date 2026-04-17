@@ -18,7 +18,7 @@ YTMusic — модуль для музыкальных сценариев чер
 
 ## Установка
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/yt.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/yt.py
 ```
 
 ## Команды

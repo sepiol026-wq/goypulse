@@ -18,7 +18,7 @@ YTMusic is a YouTube-based music workflow module: search tracks, send audio to c
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/yt.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/yt.py
 ```
 
 ## Commands

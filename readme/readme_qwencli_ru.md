@@ -15,7 +15,7 @@ QwenCLI — это многофункциональный AI-модуль для
 
 ## Установка
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/QwenCLI.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/QwenCLI.py
 ```
 
 ## Первый запуск (важно)

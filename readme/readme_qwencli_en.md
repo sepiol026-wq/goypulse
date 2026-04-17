@@ -15,7 +15,7 @@ The module exposes an internal command suite and relies on dependencies that sho
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/QwenCLI.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/QwenCLI.py
 ```
 
 ## First run (important)

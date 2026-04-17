@@ -17,7 +17,7 @@
 # requires: cryptography
 # meta developer: @goymodules
 # authors: @goymodules
-# Description: <tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> Нейро-автоответчик на цепях маркова с полезными функциями.
+# Description: Нейро-автоответчик на цепях маркова с полезными функциями.
 # Этот модуль разработан исключительно для личного использования и автоматизации чатов.
 # Функции автообновления, логирования и скрытого режима являются легитимными инструментами
 # пользователя для управления ботом и не предназначены для несанкционированного доступа.
@@ -94,7 +94,7 @@ class CSt:
 
 @loader.tds
 class GoyPulseMod(loader.Module):
-    """<tg-emoji emoji-id=5256250435055920155>1️⃣</tg-emoji> Нейро-автоответчик GoyPulse by goy(@samsepi0l_ovf)"""
+    """Нейро-автоответчик GoyPulse by goy(@samsepi0l_ovf)"""
     strings = {
         "name": "GoyPulse",
         "brand": "GoyPulse by goy(@samsepi0l_ovf)",

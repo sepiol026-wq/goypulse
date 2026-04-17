@@ -15,7 +15,7 @@ The module parses a source URL/media target, resolves download strategy, then se
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/omni.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/omni.py
 ```
 
 ## Commands

@@ -15,7 +15,7 @@ The module runs a set of checks (DNS/host/network indicators) and returns struct
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/recon.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/recon.py
 ```
 
 ## Commands
