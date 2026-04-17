@@ -1,32 +1,33 @@
-# YTMusic - README EN
+# YTMusic — README EN
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
 ![YTMusic Banner](../assets/ytmusic.png)
 
 ## About module
-YouTube Music module with banners, playlists and export/import.
+YTMusic is a YouTube-based music workflow module: search tracks, send audio to chat, and manage personal playlist databases.
+
+## How it works
+- Finds tracks by text query.
+- Delivers audio into current chat.
+- Manages local playlist DB.
+- Supports library migration through import/export.
 
 ## Module file
 - `yt.py`
 
-## Quick install
+## Installation
 ```text
 .dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/yt.py
 ```
 
 ## Commands
-- `.yt`
-- `.ytpl`
-- `.ytadd`
-- `.ytrm`
-- `.ytimport`
-- `.ytexport`
-- `.ytbatch`
+- `.yt`, `.ytpl`, `.ytadd`, `.ytrm`
+- `.ytimport`, `.ytexport`, `.ytbatch`
 
 ## Navigation
 - [Back to English index](./readme_en.md)
 - [Русская версия](./readme_ytmusic_ru.md)
 
-## Contacts
-- Telegram channel: [@goymodules](https://t.me/goymodules)
+## License
+This README and module are protected under **GNU AGPLv3**. Details: [LICENSE](../LICENSE).

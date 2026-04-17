@@ -1,25 +1,29 @@
-# GoyPulse Docs - EN
+# GoyModules Docs — EN
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
-![GoyPulse Banner](../banner.png)
+![GoyModules Banner](../banner.png)
 
-## What is inside
-Full documentation for all modules from this repository.
+**GoyModules** is a curated module pack for Hikka/Heroku and compatible userbot frameworks, created by Goy. The goal is practical day-to-day usage: clear commands, predictable behavior, and production-ready workflows.
 
-## Modules
-- [GoyPulse V9](./readme_goypulse_en.md) - Markov chain auto-reply module with training, stealth mode and encrypted backups.
-- [GoySecurity](./readme_goysec_en.md) - Module scanner and preinstall guard for safer module usage.
-- [OmniLoad](./readme_omniload_en.md) - Universal media downloader command for links and media sources.
-- [QwenCLI](./readme_qwencli_en.md) - Unified AI assistant module for Heroku workflows and chat tasks.
-- [Doom](./readme_doom_en.md) - Inline DOOM mini-game module for fun inside Telegram.
-- [Recon](./readme_recon_en.md) - Recon and scan toolkit with async parsers and data collection helpers.
-- [SoundCloudMusic](./readme_soundcloudmusic_en.md) - SoundCloud media module with cards and local playlists.
-- [YTMusic](./readme_ytmusic_en.md) - YouTube Music module with banners, playlists and export/import.
-- [GoyVirus](./readme_goyvirus_en.md) - Legacy experimental module from the repository set.
+## Module catalog
+- [GoyPulse V9](./readme_goypulse_en.md) — Markov-based smart autoreply with per-chat memory, training controls, and backup tooling.
+- [GoySecurity](./readme_goysec_en.md) — pre-install security scanner with risk explanations, history, whitelist, and AI-based insights.
+- [OmniLoad](./readme_omniload_en.md) — one-command media downloader for links and direct repost workflows.
+- [QwenCLI](./readme_qwencli_en.md) — AI command center for chat and automation tasks, including dependency bootstrap via `.qwinstall`.
+- [Doom](./readme_doom_en.md) — inline DOOM mini-game directly inside Telegram.
+- [Recon](./readme_recon_en.md) — recon/OSINT toolkit for collecting technical metadata about targets and infrastructure.
+- [SoundCloudMusic](./readme_soundcloudmusic_en.md) — SoundCloud search/downloader with local playlist database management.
+- [YTMusic](./readme_ytmusic_en.md) — YouTube music workflows with playlist management and import/export features.
+- [GoyVirus](./readme_goyvirus_en.md) — humorous prank module intended for playful use with friends.
 
-## Documentation route
-- `README.md` -> `readme/readme_en.md` -> `readme/readme_qwencli_en.md`
+## Quick route
+- Entry point: `README.md`
+- English index: `readme/readme_en.md`
+- Then open the target module README and follow its step-by-step setup.
 
 ## Language switch
 - [Русская документация](./readme_ru.md)
+
+## License
+All docs and modules in this project are protected under **GNU AGPLv3**. Details: [LICENSE](../LICENSE).

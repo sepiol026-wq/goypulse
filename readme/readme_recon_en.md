@@ -1,26 +1,29 @@
-# Recon - README EN
+# Recon — README EN
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
 ![Recon Banner](../assets/recon.png)
 
 ## About module
-Recon and scan toolkit with async parsers and data collection helpers.
+Recon is a technical recon/OSINT helper module for collecting base network and domain metadata during infrastructure analysis.
+
+## How it works
+The module runs a set of checks (DNS/host/network indicators) and returns structured output to chat for quick triage.
 
 ## Module file
 - `recon.py`
 
-## Quick install
+## Installation
 ```text
 .dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/recon.py
 ```
 
 ## Commands
-- Commands are not exposed as *cmd-methods* in code.
+- The module provides multiple recon commands. Check your in-bot help after loading for the exact command map.
 
 ## Navigation
 - [Back to English index](./readme_en.md)
 - [Русская версия](./readme_recon_ru.md)
 
-## Contacts
-- Telegram channel: [@goymodules](https://t.me/goymodules)
+## License
+This README and module are protected under **GNU AGPLv3**. Details: [LICENSE](../LICENSE).

@@ -1,26 +1,29 @@
-# OmniLoad - README EN
+# OmniLoad — README EN
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
 ![OmniLoad Banner](../assets/omniload.png)
 
 ## About module
-Universal media downloader command for links and media sources.
+OmniLoad is a universal media downloader that fetches content by link and reposts it directly in your chat workflow.
+
+## How it works
+The module parses a source URL/media target, resolves download strategy, then sends the fetched media back into the current chat.
 
 ## Module file
 - `omni.py`
 
-## Quick install
+## Installation
 ```text
 .dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/omni.py
 ```
 
 ## Commands
-- `.dl`
+- `.dl` — main download command.
 
 ## Navigation
 - [Back to English index](./readme_en.md)
 - [Русская версия](./readme_omniload_ru.md)
 
-## Contacts
-- Telegram channel: [@goymodules](https://t.me/goymodules)
+## License
+This README and module are protected under **GNU AGPLv3**. Details: [LICENSE](../LICENSE).
