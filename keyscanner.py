@@ -151,7 +151,7 @@ class KeyScanner(loader.Module):
     }
 
     def __init__(self):
-        # Удалены регулярки, которые нельзя быстро и надежно проверить (AKIA, mailgun, sq0csp, airtable)
+        
         self.key_regex = re.compile(
             r"\b("
             r"sk-[a-zA-Z0-9\-_]{20,}|"                  
@@ -232,7 +232,7 @@ class KeyScanner(loader.Module):
                 ant_headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
                 data = {"model": "claude-3-haiku-20240307", "max_tokens": 1, "messages": [{"role": "user", "content": "a"}]}
                 async with session.post("https://api.anthropic.com/v1/messages", headers=ant_headers, json=data, timeout=5) as r:
-                    # У Anthropic 401 = невалид. Остальное (вкл 400 или 429) = валид ключ
+                    
                     return "Anthropic", r.status not in [401, 403]
             elif key.startswith("hf_"):
                 async with session.get("https://huggingface.co/api/whoami-v2", headers=headers, timeout=5) as r:
@@ -260,7 +260,7 @@ class KeyScanner(loader.Module):
                 async with session.get("https://api.figma.com/v1/me", headers={"X-Figma-Token": key}, timeout=5) as r:
                     return "Figma", r.status == 200
 
-            # Строгая конкурентная проверка для неопознанных 'sk-' ключей
+            
             if key.startswith("sk-"):
                 providers = {
                     "OpenAI": "https://api.openai.com/v1/models",
