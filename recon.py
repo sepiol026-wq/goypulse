@@ -1,6 +1,23 @@
+# ====================================================================================================================
+#   ██████╗  ██████╗ ██╗   ██╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗██╗     ███████╗███████╗
+#  ██╔════╝ ██╔═══██╗╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔══██╗██║   ██║██║     ██╔════╝██╔════╝
+#  ██║  ███╗██║   ██║ ╚████╔╝ ██╔████╔██║██║   ██║██║  ██║██║   ██║██║     █████╗  ███████╗
+#  ██║   ██║██║   ██║  ╚██╔╝  ██║╚██╔╝██║██║   ██║██║  ██║██║   ██║██║     ██╔══╝  ╚════██║
+#  ╚██████╔╝╚██████╔╝   ██║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝╚██████╔╝███████╗███████╗███████║
+#   ╚═════╝  ╚═════╝    ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚══════╝
+#
+#   OFFICIAL USERNAMES: @goymodules | @samsepi0l_ovf
+#   MODULE: recon
+#
+#   THIS MODULE IS LICENSED UNDER GNU AGPLv3, PROTECTED AGAINST UNAUTHORIZED COPYING/RESALE,
+#   AND ITS ORIGINAL AUTHORSHIP BELONGS TO @samsepi0l_ovf.
+#   ALL OFFICIAL UPDATES, RELEASE NOTES, AND PATCHES ARE PUBLISHED IN THE TELEGRAM CHANNEL @goymodules.
+# ====================================================================================================================
+
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/recon.png
 # meta developer: @goymodules
 # requires: aiohttp beautifulsoup4
+__version__ = (1, 0)
 
 import aiohttp
 import asyncio
@@ -45,39 +62,39 @@ class Recon(loader.Module):
     """scan toolkit."""
     strings = {
         "name": "Recon",
-        "no_args": "<b>❌ Specify target.</b>",
-        "processing": "<b>🔍 Scanning: <code>{}</code>...</b>\n<i>Working...</i>",
-        "stopped": "<b>🛑 Process killed.</b>",
-        "no_active": "<b>❌ No active processes.</b>",
-        "not_owner": "<b>❌ Not your task.</b>",
+        "no_args": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Specify target.</b>",
+        "processing": "<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Scanning: <code>{}</code>...</b>\n<i>Working...</i>",
+        "stopped": "<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Process killed.</b>",
+        "no_active": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> No active processes.</b>",
+        "not_owner": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Not your task.</b>",
     }
     strings_ru = {
-        "no_args": "<b>❌ Укажи таргет.</b>",
-        "processing": "<b>🔍 Сканирую: <code>{}</code>...</b>\n<i>Работаю...</i>",
-        "stopped": "<b>🛑 Процесс убит.</b>",
-        "no_active": "<b>❌ Нет активных процессов.</b>",
-        "not_owner": "<b>❌ Не твоя таска.</b>",
+        "no_args": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Укажи таргет.</b>",
+        "processing": "<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Сканирую: <code>{}</code>...</b>\n<i>Работаю...</i>",
+        "stopped": "<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Процесс убит.</b>",
+        "no_active": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Нет активных процессов.</b>",
+        "not_owner": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Не твоя таска.</b>",
     }
     strings_uz = {
-        "no_args": "<b>❌ Targetni kiriting.</b>",
-        "processing": "<b>🔍 Skanerlash: <code>{}</code>...</b>\n<i>Ishlamoqda...</i>",
-        "stopped": "<b>🛑 Jarayon to'xtatildi.</b>",
-        "no_active": "<b>❌ Faol jarayonlar yo'q.</b>",
-        "not_owner": "<b>❌ Bu sizning vazifangiz emas.</b>",
+        "no_args": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Targetni kiriting.</b>",
+        "processing": "<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Skanerlash: <code>{}</code>...</b>\n<i>Ishlamoqda...</i>",
+        "stopped": "<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Jarayon to'xtatildi.</b>",
+        "no_active": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Faol jarayonlar yo'q.</b>",
+        "not_owner": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Bu sizning vazifangiz emas.</b>",
     }
     strings_de = {
-        "no_args": "<b>❌ Ziel angeben.</b>",
-        "processing": "<b>🔍 Scanne: <code>{}</code>...</b>\n<i>Arbeite...</i>",
-        "stopped": "<b>🛑 Prozess beendet.</b>",
-        "no_active": "<b>❌ Keine aktiven Prozesse.</b>",
-        "not_owner": "<b>❌ Nicht deine Aufgabe.</b>",
+        "no_args": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Ziel angeben.</b>",
+        "processing": "<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Scanne: <code>{}</code>...</b>\n<i>Arbeite...</i>",
+        "stopped": "<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Prozess beendet.</b>",
+        "no_active": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Keine aktiven Prozesse.</b>",
+        "not_owner": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Nicht deine Aufgabe.</b>",
     }
     strings_es = {
-        "no_args": "<b>❌ Indica el objetivo.</b>",
-        "processing": "<b>🔍 Escaneando: <code>{}</code>...</b>\n<i>Trabajando...</i>",
-        "stopped": "<b>🛑 Proceso eliminado.</b>",
-        "no_active": "<b>❌ No hay procesos activos.</b>",
-        "not_owner": "<b>❌ No es tu tarea.</b>",
+        "no_args": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Indica el objetivo.</b>",
+        "processing": "<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Escaneando: <code>{}</code>...</b>\n<i>Trabajando...</i>",
+        "stopped": "<b><tg-emoji emoji-id=5253832566036770389>🚮</tg-emoji> Proceso eliminado.</b>",
+        "no_active": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> No hay procesos activos.</b>",
+        "not_owner": "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> No es tu tarea.</b>",
     }
 
     def __init__(self):
@@ -243,12 +260,12 @@ class Recon(loader.Module):
             "a{color:#58a6ff}"
             "</style>"
             f"<title>{title}</title></head><body>"
-            f"<h1>📄 {title}</h1>"
+            f"<h1><tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> {title}</h1>"
         )
         for line in plain.split("\n"):
             line = line.strip()
             if not line: continue
-            if line.startswith("☢️") or line.startswith("🔍") or line.startswith("🛡") or line.startswith("🌐") or line.startswith("🚪") or line.startswith("📝") or line.startswith("🗂") or line.startswith("🏛") or line.startswith("🕷") or line.startswith("📧") or line.startswith("🔎") or line.startswith("🔒") or line.startswith("📄") or line.startswith("⚙️") or line.startswith("🤖"):
+            if line.startswith("<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256182535917940722>⤵️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji>") or line.startswith("<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji>"):
                 html += f"<h2>{line}</h2><div class='section'>"
             elif line.startswith("├") or line.startswith("└"):
                 html += f"<div>{line}</div>"
@@ -259,7 +276,7 @@ class Recon(loader.Module):
             f.write(html)
             path = f.name
         try:
-            await self._client.send_file(message.peer_id, path, caption=f"<b>📄 {title}</b>\n<i>Полный отчёт в файле</i>")
+            await self._client.send_file(message.peer_id, path, caption=f"<b><tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> {title}</b>\n<i>Полный отчёт в файле</i>")
         except Exception:
             await utils.answer(message, text[:4096])
         finally:
@@ -522,7 +539,7 @@ class Recon(loader.Module):
         for l in lines:
             if any(x in l for x in skip): continue
             l = re.sub(r'\[\d{2}:\d{2}:\d{2}\]\s+', '', l)
-            l = l.replace("[INFO]", "💬").replace("[CRITICAL]", "💀").replace("[WARNING]", "⚠️").replace("[ERROR]", "❌")
+            l = l.replace("[INFO]", "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji>").replace("[CRITICAL]", "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji>").replace("[WARNING]", "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji>").replace("[ERROR]", "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji>")
             l = l.replace("is vulnerable", "ДЫРЯВЫЙ!").replace("sql injection", "SQL ИНЪЕКЦИЯ")
             if l.strip(): out.append(l.strip())
         return "\n".join(out)
@@ -591,15 +608,15 @@ class Recon(loader.Module):
     async def shodan(self, message: Message):
         arg = utils.get_args_raw(message).strip()
         key = self.config["shodan_key"]
-        if not arg or not key: return await utils.answer(message, "<b>❌ Укажи IP + shodan_key в .cfg</b>")
-        await utils.answer(message, "<b>👁 Shodan...</b>")
+        if not arg or not key: return await utils.answer(message, "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Укажи IP + shodan_key в .cfg</b>")
+        await utils.answer(message, "<b><tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> Shodan...</b>")
         async with aiohttp.ClientSession() as s:
             data = await self.fetch(s, f"https://api.shodan.io/shodan/host/{arg}?key={key}", "json")
-        if "error" in data: return await utils.answer(message, f"<b>❌</b> <code>{data['error']}</code>")
-        if not data: return await utils.answer(message, "<b>❌ Пусто.</b>")
+        if "error" in data: return await utils.answer(message, f"<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji></b> <code>{data['error']}</code>")
+        if not data: return await utils.answer(message, "<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Пусто.</b>")
         ports = ", ".join(map(str, data.get("ports", [])))
         vulns = "\n".join([f" ├ <code>{v}</code>" for v in data.get("vulns", [])[:15]]) if "vulns" in data else " └ Чисто"
-        r = f"👁 <b>Shodan:</b> <code>{arg}</code>\n🏢 {data.get('org','N/A')}\n💻 OS: {data.get('os','N/A')}\n🚪 <code>{ports}</code>\n☢️ CVE:\n{vulns}"
+        r = f"<tg-emoji emoji-id=5255835635704408236>👤</tg-emoji> <b>Shodan:</b> <code>{arg}</code>\n<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> {data.get('org','N/A')}\n<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> OS: {data.get('os','N/A')}\n<tg-emoji emoji-id=5256182535917940722>⤵️</tg-emoji> <code>{ports}</code>\n<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> CVE:\n{vulns}"
         await self.send_report(message, r, f"shodan_{arg}")
 
     @loader.command(
@@ -611,12 +628,12 @@ class Recon(loader.Module):
     async def wh(self, message: Message):
         args = utils.get_args_raw(message).strip()
         if not args: return await utils.answer(message, self.strings("no_args"))
-        await utils.answer(message, f"<b>🔍 WHOIS: {args}...</b>")
+        await utils.answer(message, f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> WHOIS: {args}...</b>")
         async with aiohttp.ClientSession() as s:
             ip_data = await self.fetch(s, f"http://ip-api.com/json/{args}?fields=query", "json")
             tip = ip_data.get("query", args) if isinstance(ip_data, dict) else args
             data = await self.whois_full(s, args, tip)
-        if not data: return await utils.answer(message, f"<b>❌ Нет данных: {args}</b>")
+        if not data: return await utils.answer(message, f"<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> Нет данных: {args}</b>")
         r = f"<b>WHOIS {args}:</b>\n"
         for k, v in data.items():
             if isinstance(v, list): v = ", ".join(v[:5])
@@ -632,11 +649,11 @@ class Recon(loader.Module):
     async def dork(self, message: Message):
         args = utils.get_args_raw(message).strip()
         if not args: return await utils.answer(message, self.strings("no_args"))
-        await utils.answer(message, f"<b>🔍 Dorks: {args}...</b>")
+        await utils.answer(message, f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Dorks: {args}...</b>")
         async with aiohttp.ClientSession() as s:
             res = await self.parse_dorks(s, args)
-        if not res: return await utils.answer(message, f"<b>🔍 Dorks <code>{args}</code>:</b> ничего (Google block?)")
-        r = f"<b>🔍 Dorks: <code>{args}</code> ({len(res)}):</b>\n"
+        if not res: return await utils.answer(message, f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Dorks <code>{args}</code>:</b> ничего (Google block?)")
+        r = f"<b><tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> Dorks: <code>{args}</code> ({len(res)}):</b>\n"
         for u in res[:40]: r += f"├ <code>{u[:80]}</code>\n"
         if len(res) > 40: r += f"└ <i>...ещё {len(res)-40}</i>\n"
         await self.send_report(message, r, f"dorks_{args}")
@@ -654,19 +671,19 @@ class Recon(loader.Module):
         if len(raw) > 1:
             try: depth = min(int(raw[1]), 5)
             except: pass
-        await utils.answer(message, f"<b>🕷 Crawl: <code>{target}</code> (depth {depth})...</b>")
+        await utils.answer(message, f"<b><tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> Crawl: <code>{target}</code> (depth {depth})...</b>")
         async with aiohttp.ClientSession() as s:
             d = await self.crawl_site(s, target, depth)
-        r = f"<b>🕷 Crawl: <code>{target}</code></b>\nDepth: {depth} | Visited: {d['total']}\n\n"
+        r = f"<b><tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> Crawl: <code>{target}</code></b>\nDepth: {depth} | Visited: {d['total']}\n\n"
         if d["urls"]:
-            r += f"<b>📄 URLs ({len(d['urls'])}):</b>\n"
+            r += f"<b><tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> URLs ({len(d['urls'])}):</b>\n"
             for u in d["urls"][:30]: r += f"├ <code>{u[:80]}</code>\n"
             if len(d["urls"]) > 30: r += f"└ ...ещё {len(d['urls'])-30}\n"
         if d["forms"]:
-            r += f"\n<b>📝 Forms ({len(d['forms'])}):</b>\n"
+            r += f"\n<b><tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> Forms ({len(d['forms'])}):</b>\n"
             for f in d["forms"][:15]: r += f"├ <code>{f[:80]}</code>\n"
         if d["emails"]:
-            r += f"\n<b>📧 Emails ({len(d['emails'])}):</b>\n"
+            r += f"\n<b><tg-emoji emoji-id=5256100953014152571>📧</tg-emoji> Emails ({len(d['emails'])}):</b>\n"
             for e in d["emails"][:15]: r += f"├ <code>{e}</code>\n"
         await self.send_report(message, r, f"crawl_{target}")
 
@@ -836,27 +853,27 @@ class Recon(loader.Module):
                 if not is_ip and subdomains:
                     takeover = await self.check_takeover(s, subdomains)
 
-                R = f"🔍 <b>Recon:</b> <code>{target}</code>\n"
-                R += f"🖧 <b>IP:</b> <code>{tip}</code>\n"
-                if waf: R += f"⚠️ <b>WAF:</b> <code>{waf}</code>\n"
-                if real_ip: R += f"🎯 <b>Real IP (bypass):</b> <code>{real_ip}</code>\n"
-                R += f"🏢 <b>ISP:</b> {isp}\n"
+                R = f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Recon:</b> <code>{target}</code>\n"
+                R += f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>IP:</b> <code>{tip}</code>\n"
+                if waf: R += f"<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <b>WAF:</b> <code>{waf}</code>\n"
+                if real_ip: R += f"<tg-emoji emoji-id=5253617001628181935>👌</tg-emoji> <b>Real IP (bypass):</b> <code>{real_ip}</code>\n"
+                R += f"<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <b>ISP:</b> {isp}\n"
                 if isinstance(geo, dict) and geo.get("status") == "success":
-                    R += f"🌍 <b>Geo:</b> {geo.get('country','')}, {geo.get('regionName','')}, {geo.get('city','')}\n"
-                    R += f"📍 <b>Coords:</b> <code>{geo.get('lat','')}, {geo.get('lon','')}</code>\n"
-                    R += f"🕐 <b>TZ:</b> {geo.get('timezone','')}\n"
-                    R += f"🏷 <b>ASN:</b> <code>{geo.get('as','')}</code>\n"
+                    R += f"<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji> <b>Geo:</b> {geo.get('country','')}, {geo.get('regionName','')}, {geo.get('city','')}\n"
+                    R += f"<tg-emoji emoji-id=5253713110111365241>📍</tg-emoji> <b>Coords:</b> <code>{geo.get('lat','')}, {geo.get('lon','')}</code>\n"
+                    R += f"<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>TZ:</b> {geo.get('timezone','')}\n"
+                    R += f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>ASN:</b> <code>{geo.get('as','')}</code>\n"
                 R += "\n"
 
                 if whois_data:
-                    R += "📋 <b>WHOIS:</b>\n"
+                    R += "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>WHOIS:</b>\n"
                     for k, v in whois_data.items():
                         if isinstance(v, list): v = ", ".join(v[:5])
                         if v and str(v) != "N/A": R += f" ├ <b>{k}:</b> <code>{v}</code>\n"
                     R += "\n"
 
                 if ssl_info:
-                    R += "🔐 <b>SSL/TLS:</b>\n"
+                    R += "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> <b>SSL/TLS:</b>\n"
                     R += f" ├ CN: <code>{ssl_info['cn']}</code>\n"
                     R += f" ├ Issuer: <code>{ssl_info['issuer']}</code>\n"
                     R += f" ├ Valid: {ssl_info['not_before']} → {ssl_info['not_after']}\n"
@@ -868,23 +885,23 @@ class Recon(loader.Module):
                 if http:
                     srv = http.get("headers", {}).get("Server", "Hidden")
                     pw = http.get("headers", {}).get("X-Powered-By", "Hidden")
-                    R += f"🌐 <b>HTTP:</b>\n ├ Status: <code>{http.get('status')}</code>\n ├ Title: <code>{http.get('title','')}</code>\n ├ Server: <code>{srv}</code>\n └ Powered: <code>{pw}</code>\n\n"
+                    R += f"<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji> <b>HTTP:</b>\n ├ Status: <code>{http.get('status')}</code>\n ├ Title: <code>{http.get('title','')}</code>\n ├ Server: <code>{srv}</code>\n └ Powered: <code>{pw}</code>\n\n"
 
                 if http_methods:
-                    R += f"🔧 <b>HTTP Methods:</b> <code>{', '.join(http_methods)}</code>\n\n"
+                    R += f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>HTTP Methods:</b> <code>{', '.join(http_methods)}</code>\n\n"
 
                 if tech:
-                    R += f"⚙️ <b>Tech Stack ({len(tech)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Tech Stack ({len(tech)}):</b>\n"
                     for t2 in tech: R += f" ├ <code>{t2}</code>\n"
                     R += "\n"
 
-                R += f"🚪 <b>Ports:</b> <code>{', '.join(map(str, ports)) if ports else 'N/A'}</code>\n"
-                if tags: R += f"🏷 <b>Tags:</b> <code>{', '.join(tags)}</code>\n"
-                if cpes: R += f"📦 <b>CPE:</b>\n" + "".join([f" ├ <code>{c}</code>\n" for c in cpes[:8]])
+                R += f"<tg-emoji emoji-id=5256182535917940722>⤵️</tg-emoji> <b>Ports:</b> <code>{', '.join(map(str, ports)) if ports else 'N/A'}</code>\n"
+                if tags: R += f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>Tags:</b> <code>{', '.join(tags)}</code>\n"
+                if cpes: R += f"<tg-emoji emoji-id=5256094480498436162>📦</tg-emoji> <b>CPE:</b>\n" + "".join([f" ├ <code>{c}</code>\n" for c in cpes[:8]])
                 R += "\n"
 
                 if dns_a or dns_ns or dns_mx or dns_txt or dns_cname:
-                    R += "📝 <b>DNS:</b>\n"
+                    R += "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>DNS:</b>\n"
                     if dns_a: R += f" ├ <b>A:</b> <code>{', '.join(dns_a[:5])}</code>\n"
                     if dns_cname: R += f" ├ <b>CNAME:</b> <code>{', '.join(dns_cname[:3])}</code>\n"
                     if dns_ns: R += f" ├ <b>NS:</b> <code>{', '.join(dns_ns[:5])}</code>\n"
@@ -893,100 +910,100 @@ class Recon(loader.Module):
                     R += "\n"
 
                 if spf_dmarc["issues"]:
-                    R += "📧 <b>SPF/DMARC:</b>\n"
+                    R += "<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji> <b>SPF/DMARC:</b>\n"
                     if spf_dmarc["spf"]: R += f" ├ SPF: <code>{spf_dmarc['spf'][:60]}</code>\n"
                     if spf_dmarc["dmarc"]: R += f" ├ DMARC: <code>{spf_dmarc['dmarc'][:60]}</code>\n"
-                    for issue in spf_dmarc["issues"]: R += f" ├ ⚠️ {issue}\n"
+                    for issue in spf_dmarc["issues"]: R += f" ├ <tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> {issue}\n"
                     R += "\n"
 
                 if sec_found or sec_missing:
-                    R += f"🔒 <b>Security Headers:</b>\n"
-                    for h2, v in sec_found: R += f" ├ ✅ <code>{h2}</code>\n"
-                    for h2 in sec_missing: R += f" ├ ❌ <code>{h2}</code>\n"
+                    R += f"<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> <b>Security Headers:</b>\n"
+                    for h2, v in sec_found: R += f" ├ <tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> <code>{h2}</code>\n"
+                    for h2 in sec_missing: R += f" ├ <tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <code>{h2}</code>\n"
                     R += "\n"
 
                 if cors_issues:
-                    R += "🚨 <b>CORS Issues:</b>\n"
-                    for ci in cors_issues: R += f" ├ ⚠️ <code>{ci}</code>\n"
+                    R += "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>CORS Issues:</b>\n"
+                    for ci in cors_issues: R += f" ├ <tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji> <code>{ci}</code>\n"
                     R += "\n"
 
                 if vulns:
-                    R += f"☢️ <b>CVE ({len(vulns)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>CVE ({len(vulns)}):</b>\n"
                     for cve in vulns[:20]: R += f" ├ <code>{cve}</code>\n"
                     if len(vulns) > 20: R += f" └ ...+{len(vulns)-20}\n"
                     R += "\n"
 
                 if exposed_paths:
-                    R += f"🔓 <b>Exposed Paths ({len(exposed_paths)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253647062104287098>🔓</tg-emoji> <b>Exposed Paths ({len(exposed_paths)}):</b>\n"
                     for ep in exposed_paths[:25]:
-                        icon = "🟢" if ep["status"] == 200 else "🟡" if ep["status"] in (301,302) else "🔴"
+                        icon = "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>" if ep["status"] == 200 else "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>" if ep["status"] in (301,302) else "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji>"
                         R += f" ├ {icon} <code>{ep['path']}</code> [{ep['status']}] {ep['size']}b\n"
                     if len(exposed_paths) > 25: R += f" └ ...+{len(exposed_paths)-25}\n"
                     R += "\n"
 
                 if secrets:
-                    R += f"🔑 <b>Leaked Secrets ({len(secrets)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>Leaked Secrets ({len(secrets)}):</b>\n"
                     for sec in secrets[:15]: R += f" ├ {sec['type']}: <code>{sec['value']}</code>\n"
                     R += "\n"
 
                 if otx_pulses > 0:
-                    R += f"🛡 <b>OTX Threats:</b> {otx_pulses}\n"
+                    R += f"<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> <b>OTX Threats:</b> {otx_pulses}\n"
                     for n in otx_names[:3]: R += f" ├ <code>{n[:60]}</code>\n"
                     R += "\n"
 
                 if us_results:
-                    R += f"🔎 <b>URLScan ({len(us_results)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>URLScan ({len(us_results)}):</b>\n"
                     for r2 in us_results[:5]: R += f" ├ <code>{r2['url'][:55]}</code> | {r2['server']}\n"
                     R += "\n"
 
                 if rev_hosts:
-                    R += f"🔄 <b>Reverse IP ({len(rev_hosts)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253464392850221514>🔃</tg-emoji> <b>Reverse IP ({len(rev_hosts)}):</b>\n"
                     for h2 in rev_hosts[:10]: R += f" ├ <code>{h2}</code>\n"
                     if len(rev_hosts) > 10: R += f" └ ...+{len(rev_hosts)-10}\n"
                     R += "\n"
 
                 if not is_ip:
                     subs = sorted([x for x in subdomains if target in x and x])
-                    R += f"🗂 <b>Subdomains ({len(subs)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253526631221307799>📂</tg-emoji> <b>Subdomains ({len(subs)}):</b>\n"
                     for x in subs[:50]: R += f" ├ <code>{x}</code>\n"
                     if len(subs) > 50: R += f" └ ...+{len(subs)-50}\n"
                     R += "\n"
 
                     if takeover:
-                        R += f"💀 <b>Subdomain Takeover ({len(takeover)}):</b>\n"
-                        for tk in takeover: R += f" ├ 🚨 <code>{tk['sub']}</code> → {tk['service']}\n"
+                        R += f"<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>Subdomain Takeover ({len(takeover)}):</b>\n"
+                        for tk in takeover: R += f" ├ <tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <code>{tk['sub']}</code> → {tk['service']}\n"
                         R += "\n"
 
                     if wb_urls:
-                        R += f"🏛 <b>Wayback URLs ({len(wb_urls)}):</b>\n"
+                        R += f"<tg-emoji emoji-id=5253651477330667400>🎞</tg-emoji> <b>Wayback URLs ({len(wb_urls)}):</b>\n"
                         for u in wb_urls[:20]: R += f" ├ <code>{u[:65]}</code>\n"
                         if len(wb_urls) > 20: R += f" └ ...+{len(wb_urls)-20}\n"
                         R += "\n"
 
                     if wb_params:
-                        R += f"🧩 <b>URL Params ({len(wb_params)}):</b>\n └ <code>{', '.join(wb_params[:40])}</code>\n\n"
+                        R += f"<tg-emoji emoji-id=5253775593295588000>📝</tg-emoji> <b>URL Params ({len(wb_params)}):</b>\n └ <code>{', '.join(wb_params[:40])}</code>\n\n"
 
                 if js_files:
-                    R += f"📄 <b>JS Files ({len(js_files)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5255917867148257511>🖼</tg-emoji> <b>JS Files ({len(js_files)}):</b>\n"
                     for j in js_files[:15]: R += f" ├ <code>{j[:70]}</code>\n"
                     if len(js_files) > 15: R += f" └ ...+{len(js_files)-15}\n"
                     R += "\n"
 
                 if page_emails:
-                    R += f"📧 <b>Emails ({len(page_emails)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5256100953014152571>📧</tg-emoji> <b>Emails ({len(page_emails)}):</b>\n"
                     for e in page_emails[:15]: R += f" ├ <code>{e}</code>\n"
                     R += "\n"
 
                 if socials:
-                    R += "🌐 <b>Socials:</b>\n"
+                    R += "<tg-emoji emoji-id=5253830568876977751>🏳️</tg-emoji> <b>Socials:</b>\n"
                     for name, vals in socials.items(): R += f" ├ {name}: <code>{', '.join(vals)}</code>\n"
                     R += "\n"
 
                 if robots_txt:
-                    R += f"🤖 <b>robots.txt:</b>\n<code>{robots_txt[:500]}</code>\n\n"
+                    R += f"<tg-emoji emoji-id=5256025060942031560>🐢</tg-emoji> <b>robots.txt:</b>\n<code>{robots_txt[:500]}</code>\n\n"
 
                 if sitemap_urls:
-                    R += f"🗺 <b>Sitemap ({len(sitemap_urls)}):</b>\n"
+                    R += f"<tg-emoji emoji-id=5253961389285845297>📌</tg-emoji> <b>Sitemap ({len(sitemap_urls)}):</b>\n"
                     for u in sitemap_urls[:10]: R += f" ├ <code>{u[:65]}</code>\n"
                     if len(sitemap_urls) > 10: R += f" └ ...+{len(sitemap_urls)-10}\n"
                     R += "\n"
@@ -994,11 +1011,11 @@ class Recon(loader.Module):
                 if not is_ip:
                     dork_res = await dork_task if dork_task else []
                     if dork_res:
-                        R += f"🔍 <b>Dorks ({len(dork_res)}):</b>\n"
+                        R += f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Dorks ({len(dork_res)}):</b>\n"
                         for u in dork_res[:15]: R += f" ├ <code>{u[:65]}</code>\n"
                         if len(dork_res) > 15: R += f" └ ...+{len(dork_res)-15}\n"
                     else:
-                        R += f"🔍 <b>Dorks (manual):</b>\n"
+                        R += f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Dorks (manual):</b>\n"
                         R += f" ├ <code>site:{target} ext:php | ext:env | ext:log</code>\n"
                         R += f" ├ <code>site:{target} inurl:admin | inurl:login</code>\n"
                         R += f" └ <code>site:{target} ext:sql | ext:bak | ext:conf</code>\n"
@@ -1006,7 +1023,7 @@ class Recon(loader.Module):
                 await self.send_report(message, R, f"recon_{target}")
 
         except asyncio.CancelledError: pass
-        except Exception as e: await utils.answer(message, f"<b>❌</b> <code>{str(e)}</code>")
+        except Exception as e: await utils.answer(message, f"<b><tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji></b> <code>{str(e)}</code>")
         finally: self.active_tasks.pop(cid, None)
     @loader.command(
         ru_doc="[аргументы] - Nmap",
@@ -1020,7 +1037,7 @@ class Recon(loader.Module):
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, (
-                "> 🦇 **.nmap guide**\n"
+                "> <tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji> **.nmap guide**\n"
                 "> ` .nmap example.com ` - quick\n"
                 "> ` .nmap -p 80,443 example.com ` - ports\n"
                 "> ` .nmap -sV -O 8.8.8.8 ` - versions+OS\n\n"
@@ -1028,9 +1045,9 @@ class Recon(loader.Module):
                 "> `-T4` fast | `-A` aggressive | `-Pn` no ping"
             ))
         if not shutil.which("nmap"):
-            await utils.answer(message, "<b>⚙️ Installing nmap...</b>")
+            await utils.answer(message, "<b><tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Installing nmap...</b>")
             os.system("apt-get update && apt-get install nmap -y")
-        await self.rtc(cid, uid, message, f"nmap {args}", "🦇 Nmap")
+        await self.rtc(cid, uid, message, f"nmap {args}", "<tg-emoji emoji-id=5249019346512008974>▶️</tg-emoji> Nmap")
 
     @loader.command(
         ru_doc="[аргументы] - SQLMap",
@@ -1044,7 +1061,7 @@ class Recon(loader.Module):
         args = utils.get_args_raw(message)
         if not args:
             return await utils.answer(message, (
-                "> 💉 **.sqlmap guide**\n"
+                "> <tg-emoji emoji-id=5256054356913957552>🎙</tg-emoji> **.sqlmap guide**\n"
                 "> ` .sqlmap -u \"site.com/page.php?id=1\" `\n"
                 "> ` .sqlmap -u \"...\" --dbs ` - databases\n"
                 "> ` .sqlmap -u \"...\" -D db --tables `\n\n"
@@ -1054,9 +1071,9 @@ class Recon(loader.Module):
             ))
         sp = "sqlmap-dev/sqlmap.py"
         if not os.path.exists("sqlmap-dev"):
-            await utils.answer(message, "<b>⚙️ Pulling sqlmap...</b>")
+            await utils.answer(message, "<b><tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> Pulling sqlmap...</b>")
             os.system("git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git sqlmap-dev")
-        await self.rtc(cid, uid, message, f"python3 {sp} {args}", "💉 SQLMap")
+        await self.rtc(cid, uid, message, f"python3 {sp} {args}", "<tg-emoji emoji-id=5256054356913957552>🎙</tg-emoji> SQLMap")
 
     async def watcher(self, message: Message):
         sender_id = getattr(message, "sender_id", None)
