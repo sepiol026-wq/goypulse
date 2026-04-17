@@ -16,7 +16,7 @@
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png
 # meta developer: @GoyModules
 # requires: aiohttp
-__version__ = (1, 6)
+__version__ = (1, 7)
 import re
 import aiohttp
 import asyncio
@@ -168,13 +168,7 @@ class KeyScanner(loader.Module):
         mode = self._settings.get("log_mode", "saved")
         if mode == "none":
             return
-        
-        text = self.strings["new_key_notif"].format(
-            provider=provider, 
-            key=key, 
-            chat_id=source_chat_id
-        )
-        
+        text = self.strings["new_key_notif"].format(provider=provider, key=key, chat_id=source_chat_id)
         target = "me" if mode == "saved" else source_chat_id
         try:
             await self.client.send_message(target, text)
@@ -205,7 +199,7 @@ class KeyScanner(loader.Module):
                 ant_headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
                 data = {"model": "claude-3-haiku-20240307", "max_tokens": 1, "messages": [{"role": "user", "content": "a"}]}
                 async with session.post("https://api.anthropic.com/v1/messages", headers=ant_headers, json=data, timeout=5) as r:
-                    return "Anthropic", r.status not in [401, 403]
+                    return "Anthropic", r.status == 200
             elif key.startswith("hf_"):
                 async with session.get("https://huggingface.co/api/whoami-v2", headers=headers, timeout=5) as r:
                     return "HuggingFace", r.status == 200
@@ -217,14 +211,14 @@ class KeyScanner(loader.Module):
                     return "GitHub", r.status == 200
             elif key.startswith("sk_live_"):
                 async with session.get("https://api.stripe.com/v1/charges", headers=headers, timeout=5) as r:
-                    return "Stripe", r.status != 401
+                    return "Stripe", r.status == 200
             elif key.startswith("xox"):
                 async with session.post("https://slack.com/api/auth.test", headers=headers, timeout=5) as r:
                     data = await r.json()
                     return "Slack", data.get("ok", False)
             elif key.startswith("SG."):
                 async with session.get("https://api.sendgrid.com/v3/scopes", headers=headers, timeout=5) as r:
-                    return "SendGrid", r.status in [200, 403]
+                    return "SendGrid", r.status == 200
             elif key.startswith("secret_"):
                 async with session.get("https://api.notion.com/v1/users", headers={"Authorization": f"Bearer {key}", "Notion-Version": "2022-06-28"}, timeout=5) as r:
                     return "Notion", r.status == 200
@@ -246,7 +240,6 @@ class KeyScanner(loader.Module):
                     ("DeepInfra", "https://api.deepinfra.com/v1/models"),
                     ("ZhipuAI", "https://open.bigmodel.cn/api/paas/v4/models")
                 ]
-                
                 for name, url in priority_providers:
                     try:
                         async with session.get(url, headers=headers, timeout=4) as req:
@@ -254,7 +247,6 @@ class KeyScanner(loader.Module):
                                 return name, True
                     except Exception:
                         continue
-                
                 return "Unknown", False
 
         except Exception:
@@ -286,7 +278,7 @@ class KeyScanner(loader.Module):
                     if is_valid and key not in self._keys:
                         self._keys[key] = provider
                         valid_count += 1
-                        await self._handle_new_key(key, provider, message.chat_id)
+                        await self._handle_new_key(key, provider, getattr(message.to_id, "chat_id", "ScanLLM"))
             self._save()
         await utils.answer(msg, self.strings["found"].format(valid_count=valid_count))
 
@@ -329,6 +321,15 @@ class KeyScanner(loader.Module):
             self._auto_chats.append(chat_id)
             await utils.answer(message, self.strings["auto_on"])
         self._save()
+
+    @loader.command(ru_doc="Переключить режим логирования", en_doc="Cycle log mode")
+    async def kslog(self, message: Message):
+        modes = ["saved", "chat", "none"]
+        current = self._settings.get("log_mode", "saved")
+        next_mode = modes[(modes.index(current) + 1) % len(modes)]
+        self._settings["log_mode"] = next_mode
+        self._save()
+        await utils.answer(message, f"<b>Режим уведомлений изменен на:</b> {next_mode.upper()}")
 
     @loader.command(ru_doc="Удалить все невалидные ключи", en_doc="Remove all invalid keys")
     async def ksclean(self, message: Message):
@@ -562,4 +563,3 @@ class KeyScanner(loader.Module):
 
     async def ks_back(self, call):
         await call.edit(text=self.strings["db_stats"].format(total=len(self._keys)), reply_markup=self._get_main_markup())
-
