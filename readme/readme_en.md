@@ -7,7 +7,7 @@
 **GoyModules** is a curated module pack for Hikka and Heroku, plus compatible userbot forks, created by Goy. The goal is practical day-to-day usage: clear commands, predictable behavior, and production-ready workflows.
 
 ## Module catalog
-- [GoyPulse V9](./readme_goypulse_en.md) — Markov-based smart autoreply with per-chat memory, training controls, and backup tooling.
+- [GoyPulse](./readme_goypulse_en.md) — Markov-based smart autoreply with per-chat memory, training controls, and backup tooling.
 - [GoySecurity](./readme_goysec_en.md) — pre-install security scanner with risk explanations, history, whitelist, and AI-based insights.
 - [OmniLoad](./readme_omniload_en.md) — one-command media downloader for links and direct repost workflows.
 - [QwenCLI](./readme_qwencli_en.md) — AI command center for chat and automation tasks, including dependency bootstrap via `.qwinstall`.

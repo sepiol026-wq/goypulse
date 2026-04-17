@@ -18,7 +18,7 @@ GoySecurity is a pre-install code scanner for third-party userbot modules. It he
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goysec.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/goysec.py
 ```
 
 ## Core commands

@@ -2,7 +2,7 @@
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
-![GoyVirus Banner](../banner.png)
+![GoyVirus Banner](../assets/goyvirus.png)
 
 ## What this module is
 GoyVirus is a humorous prank module for playful chats with friends. It imitates a “virus-like” joke scenario and is not meant for harmful activity.
@@ -17,7 +17,7 @@ GoyVirus is a humorous prank module for playful chats with friends. It imitates 
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/goyv.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/goyv.py
 ```
 
 ## Usage

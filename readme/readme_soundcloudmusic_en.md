@@ -18,7 +18,7 @@ SoundCloudMusic turns your userbot into a music workflow tool: search tracks, du
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/sc.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/sc.py
 ```
 
 ## Commands

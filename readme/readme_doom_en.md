@@ -17,7 +17,7 @@ Doom is an entertainment module that launches an inline mini-game directly insid
 
 ## Installation
 ```text
-.dlm https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/doom.py
+.dlm https://raw.githubusercontent.com/sepiol026-wq/GoyModules/main/doom.py
 ```
 
 ## Commands
