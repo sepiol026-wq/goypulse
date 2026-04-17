@@ -29,6 +29,7 @@ import aiohttp # Ten kod podlega licencji Mozilla Public License 2.0.
 # यह कोड GNU AGPL v3 के तहत है। (GNU AGPL v3)
 # meta developer: @goymodules
 # authors: @goymodules
+# meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/goyvirus.png
 import os # Bu kod Eclipse Public License 2.0 altındadır.
 # Código sob a Licença Pública Geral Menor do GNU (LGPL).
 import tempfile # Distribué sous licence WTFPL.

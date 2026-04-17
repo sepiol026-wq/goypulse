@@ -1,17 +1,17 @@
-# GoyPulse V9 — README EN
+# GoyPulse — README EN
 
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-2CA5E0?logo=telegram&logoColor=white)](https://t.me/goymodules)
 
-![GoyPulse Banner](../banner.png)
+![GoyPulse Banner](../assets/goypulse.png)
 
 ## What this module is
-GoyPulse V9 is an advanced Markov-based autoreply engine. It learns from chat messages, adapts response behavior to context, supports stealth workflows, and includes backup/restore logic.
+GoyPulse is an advanced Markov-based autoreply engine. It learns from chat messages, adapts response behavior to context, supports stealth workflows and flexible reply tuning.
 
 ## How it works
 1. Reads chat history and incoming messages.
 2. Updates internal memory/model state.
 3. Generates replies based on mode and constraints.
-4. Supports backup and recovery of module state.
+4. Runs as a single autoreply engine without update/backup subsystems.
 
 ## Module file
 - `goypulse.py`
@@ -26,14 +26,12 @@ GoyPulse V9 is an advanced Markov-based autoreply engine. It learns from chat me
 - `.gpref` — refresh/learn from data.
 - `.gpstat` — runtime metrics.
 - `.gpinfo` — chat diagnostics.
-- `.gpupdate` — update checks/apply.
-- `.gpbackup` — backup workflow.
 
 ## Recommended onboarding
 1. Load module.
 2. Enable with `.gpulse on` in target chat.
 3. Trigger `.gpref` after initial message collection.
-4. Configure backup strategy with `.gpbackup`.
+4. Tune behavior with `.gpset` if needed.
 
 ## Navigation
 - [Back to English index](./readme_en.md)
