@@ -1,10 +1,26 @@
+# ====================================================================================================================
+#   ██████╗  ██████╗ ██╗   ██╗███╗   ███╗ ██████╗ ██████╗ ██╗   ██╗██╗     ███████╗███████╗
+#  ██╔════╝ ██╔═══██╗╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔══██╗██║   ██║██║     ██╔════╝██╔════╝
+#  ██║  ███╗██║   ██║ ╚████╔╝ ██╔████╔██║██║   ██║██║  ██║██║   ██║██║     █████╗  ███████╗
+#  ██║   ██║██║   ██║  ╚██╔╝  ██║╚██╔╝██║██║   ██║██║  ██║██║   ██║██║     ██╔══╝  ╚════██║
+#  ╚██████╔╝╚██████╔╝   ██║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝╚██████╔╝███████╗███████╗███████║
+#   ╚═════╝  ╚═════╝    ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚══════╝
+#
+#   OFFICIAL USERNAMES: @goymodules | @samsepi0l_ovf
+#   MODULE: sc
+#
+#   THIS MODULE IS LICENSED UNDER GNU AGPLv3, PROTECTED AGAINST UNAUTHORIZED COPYING/RESALE,
+#   AND ITS ORIGINAL AUTHORSHIP BELONGS TO @samsepi0l_ovf.
+#   ALL OFFICIAL UPDATES, RELEASE NOTES, AND PATCHES ARE PUBLISHED IN THE TELEGRAM CHANNEL @goymodules.
+# ====================================================================================================================
+
 # requires: telethon pillow yt-dlp imageio-ffmpeg curl_cffi
 # meta developer: @goymodules
 # authors: @goymodules
 # Description: SoundCloud media module.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/soundcloudmusic.png
 
-__version__ = (4, 4)
+__version__ = (4, 5)
 
 import asyncio
 import contextlib
