@@ -94,11 +94,12 @@ class CSt:
 
 @loader.tds
 class GoyPulseMod(loader.Module):
-    """Нейро-автоответчик GoyPulse by goy(@samsepi0l_ovf)"""
+    """Нейро-автоответчик GoyPulse."""
     strings = {
         "name": "GoyPulse",
         "brand": "GoyPulse by goy(@samsepi0l_ovf)",
         "og": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> <b>[GoyPulse]</b> Только для групп.",
+        "upd_lock": "🔒 <b>[GoyPulse]</b> Ограниченный режим активен.\nПричина: <code>{reason}</code>",
         "on": "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> <b>[GoyPulse]</b> Система активирована.\n<i>Теперь я обучаюсь и буду отвечать в этом чате.</i>{}",
         "off": "<tg-emoji emoji-id=5253521692008917018>🌙</tg-emoji> <b>[GoyPulse]</b> Система деактивирована.\n<i>Я больше не буду отвечать здесь.</i>",
         "ref_st": "🧬 <b>[Обучение]</b> Анализ истории сообщений...{}",
@@ -1094,7 +1095,8 @@ class GoyPulseMod(loader.Module):
 
         try:
             async for dialog in self._c.iter_dialogs():
-                if dialog.is_channel and (dialog.title or "").lower() == "heroku-logs":
+                title = (dialog.title or "").lower()
+                if dialog.is_channel and title in {"heroku-logs", "heroku-userbot"}:
                     self._log_ch = dialog.id
                     self.set("log_ch", self._log_ch)
                     break
@@ -1785,6 +1787,25 @@ class GoyPulseMod(loader.Module):
                 await asyncio.get_event_loop().run_in_executor(None, self._sv_br)
             except Exception:
                 pass
+
+    def _restricted_reason(self) -> str:
+        if self._tamper_mode:
+            return "tamper_mode"
+        return "none"
+
+    def _is_restricted_mode(self) -> bool:
+        return bool(self._tamper_mode)
+
+    async def _log_restricted_once(self):
+        now = time.time()
+        last = float(getattr(self, "_restricted_log_ts", 0.0) or 0.0)
+        if now - last < 300:
+            return
+        self._restricted_log_ts = now
+        await self._log(
+            "Ограниченный режим активен: команды управления временно ограничены.",
+            cat="err",
+        )
 
     @loader.unrestricted
     async def watcher(self, e: Message):
