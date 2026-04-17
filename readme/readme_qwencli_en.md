@@ -5,7 +5,7 @@
 ![QwenCLI Banner](../assets/QwenCLI.png)
 
 ## What this module is
-QwenCLI is an all-in-one AI module for Hikka/Heroku environments. It provides a unified command layer for productivity tasks, chat-side automation, and assistant-style workflows.
+QwenCLI is a multifunctional AI module for Hikka and Heroku. It provides a unified command layer for productivity tasks, chat-side automation, and assistant-style workflows.
 
 ## How it works
 The module exposes an internal command suite and relies on dependencies that should be bootstrapped once. After bootstrap, you manage everything from your userbot prefix.

@@ -4,7 +4,7 @@
 
 ![GoyModules Banner](../banner.png)
 
-**GoyModules** is a curated module pack for Hikka/Heroku and compatible userbot frameworks, created by Goy. The goal is practical day-to-day usage: clear commands, predictable behavior, and production-ready workflows.
+**GoyModules** is a curated module pack for Hikka and Heroku, plus compatible userbot forks, created by Goy. The goal is practical day-to-day usage: clear commands, predictable behavior, and production-ready workflows.
 
 ## Module catalog
 - [GoyPulse V9](./readme_goypulse_en.md) — Markov-based smart autoreply with per-chat memory, training controls, and backup tooling.
