@@ -13,6 +13,7 @@
 - [QwenCLI](./readme_qwencli_ru.md) — AI-модуль для чата и DevOps-задач, включая установку зависимостей через `.qwinstall`.
 - [Doom](./readme_doom_ru.md) — мини-игра DOOM прямо в Telegram-интерфейсе.
 - [Recon](./readme_recon_ru.md) — набор recon/OSINT-команд для сбора технической информации по доменам, IP и инфраструктуре.
+- [KeyScanner](./readme_keyscanner_ru.md) — модуль поиска и проверки API-ключей в чатах, с авто-ловлей, экспортом и статистикой по провайдерам.
 - [SoundCloudMusic](./readme_soundcloudmusic_ru.md) — поиск и выгрузка треков SoundCloud, плюс локальные плейлисты в БД.
 - [YTMusic](./readme_ytmusic_ru.md) — музыкальный модуль для YouTube: поиск, менеджмент плейлистов и импорт/экспорт библиотек.
 - [GoyVirus](./readme_goyvirus_ru.md) — шуточный тролль-модуль для друзей; используется только в развлекательных целях.
