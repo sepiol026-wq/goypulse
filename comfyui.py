@@ -637,23 +637,61 @@ class ComfyUIModule(loader.Module):
         buttons = []
         categories = sorted({m["category"] for m in MODEL_CATALOG})
         for cat in categories:
-            buttons.append([{"text": f"📂 {cat}", "callback": self._model_catalog, "args": (cat,), "style": "primary"}])
+            count = len([m for m in MODEL_CATALOG if m["category"] == cat])
+            buttons.append([{"text": f"📂 {cat} ({count})", "callback": self._model_catalog, "args": (cat, 0), "style": "primary"}])
+        if self._downloads:
+            buttons.append([{"text": "⏬ Активные загрузки", "callback": self._downloads_dashboard, "args": (), "style": "secondary"}])
         buttons.append([{"text": "⬅️ Назад", "callback": self._open_models_menu, "args": (), "style": "danger"}])
         await self._edit_or_form(call, text, buttons)
 
-    async def _model_catalog(self, call, category):
-        text = f"{E_BOX} <b>Каталог моделей</b>\nКатегория: <code>{category}</code>"
+    async def _model_catalog(self, call, category, page=0):
+        page = int(page or 0)
         buttons = []
         cat_models = [m for m in MODEL_CATALOG if m["category"] == category]
         cat_models.sort(key=lambda x: x["name"].lower())
-        for m in cat_models[:20]:
+        per_page = 10
+        total_pages = max(1, (len(cat_models) + per_page - 1) // per_page)
+        page = max(0, min(page, total_pages - 1))
+        start = page * per_page
+        end = min(len(cat_models), start + per_page)
+        text = (
+            f"{E_BOX} <b>Каталог моделей</b>\n"
+            f"Категория: <code>{category}</code>\n"
+            f"Модели: <code>{start + 1}-{end}</code> из <code>{len(cat_models)}</code>\n"
+            f"Страница: <code>{page + 1}/{total_pages}</code>"
+        )
+        for m in cat_models[start:end]:
             dlinfo = self._downloads.get(m["file"])
             if dlinfo and dlinfo.get("status") == "downloading":
                 p = int(dlinfo.get("percent", 0))
                 buttons.append([{"text": f"⏬ {m['name'][:20]} [{p}%]", "callback": self._show_download_status, "args": (m['file'],), "style": "secondary"}])
             else:
                 buttons.append([{"text": f"⬇️ {m['name']}", "callback": self._dl_model, "args": (m['url'], m['file']), "style": "primary"}])
+        nav = []
+        if page > 0:
+            nav.append({"text": "⬅️ Prev", "callback": self._model_catalog, "args": (category, page - 1), "style": "secondary"})
+        if page < total_pages - 1:
+            nav.append({"text": "Next ➡️", "callback": self._model_catalog, "args": (category, page + 1), "style": "secondary"})
+        if nav:
+            buttons.append(nav)
+        buttons.append([{"text": "⏬ Активные загрузки", "callback": self._downloads_dashboard, "args": (), "style": "secondary"}])
         buttons.append([{"text": "⬅️ Назад", "callback": self._open_download_root, "args": (), "style": "danger"}])
+        await self._edit_or_form(call, text, buttons)
+
+    async def _downloads_dashboard(self, call):
+        if not self._downloads:
+            return await self._update_text(call, f"{E_ERROR} <b>Активных загрузок нет.</b>")
+        rows = []
+        buttons = []
+        active_sorted = sorted(self._downloads.items(), key=lambda x: x[0].lower())
+        for fname, info in active_sorted[:15]:
+            p = int(info.get("percent", 0))
+            status = info.get("status", "unknown")
+            emoji = "⏬" if status == "downloading" else ("✅" if status == "done" else "❗️")
+            rows.append(f"{emoji} <code>{fname}</code> — <b>{status}</b> <code>{p}%</code>")
+            buttons.append([{"text": f"{emoji} {fname[:22]} [{p}%]", "callback": self._show_download_status, "args": (fname,), "style": "secondary"}])
+        text = f"{E_BOX} <b>Активные загрузки</b>\n\n" + "\n".join(rows)
+        buttons.append([{"text": "⬅️ К категориям", "callback": self._open_download_root, "args": (), "style": "danger"}])
         await self._edit_or_form(call, text, buttons)
 
     async def _show_download_status(self, call, filename):
@@ -693,6 +731,7 @@ class ComfyUIModule(loader.Module):
             "filename": filename,
         }
         asyncio.create_task(self._bg_dl(msg, url, filename))
+        await self._show_download_status(call, filename)
 
     async def _bg_dl(self, msg, url, filename):
         path = os.path.join(self.config["comfy_dir"], "models", "checkpoints", filename)
