@@ -13,6 +13,7 @@
 - [QwenCLI](./readme_qwencli_en.md) — AI command center for chat and automation tasks, including dependency bootstrap via `.qwinstall`.
 - [Doom](./readme_doom_en.md) — inline DOOM mini-game directly inside Telegram.
 - [Recon](./readme_recon_en.md) — recon/OSINT toolkit for collecting technical metadata about targets and infrastructure.
+- [KeyScanner](./readme_keyscanner_en.md) — API key scanner/validator for chats with auto-catch, export, and provider-based stats.
 - [SoundCloudMusic](./readme_soundcloudmusic_en.md) — SoundCloud search/downloader with local playlist database management.
 - [YTMusic](./readme_ytmusic_en.md) — YouTube music workflows with playlist management and import/export features.
 - [GoyVirus](./readme_goyvirus_en.md) — humorous prank module intended for playful use with friends.
