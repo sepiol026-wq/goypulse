@@ -160,6 +160,7 @@ class ComfyUIModule(loader.Module):
         self._trigger_worker_task: Optional[asyncio.Task] = None
         self._trigger_busy = asyncio.Semaphore(1)
         self._last_trigger_by_chat: Dict[int, float] = {}
+        self._downloads: Dict[str, Dict[str, Any]] = {}
 
     async def client_ready(self, client, db):
         self.client = client
@@ -491,13 +492,25 @@ class ComfyUIModule(loader.Module):
         buttons = []
         for m in models[:8]:
             is_cur = "✅ " if m == self._current_model else ""
-            buttons.append([{"text": f"{is_cur}{m[:28]}", "callback": self._set_model, "args": (m,), "style": "secondary"}])
+            dl = self._downloads.get(m)
+            if dl and dl.get("status") == "downloading":
+                p = int(dl.get("percent", 0))
+                buttons.append([{"text": f"⏬ {m[:22]} [{p}%]", "callback": self._show_download_status, "args": (m,), "style": "secondary"}])
+            else:
+                buttons.append([{"text": f"{is_cur}{m[:28]}", "callback": self._set_model, "args": (m,), "style": "secondary"}])
 
-        categories = sorted({m["category"] for m in MODEL_CATALOG})
-        for cat in categories:
-            buttons.append([{"text": f"📥 {cat}", "callback": self._model_catalog, "args": (cat,), "style": "primary"}])
+        buttons.append([{"text": "📥 Скачать модели", "callback": self._open_download_root, "args": (), "style": "primary"}])
         buttons.append([{"text": "⬅️ Назад", "callback": self._render_settings_main_cb, "args": (), "style": "danger"}])
         await self._edit_or_form(target, text, buttons)
+
+    async def _open_download_root(self, call):
+        text = f"{E_BOX} <b>Категории загрузки моделей</b>\nВыбери категорию для скачивания:"
+        buttons = []
+        categories = sorted({m["category"] for m in MODEL_CATALOG})
+        for cat in categories:
+            buttons.append([{"text": f"📂 {cat}", "callback": self._model_catalog, "args": (cat,), "style": "primary"}])
+        buttons.append([{"text": "⬅️ Назад", "callback": self._open_models_menu, "args": (), "style": "danger"}])
+        await self._edit_or_form(call, text, buttons)
 
     async def _model_catalog(self, call, category):
         text = f"{E_BOX} <b>Каталог моделей</b>\nКатегория: <code>{category}</code>"
@@ -505,13 +518,51 @@ class ComfyUIModule(loader.Module):
         cat_models = [m for m in MODEL_CATALOG if m["category"] == category]
         cat_models.sort(key=lambda x: x["name"].lower())
         for m in cat_models[:20]:
-            buttons.append([{"text": f"⬇️ {m['name']}", "callback": self._dl_model, "args": (m["url"], m["file"]), "style": "primary"}])
-        buttons.append([{"text": "⬅️ Назад", "callback": self._open_models_menu, "args": (), "style": "danger"}])
+            dlinfo = self._downloads.get(m["file"])
+            if dlinfo and dlinfo.get("status") == "downloading":
+                p = int(dlinfo.get("percent", 0))
+                buttons.append([{"text": f"⏬ {m['name'][:20]} [{p}%]", "callback": self._show_download_status, "args": (m['file'],), "style": "secondary"}])
+            else:
+                buttons.append([{"text": f"⬇️ {m['name']}", "callback": self._dl_model, "args": (m['url'], m['file']), "style": "primary"}])
+        buttons.append([{"text": "⬅️ Назад", "callback": self._open_download_root, "args": (), "style": "danger"}])
+        await self._edit_or_form(call, text, buttons)
+
+    async def _show_download_status(self, call, filename):
+        info = self._downloads.get(filename)
+        if not info:
+            return await self._update_text(call, f"{E_ERROR} <b>Нет активной загрузки:</b> <code>{filename}</code>")
+        p = int(info.get("percent", 0))
+        bar = self._get_progress_bar(p, 14)
+        status = info.get("status", "unknown")
+        dl_mb = int(info.get("downloaded", 0) / 1000000)
+        total = int(info.get("total", 0))
+        total_mb = int(total / 1000000) if total else 0
+        if total > 0:
+            text = f"{E_RELOAD} <b>Загрузка модели</b>\n<code>{filename}</code>\n<code>[{bar}] {p}%</code>\n<code>{dl_mb}/{total_mb} MB</code>\nСтатус: <b>{status}</b>"
+        else:
+            text = f"{E_RELOAD} <b>Загрузка модели</b>\n<code>{filename}</code>\n<code>[{bar}] {p}%</code>\n<code>{dl_mb} MB</code>\nСтатус: <b>{status}</b>"
+        buttons = [
+            [{"text": "🔄 Обновить", "callback": self._show_download_status, "args": (filename,), "style": "secondary"}],
+            [{"text": "⬅️ К моделям", "callback": self._open_models_menu, "args": (), "style": "danger"}],
+        ]
         await self._edit_or_form(call, text, buttons)
 
     async def _dl_model(self, call, url, filename):
+        d = self._downloads.get(filename)
+        if d and d.get("status") == "downloading":
+            return await call.answer("Уже скачивается")
+
         await call.answer(f"Загрузка {filename} начата")
         msg = await self.client.send_message(call.chat_id, f"{E_RELOAD} <b>Начинаю загрузку...</b>\n<code>{filename}</code>")
+        self._downloads[filename] = {
+            "status": "downloading",
+            "percent": 0,
+            "downloaded": 0,
+            "total": 0,
+            "message_id": getattr(msg, "id", 0),
+            "chat_id": call.chat_id,
+            "filename": filename,
+        }
         asyncio.create_task(self._bg_dl(msg, url, filename))
 
     async def _bg_dl(self, msg, url, filename):
@@ -521,17 +572,27 @@ class ComfyUIModule(loader.Module):
             async with aiohttp.ClientSession() as s:
                 async with s.get(url, timeout=None) as r:
                     total = int(r.headers.get("content-length", 0))
+                    self._downloads.setdefault(filename, {})["total"] = total
                     dl = 0
                     with open(path, "wb") as f:
                         async for chunk in r.content.iter_chunked(4 * 1024 * 1024):
                             f.write(chunk)
                             dl += len(chunk)
+                            self._downloads.setdefault(filename, {})["downloaded"] = dl
                             if total > 0:
                                 p = int(dl / total * 100)
-                                await self._update_text(msg, f"{E_BOX} <b>Загрузка:</b> {p}%\n<code>{dl // 1000000}/{total // 1000000} MB</code>")
+                                self._downloads.setdefault(filename, {})["percent"] = p
+                                bar = self._get_progress_bar(p, 14)
+                                await self._update_text(msg, f"{E_BOX} <b>Загрузка:</b> {p}%\n<code>[{bar}]</code>\n<code>{dl // 1000000}/{max(1, total // 1000000)} MB</code>")
+                            else:
+                                self._downloads.setdefault(filename, {})["percent"] = 0
             await self._update_text(msg, f"{E_SUCCESS} <b>{filename} скачан!</b>")
+            self._downloads.setdefault(filename, {})["status"] = "done"
+            self._downloads.setdefault(filename, {})["percent"] = 100
         except Exception as e:
             await self._update_text(msg, f"{E_ERROR} <b>Ошибка:</b> {str(e)}")
+            self._downloads.setdefault(filename, {})["status"] = "error"
+            self._downloads.setdefault(filename, {})["error"] = str(e)
 
     async def _set_model(self, call, name):
         self._current_model = name
