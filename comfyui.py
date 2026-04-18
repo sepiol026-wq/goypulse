@@ -628,7 +628,16 @@ class ComfyUIModule(loader.Module):
             else:
                 buttons.append([{"text": f"{is_cur}{m[:28]}", "callback": self._set_model, "args": (m,), "style": "secondary"}])
 
+        active = [(k, v) for k, v in self._downloads.items() if v.get("status") == "downloading"]
+        if active:
+            text += f"\n\n{E_RELOAD} Активных загрузок: <code>{len(active)}</code>"
+            for fname, info in active[:5]:
+                p = int(info.get("percent", 0))
+                buttons.append([{"text": f"⏬ {fname[:24]} [{p}%]", "callback": self._show_download_status, "args": (fname,), "style": "secondary"}])
+
         buttons.append([{"text": "📥 Скачать модели", "callback": self._open_download_root, "args": (), "style": "primary"}])
+        if self._downloads:
+            buttons.append([{"text": "📊 Все загрузки", "callback": self._downloads_dashboard, "args": (), "style": "secondary"}])
         buttons.append([{"text": "⬅️ Назад", "callback": self._render_settings_main_cb, "args": (), "style": "danger"}])
         await self._edit_or_form(target, text, buttons)
 
@@ -666,7 +675,7 @@ class ComfyUIModule(loader.Module):
                 p = int(dlinfo.get("percent", 0))
                 buttons.append([{"text": f"⏬ {m['name'][:20]} [{p}%]", "callback": self._show_download_status, "args": (m['file'],), "style": "secondary"}])
             else:
-                buttons.append([{"text": f"⬇️ {m['name']}", "callback": self._dl_model, "args": (m['url'], m['file']), "style": "primary"}])
+                buttons.append([{"text": f"ℹ️ {m['name']}", "callback": self._model_info, "args": (m['file'],), "style": "primary"}])
         nav = []
         if page > 0:
             nav.append({"text": "⬅️ Prev", "callback": self._model_catalog, "args": (category, page - 1), "style": "secondary"})
@@ -676,6 +685,30 @@ class ComfyUIModule(loader.Module):
             buttons.append(nav)
         buttons.append([{"text": "⏬ Активные загрузки", "callback": self._downloads_dashboard, "args": (), "style": "secondary"}])
         buttons.append([{"text": "⬅️ Назад", "callback": self._open_download_root, "args": (), "style": "danger"}])
+        await self._edit_or_form(call, text, buttons)
+
+    async def _model_info(self, call, filename):
+        model = next((m for m in MODEL_CATALOG if m["file"] == filename), None)
+        if not model:
+            return await self._update_text(call, f"{E_ERROR} <b>Модель не найдена:</b> <code>{filename}</code>")
+        dlinfo = self._downloads.get(filename, {})
+        status = dlinfo.get("status", "not_started")
+        p = int(dlinfo.get("percent", 0))
+        text = (
+            f"{E_PIC} <b>Информация о модели</b>\n"
+            f"Название: <code>{model['name']}</code>\n"
+            f"Файл: <code>{model['file']}</code>\n"
+            f"Категория: <code>{model['category']}</code>\n"
+            f"Семейство: <code>{model['family']}</code>\n"
+            f"URL: <code>{model['url'][:90]}...</code>\n"
+            f"Статус: <b>{status}</b> <code>{p}%</code>"
+        )
+        buttons = []
+        if status == "downloading":
+            buttons.append([{"text": f"⏬ Открыть прогресс [{p}%]", "callback": self._show_download_status, "args": (filename,), "style": "secondary"}])
+        else:
+            buttons.append([{"text": "⬇️ Скачать", "callback": self._dl_model, "args": (model["url"], model["file"]), "style": "primary"}])
+        buttons.append([{"text": "⬅️ Назад в каталог", "callback": self._open_download_root, "args": (), "style": "danger"}])
         await self._edit_or_form(call, text, buttons)
 
     async def _downloads_dashboard(self, call):
