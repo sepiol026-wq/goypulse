@@ -5,10 +5,7 @@
 ![KeyScanner Banner](../assets/keyscanner.png)
 
 ## About module
-KeyScanner is a module for scanning, validating, and managing API keys found in chats.
-
-## Author description
-Spizdi ALL AI API KEYS in your chat
+Spizdi all ai keys in any chat.
 
 ## How it works
 The module scans chat history using prefix queries and regex patterns, validates discovered keys against provider APIs, and stores unique results in the database. It also includes per-chat auto mode, global scan, export/import, and provider stats.
