@@ -840,9 +840,7 @@ class ComfyUIModule(loader.Module):
         if d and d.get("status") == "downloading":
             return await call.answer("Уже скачивается")
 
-        chat_id = self._extract_chat_id(call)
-        if not chat_id:
-            return await self._update_text(call, f"{E_ERROR} <b>Не удалось определить chat_id для загрузки.</b>")
+        chat_id = self._extract_chat_id(call) or 0
 
         if not source:
             return await self._update_text(call, f"{E_ERROR} <b>Для модели не задан источник (repo).</b>")
@@ -869,11 +867,13 @@ class ComfyUIModule(loader.Module):
             "url": fixed_url,
         }
         await call.answer(f"Загрузка {filename} начата")
-        try:
-            msg = await self.client.send_message(chat_id, f"{E_RELOAD} <b>Начинаю загрузку...</b>\n<code>{filename}</code>")
-            self._downloads[filename]["message_id"] = getattr(msg, "id", 0)
-        except Exception:
-            msg = call
+        msg = call
+        if chat_id:
+            try:
+                msg = await self.client.send_message(chat_id, f"{E_RELOAD} <b>Начинаю загрузку...</b>\n<code>{filename}</code>")
+                self._downloads[filename]["message_id"] = getattr(msg, "id", 0)
+            except Exception:
+                msg = call
         asyncio.create_task(self._bg_dl(msg, fixed_url, filename))
         await self._show_download_status(call, filename)
 
