@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp
 
-__version__ = (2, 0)
+__version__ = (2, 1)
 import re
 import aiohttp
 import asyncio
@@ -25,6 +25,12 @@ import json
 import io
 from urllib.parse import urlparse, unquote
 from herokutl.types import Message
+from herokutl.tl.functions.messages import CreateForumTopicRequest, GetForumTopicsByIDRequest, GetForumTopicsRequest
+from herokutl.tl.types import Channel, ForumTopicDeleted
+try:
+    from herokutl.errors import FloodWaitError
+except ImportError:
+    FloodWaitError = Exception
 from .. import loader, utils
 
 E_OK    = "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>"
@@ -115,6 +121,12 @@ class KeyScanner(loader.Module):
         "btn_log_cycle": "🔔 Cycle Log Mode",
         "btn_toggle_file": "📂 Toggle File Scan",
         "btn_toggle_edit": "🔃 Toggle Edit Scan",
+        "log_mode_heroku": "heroku",
+        "log_mode_custom": "custom",
+        "heroku_topic_creating": f"{E_GEAR} <b>[KeyScanner] Utils create topic</b> · {{title}}",
+        "heroku_topic_created": f"{E_OK} <b>[KeyScanner] Topic created</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
+        "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Topic saved to DB</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
+        "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Global scan initiated...</b>\nSearching all chats up to {{limit}} per prefix.",
         "new_key_notif": f"{E_BELL} <b>New Key Caught!</b>\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Source:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}",
         "btn_show_key":  "👁 Show",
@@ -180,6 +192,12 @@ class KeyScanner(loader.Module):
         "btn_log_cycle": "🔔 Сменить режим логов",
         "btn_toggle_file": "📂 Вкл/выкл файлы",
         "btn_toggle_edit": "🔃 Вкл/выкл правки",
+        "log_mode_heroku": "heroku",
+        "log_mode_custom": "custom",
+        "heroku_topic_creating": f"{E_GEAR} <b>[KeyScanner] Utils create topic</b> · {{title}}",
+        "heroku_topic_created": f"{E_OK} <b>[KeyScanner] Топик создан</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
+        "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Топик сохранён в БД</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
+        "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Глобальный поиск...</b>\nИщу во всех чатах до {{limit}} сообщений на префикс.",
         "new_key_notif": f"{E_BELL} <b>Пойман новый ключ!</b>\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Источник:</b> {{chat_id}}\n{E_RIGHT} <b>Откуда:</b> {{via}}",
         "btn_show_key":  "👁 Показать",
@@ -226,6 +244,8 @@ class KeyScanner(loader.Module):
 
     async def client_ready(self, client, db):
         self.client       = client
+        self._client      = client
+        self._db          = db
         self._keys        = self.get("keys_v2", {})
         self._auto_chats  = self.get("auto_v2", [])
         self._paid_status = self.get("paid_status", {})
@@ -237,6 +257,48 @@ class KeyScanner(loader.Module):
             "file_scan": True,
             "edit_scan": True,
         })
+
+
+        try:
+            await self._bootstrap_heroku_logs()
+        except Exception:
+            pass
+
+    async def _bootstrap_heroku_logs(self):
+        """
+        Finds or creates the heroku forum topic for key logs.
+        Delegates to utils.asset_forum_topic — same helper used by Gemini and
+        other modules. It handles find-or-create, deleted/stale topics, and
+        Hikka-side caching internally, so we never need to re-implement that.
+        """
+        asset_channel = self._db.get("heroku.forums", "channel_id", 0)
+        if not asset_channel:
+            return None, None
+
+        chat_ref = int(f"-100{asset_channel}")
+
+        try:
+            notif_topic = await utils.asset_forum_topic(
+                self._client,
+                self._db,
+                asset_channel,
+                "KeyScanner Logs",
+                description="Automatic key catch logs.",
+            )
+        except Exception:
+            return chat_ref, None
+
+        if notif_topic is None:
+            return chat_ref, None
+
+        thread_id = notif_topic.id
+        target = self._log_target()
+        target["chat_id"] = chat_ref
+        target["topic_title"] = "KeyScanner Logs"
+        target["thread_id"] = thread_id
+        self._save()
+
+        return chat_ref, thread_id
 
     def _save(self):
         self.set("keys_v2",     self._keys)
@@ -394,7 +456,7 @@ class KeyScanner(loader.Module):
             return False
         for attr in ("is_forum", "forum", "forum_enabled", "has_topics", "has_topics_enabled"):
             val = getattr(chat, attr, None)
-            if isinstance(val, bool) and val:
+            if val:
                 return True
         return False
 
@@ -470,68 +532,179 @@ class KeyScanner(loader.Module):
 
     async def _create_forum_topic(self, chat_ref, title: str):
         title = (title or "Logs").strip()[:128] or "Logs"
-        for meth in ("createForumTopic", "create_forum_topic"):
-            fn = getattr(self.client, meth, None)
-            if callable(fn):
+        if chat_ref is None:
+            return None
+
+        try:
+            entity = await self.client.get_entity(chat_ref)
+        except Exception:
+            return None
+
+        if not isinstance(entity, Channel):
+            return None
+
+        forums_cache = self._forums_cache()
+        entity_key = getattr(entity, "title", str(chat_ref))
+        cached_topic_id = forums_cache.get(entity_key, {}).get(title)
+        topic = None
+
+        if cached_topic_id:
+            try:
+                topic_result = await self.client(
+                    GetForumTopicsByIDRequest(peer=entity, topics=[cached_topic_id])
+                )
+                topic = topic_result.topics[0]
+                if isinstance(topic, ForumTopicDeleted):
+                    topic = None
+                    forums_cache.get(entity_key, {}).pop(title, None)
+            except Exception:
+                topic = None
+                forums_cache.get(entity_key, {}).pop(title, None)
+
+        if topic is None:
+            try:
+                result = await self.client(
+                    GetForumTopicsRequest(
+                        peer=entity,
+                        offset_date=None,
+                        offset_id=0,
+                        offset_topic=0,
+                        limit=100,
+                    )
+                )
+                for found_topic in result.topics:
+                    if getattr(found_topic, "title", None) == title:
+                        topic = found_topic
+                        break
+            except Exception:
+                pass
+
+        if topic is None:
+            try:
+                create_result = await self.client(
+                    CreateForumTopicRequest(
+                        peer=entity,
+                        title=title,
+                        icon_emoji_id=5386397724338490996 if getattr(getattr(self.client, "heroku_me", None), "premium", False) else None,
+                    )
+                )
+                thread_id = create_result.updates[0].id
+
+                intro_text = self.strings.get(
+                    "heroku_topic_intro",
+                    "This topic is for automatic key logs. The first message is pinned for context and updates.",
+                )
+                intro_msg = await self.client.send_message(
+                    entity=entity,
+                    message=intro_text,
+                    reply_to=thread_id,
+                    parse_mode="html",
+                )
                 try:
-                    try:
-                        return await fn(chat_ref, title)
-                    except TypeError:
-                        return await fn(chat_id=chat_ref, name=title)
+                    await self.client.pin_message(entity, intro_msg, notify=False)
                 except Exception:
-                    pass
-        return None
+                    try:
+                        await self.client.pin_message(entity, getattr(intro_msg, "id", intro_msg), notify=False)
+                    except Exception:
+                        pass
+
+                forums_cache.setdefault(entity_key, {})[title] = thread_id
+                topic_result = await self.client(
+                    GetForumTopicsByIDRequest(peer=entity, topics=[thread_id])
+                )
+                topic = topic_result.topics[0]
+            except Exception:
+                return None
+        else:
+            forums_cache.setdefault(entity_key, {})[title] = getattr(topic, "id", cached_topic_id)
+
+        return topic
 
     def _topic_thread_id_from_result(self, result):
         if result is None:
             return None
-        for attr in ("message_thread_id", "thread_id", "id"):
+        for attr in ("id", "message_thread_id", "thread_id"):
             val = getattr(result, attr, None)
             if isinstance(val, int):
                 return val
         if isinstance(result, dict):
-            for key in ("message_thread_id", "thread_id", "id"):
+            for key in ("id", "message_thread_id", "thread_id"):
                 val = result.get(key)
                 if isinstance(val, int):
                     return val
         return None
 
+    def _heroku_forums_chat(self):
+        try:
+            val = self._db.get("heroku.forums", "channel_id", None)
+            if val:
+                val = int(val)
+
+                if val > 0:
+                    val = int(f"-100{val}")
+                return val
+        except Exception:
+            pass
+        return None
+
+
+    def _forums_cache(self):
+        try:
+            cache = self._db.pointer("heroku.forums", "forums_cache", {})
+            if isinstance(cache, dict):
+                return cache
+        except Exception:
+            pass
+        try:
+            cache = self._db.get("heroku.forums", "forums_cache", {})
+            if isinstance(cache, dict):
+                return cache
+        except Exception:
+            pass
+        return {}
+
+    async def _ensure_heroku_log_destination(self, create_if_missing: bool = True):
+        try:
+            chat_ref, thread_id = await self._bootstrap_heroku_logs()
+            if chat_ref is None:
+                asset_channel = self._db.get("heroku.forums", "channel_id", 0)
+                if not asset_channel:
+                    return None, None
+                return int(f"-100{asset_channel}"), None
+            return chat_ref, thread_id
+        except Exception:
+            asset_channel = self._db.get("heroku.forums", "channel_id", 0)
+            if asset_channel:
+                return int(f"-100{asset_channel}"), None
+            return None, None
+
     async def _ensure_log_destination(self, create_if_missing: bool = True):
+        """
+        Resolves log destination for custom mode.
+        Uses _create_forum_topic which handles find-or-create with stale cache
+        cleanup. thread_id is persisted in _log_target() after first resolve.
+        """
         target = self._log_target()
         chat_ref = target.get("chat_id")
         if chat_ref is None:
             return None, None
 
-        thread_id = target.get("thread_id")
         topic_title = target.get("topic_title") or "Logs"
+        topic = await self._create_forum_topic(chat_ref, topic_title)
+        if not topic:
+            return chat_ref, None
 
-        if thread_id:
-            return chat_ref, thread_id
-
-        chat_obj = None
-        for meth in ("get_entity", "get_chat"):
-            fn = getattr(self.client, meth, None)
-            if callable(fn):
-                try:
-                    chat_obj = await fn(chat_ref)
-                    break
-                except Exception:
-                    pass
-
-        if chat_obj is not None and self._is_forum_chat(chat_obj) and create_if_missing:
-            topic = await self._create_forum_topic(chat_ref, topic_title)
-            thread_id = self._topic_thread_id_from_result(topic)
-            if thread_id:
-                target["thread_id"] = thread_id
-                self._save()
-                return chat_ref, thread_id
-
-        return chat_ref, None
+        thread_id = self._topic_thread_id_from_result(topic)
+        if thread_id and thread_id != target.get("thread_id"):
+            target["thread_id"] = thread_id
+            self._save()
+        return chat_ref, thread_id
 
     async def _send_log_text(self, text: str):
         mode = self._settings.get("log_mode", "none")
         if mode == "none":
             return
+
         if mode == "saved":
             try:
                 await self.client.send_message("me", text, parse_mode="html")
@@ -539,22 +712,54 @@ class KeyScanner(loader.Module):
                 pass
             return
 
-        chat_ref, thread_id = await self._ensure_log_destination(create_if_missing=True)
-        if chat_ref is None:
+        if mode == "heroku":
+            target = self._log_target()
+            chat_ref = target.get("chat_id")
+            thread_id = target.get("thread_id")
+
+            if not chat_ref or not thread_id:
+                try:
+                    chat_ref, thread_id = await self._bootstrap_heroku_logs()
+                except Exception:
+                    return
+                if thread_id:
+                    target = self._log_target()
+                    target["chat_id"] = chat_ref
+                    target["thread_id"] = thread_id
+                    self._save()
+
+            if not chat_ref or not thread_id:
+                return
+            try:
+                await self.client.send_message(
+                    chat_ref,
+                    text,
+                    parse_mode="html",
+                    reply_to=thread_id,
+                )
+            except Exception:
+                pass
             return
-        kwargs = {"parse_mode": "html"}
-        if thread_id:
-            kwargs["message_thread_id"] = thread_id
-        try:
-            await self.client.send_message(chat_ref, text, **kwargs)
-        except TypeError:
-            kwargs.pop("message_thread_id", None)
+
+        if mode == "custom":
+            chat_ref, thread_id = await self._ensure_log_destination()
+            if chat_ref is None:
+                return
+            if not thread_id:
+                try:
+                    chat_obj = await self.client.get_entity(chat_ref)
+                    if self._is_forum_chat(chat_obj):
+                        return
+                except Exception:
+                    return
+            kwargs = {"parse_mode": "html"}
+            if thread_id:
+                kwargs["reply_to"] = thread_id
             try:
                 await self.client.send_message(chat_ref, text, **kwargs)
             except Exception:
                 pass
-        except Exception:
-            pass
+            return
 
 
     def _provider_model_base(self, provider: str):
@@ -944,8 +1149,18 @@ class KeyScanner(loader.Module):
                 async for m in self.client.iter_messages(message.to_id, search=query, limit=limit):
                     if getattr(m, "raw_text", None):
                         found.update(self.key_regex.findall(m.raw_text))
+            except FloodWaitError as e:
+                wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
+                await asyncio.sleep(int(wait))
+                try:
+                    async for m in self.client.iter_messages(message.to_id, search=query, limit=limit):
+                        if getattr(m, "raw_text", None):
+                            found.update(self.key_regex.findall(m.raw_text))
+                except Exception:
+                    pass
             except Exception:
-                continue
+                pass
+            await asyncio.sleep(0.4)
         valid_count = 0
         if found:
             async with aiohttp.ClientSession() as session:
@@ -973,8 +1188,18 @@ class KeyScanner(loader.Module):
                 async for m in self.client.iter_messages(None, search=query, limit=limit):
                     if getattr(m, "raw_text", None):
                         found.update(self.key_regex.findall(m.raw_text))
+            except FloodWaitError as e:
+                wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
+                await asyncio.sleep(int(wait))
+                try:
+                    async for m in self.client.iter_messages(None, search=query, limit=limit):
+                        if getattr(m, "raw_text", None):
+                            found.update(self.key_regex.findall(m.raw_text))
+                except Exception:
+                    pass
             except Exception:
-                continue
+                pass
+            await asyncio.sleep(0.4)
         valid_count = 0
         if found:
             async with aiohttp.ClientSession() as session:
@@ -996,15 +1221,27 @@ class KeyScanner(loader.Module):
         else:
             self._auto_chats.append(cid)
             await utils.answer(message, self.strings["auto_on"])
+            if self._settings.get("log_mode") == "heroku":
+                try:
+                    await self._bootstrap_heroku_logs()
+                except Exception:
+                    pass
         self._save()
 
     @loader.command(ru_doc="Переключить режим логирования", en_doc="Cycle log mode")
     async def kslog(self, message: Message):
-        modes   = ["none", "saved", "chat"]
+        modes   = ["none", "saved", "heroku", "custom"]
         cur     = self._settings.get("log_mode", "none")
+        if cur not in modes:
+            cur = "none"
         nxt     = modes[(modes.index(cur) + 1) % len(modes)]
         self._settings["log_mode"] = nxt
         self._save()
+        if nxt == "heroku":
+            try:
+                await self._bootstrap_heroku_logs()
+            except Exception:
+                pass
         await utils.answer(message, f"{E_BELL} <b>Logging →</b> <b>{nxt.upper()}</b>")
 
     @loader.command(ru_doc="Удалить все невалидные ключи", en_doc="Remove all invalid keys")
@@ -1431,87 +1668,102 @@ class KeyScanner(loader.Module):
         )
 
     async def ks_cycle_log(self, call):
-        modes = ["none", "saved", "chat"]
+        modes = ["none", "saved", "heroku", "custom"]
         cur   = self._settings.get("log_mode", "none")
-        self._settings["log_mode"] = modes[(modes.index(cur) + 1) % len(modes)]
+        if cur not in modes:
+            cur = "none"
+        nxt = modes[(modes.index(cur) + 1) % len(modes)]
+        self._settings["log_mode"] = nxt
         self._save()
+        if nxt == "heroku":
+            try:
+                await self._bootstrap_heroku_logs()
+            except Exception:
+                pass
         await self.ks_settings_menu(call)
 
-    @loader.command(ru_doc="<чат/ссылка/@username/chat_id> [топик] - Установить чат логов", en_doc="<chat/link/@username/chat_id> [topic] - Set log chat")
+    @loader.command(
+        ru_doc="<чат/@username/id> [топик] — чат: задать чат логов; .kslogchat topic <название> — сменить топик",
+        en_doc="<chat/@username/id> [topic] — set log chat; .kslogchat topic <title> — rename topic",
+    )
     async def kslogchat(self, message: Message):
+        """
+        Usage:
+          .kslogchat @mychat              — set log chat, keep current topic title
+          .kslogchat @mychat My Logs      — set log chat + topic title
+          .kslogchat topic My Logs        — rename topic only (chat stays the same)
+        """
         raw = utils.get_args_raw(message).strip()
         if not raw:
             return await utils.answer(message, self.strings["log_target_help"])
+
+        target = self._log_target()
+        if raw.lower().startswith("topic "):
+            title = raw[6:].strip()[:128]
+            if not title:
+                return await utils.answer(message, self.strings["log_target_help"])
+            target["topic_title"] = title
+            target["thread_id"] = None
+            self._save()
+            if target.get("chat_id") is not None:
+                try:
+                    topic = await self._create_forum_topic(
+                        target["chat_id"], title
+                    )
+                    if topic:
+                        tid = self._topic_thread_id_from_result(topic)
+                        if tid:
+                            target["thread_id"] = tid
+                            self._save()
+                except Exception:
+                    pass
+            return await utils.answer(
+                message,
+                self.strings["log_target_topic"]
+                + f"\n{self.strings['log_target_label'].format(target=self._log_target_text())}"
+                + f"\n{self.strings['log_topic_label'].format(topic=target.get('topic_title') or 'Logs')}",
+            )
+
         parts = raw.split(maxsplit=1)
         target_raw = parts[0]
-        topic_title = parts[1].strip() if len(parts) > 1 else None
+        topic_title = parts[1].strip()[:128] if len(parts) > 1 else None
+
         try:
             resolved = await self._resolve_entity_best_effort(target_raw)
         except Exception:
             resolved = target_raw
+
         if resolved is None:
             return await utils.answer(message, self.strings["log_target_help"])
 
-        target = self._log_target()
+        if target.get("chat_id") != resolved or topic_title:
+            target["thread_id"] = None
         target["chat_id"] = resolved
         if topic_title:
-            target["topic_title"] = topic_title[:128]
-            target["thread_id"] = None
+            target["topic_title"] = topic_title
         else:
             target.setdefault("topic_title", "Logs")
         self._save()
 
-        
         try:
-            chat_obj = None
-            for meth in ("get_entity", "get_chat"):
-                fn = getattr(self.client, meth, None)
-                if callable(fn):
-                    try:
-                        chat_obj = await fn(resolved)
-                        break
-                    except Exception:
-                        pass
-            if chat_obj is not None and self._is_forum_chat(chat_obj):
-                topic = await self._create_forum_topic(resolved, target.get("topic_title") or "Logs")
-                thread_id = self._topic_thread_id_from_result(topic)
-                if thread_id:
-                    target["thread_id"] = thread_id
+            topic = await self._create_forum_topic(
+                resolved, target.get("topic_title") or "Logs"
+            )
+            if topic:
+                tid = self._topic_thread_id_from_result(topic)
+                if tid:
+                    target["thread_id"] = tid
                     self._save()
         except Exception:
             pass
 
-        return await utils.answer(message, self.strings["log_target_set"] + f"\n{self.strings['log_target_label'].format(target=self._log_target_text())}\n{self.strings['log_topic_label'].format(topic=target.get('topic_title') or 'Logs')}")
+        return await utils.answer(
+            message,
+            self.strings["log_target_set"]
+            + f"\n{self.strings['log_target_label'].format(target=self._log_target_text())}"
+            + f"\n{self.strings['log_topic_label'].format(topic=target.get('topic_title') or 'Logs')}",
+        )
 
-    @loader.command(ru_doc="[название] - Переименовать/задать топик логов", en_doc="[title] - Set log topic title")
-    async def kslogtopic(self, message: Message):
-        title = utils.get_args_raw(message).strip()
-        if not title:
-            return await utils.answer(message, self.strings["log_target_help"])
-        target = self._log_target()
-        target["topic_title"] = title[:128]
-        target["thread_id"] = None
-        self._save()
-        if target.get("chat_id") is not None:
-            try:
-                chat_obj = None
-                for meth in ("get_entity", "get_chat"):
-                    fn = getattr(self.client, meth, None)
-                    if callable(fn):
-                        try:
-                            chat_obj = await fn(target["chat_id"])
-                            break
-                        except Exception:
-                            pass
-                if chat_obj is not None and self._is_forum_chat(chat_obj):
-                    topic = await self._create_forum_topic(target["chat_id"], title)
-                    thread_id = self._topic_thread_id_from_result(topic)
-                    if thread_id:
-                        target["thread_id"] = thread_id
-                        self._save()
-            except Exception:
-                pass
-        return await utils.answer(message, self.strings["log_target_topic"] + f"\n{self.strings['log_target_label'].format(target=self._log_target_text())}\n{self.strings['log_topic_label'].format(topic=target.get('topic_title') or 'Logs')}")
 
     async def ks_logchat_help(self, call):
         await call.edit(
