@@ -89,8 +89,8 @@ DB_AUTOMOD_CHATS_KEY = "omnicli_automod_chats"
 DB_AUTOMOD_RULES_KEY = "omnicli_automod_rules"
 DB_BACKEND_AUTH_KEY = "omnicli_backend_auth_v1"
 
-SUPPORTED_OMNI_BACKENDS = ("omni", "qwen", "codex", "gemini", "claude")
-JS_BACKENDS = {"omni", "qwen", "codex", "gemini", "claude"}
+SUPPORTED_OMNI_BACKENDS = ("qwen", "codex", "gemini", "claude")
+JS_BACKENDS = {"qwen", "codex", "gemini", "claude"}
 
 OMNI_TIMEOUT = 300
 OMNI_STARTUP_TIMEOUT = 20
@@ -126,9 +126,9 @@ class OmniCLI(loader.Module):
 
     strings = {
         "name": "OmniCLI",
-        "cfg_omni_path_doc": "Путь до бинарника omni. При необходимости укажите полный путь.",
+        "cfg_omni_path_doc": "Путь до бинарника backend CLI (legacy поле, в первую очередь для qwen).",
         "cfg_omni_model_doc": "Модель Omni CLI. Для Omni OAuth обычно: coder-model или vision-model.",
-        "cfg_auth_type_doc": "Тип авторизации для Omni CLI: omni-oauth.",
+        "cfg_auth_type_doc": "Тип авторизации для backend CLI: oauth.",
         "cfg_buttons_doc": "Включить интерактивные кнопки.",
         "cfg_system_instruction_doc": "Системный промпт для Omni CLI.",
         "cfg_max_history_length_doc": "Макс. число пар вопрос-ответ в памяти. 0 — без лимита.",
@@ -149,9 +149,9 @@ class OmniCLI(loader.Module):
         "cfg_allow_tg_tools_doc": "Разрешить выполнение Telegram tools (системные действия через execute_telegram_action).",
         "cfg_tool_action_budget_doc": "Макс. число tool-действий в рамках одного активного запроса чата.",
         "cfg_tool_destructive_guard_doc": "Требовать confirm=true для опасных действий (ban/delete/purge/block и т.п.).",
-        "omni_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Команда <code>omni</code> не найдена в системе.</b>\nПроверьте PATH или заполните <code>omni_path</code> в cfg.",
+        "omni_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>CLI выбранного backend не найден.</b>\nПроверьте PATH или выполните <code>.ominstall &lt;backend&gt;</code>.",
         "omni_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Omni CLI не готов к работе.</b>\nНастройте авторизацию.",
-        "omni_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Omni OAuth не настроен.</b>\nЗапустите <code>.omauth omni</code> и подтвердите вход в браузере.",
+        "omni_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>OAuth не настроен для backend.</b>\nЗапустите <code>.omauth qwen</code> (или нужный backend) и завершите вход.",
         "processing": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Обработка...</b>",
         "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Ожидаю свободный слот выполнения...</b>",
         "bootstrap_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Подготавливаю локальный Omni CLI runtime...</b>",
@@ -256,7 +256,8 @@ class OmniCLI(loader.Module):
         "omauth_usage": (
             "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Авторизация:</b>\n"
             "• <code>.omauth status</code> — показать статус\n"
-            "• <code>.omauth omni</code> — вход в Omni через Telegram и браузер"
+            "• <code>.omauth qwen|codex|gemini|claude</code> — вход в выбранный backend\n"
+            "• <code>.omauth all</code> — пройти авторизацию по очереди для всех backend"
         ),
         "ompresets_usage": (
             "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>Управление пресетами:</b>\n"
@@ -358,8 +359,8 @@ class OmniCLI(loader.Module):
             ),
             loader.ConfigValue(
                 "selected_backend",
-                "omni",
-                "Выбранный backend CLI: omni/qwen/codex/gemini/claude.",
+                "qwen",
+                "Выбранный backend CLI: qwen/codex/gemini/claude.",
                 validator=loader.validators.Choice(list(SUPPORTED_OMNI_BACKENDS)),
             ),
             loader.ConfigValue(
@@ -370,9 +371,9 @@ class OmniCLI(loader.Module):
             ),
             loader.ConfigValue(
                 "auth_type",
-                "omni-oauth",
+                "oauth",
                 self.strings["cfg_auth_type_doc"],
-                validator=loader.validators.Choice(["omni-oauth"]),
+                validator=loader.validators.Choice(["oauth"]),
             ),
             loader.ConfigValue(
                 "interactive_buttons",
@@ -808,15 +809,14 @@ class OmniCLI(loader.Module):
             self.db.set(self.strings["name"], DB_BACKEND_AUTH_KEY, self.backend_auth_state)
             return await self._answer_html(message, f"Авторизация очищена: <code>{backend}</code>")
         if action in set(SUPPORTED_OMNI_BACKENDS) | {"all"}:
-            self.config["auth_type"] = "omni-oauth"
+            self.config["auth_type"] = "oauth"
             targets = SUPPORTED_OMNI_BACKENDS if action == "all" else (action,)
             status_msg = await self._answer_html(message, self.strings["omni_auth_running"])
             report = []
             for backend in targets:
                 ready, _ = await self._get_omni_status_for_runtime(backend=backend)
                 if not ready:
-                    ok, info = await self._run_omni_device_auth(status_msg)
-                    ready = ok
+                    ok, info = await self._run_backend_auth_flow(backend, status_msg)
                     if not ok:
                         report.append(f"• <code>{backend}</code>: ❌ {utils.escape_html(str(info)[:200])}")
                         continue
@@ -825,7 +825,7 @@ class OmniCLI(loader.Module):
             self.db.set(self.strings["name"], DB_BACKEND_AUTH_KEY, self.backend_auth_state)
             return await self._answer_html(status_msg, "<b>Omni Auth:</b>\n" + "\n".join(report))
         if action == "type":
-            if len(parts) < 2 or parts[1].strip() not in {"omni-oauth"}:
+            if len(parts) < 2 or parts[1].strip() not in {"oauth"}:
                 return await self._answer_html(message, self.strings["omauth_usage"])
             self.config["auth_type"] = parts[1].strip()
             return await self._answer_html(
@@ -4946,11 +4946,11 @@ class OmniCLI(loader.Module):
             with tempfile.TemporaryDirectory(prefix="omnicli_") as tempdir:
                 runtime_home = self._prepare_omni_runtime_home(tempdir)
                 env["HOME"] = runtime_home
-                env["OMNI_CODE_SYSTEM_SETTINGS_PATH"] = os.path.join(
-                    runtime_home, ".omni", "system-settings.json"
+                env["QWEN_CODE_SYSTEM_SETTINGS_PATH"] = os.path.join(
+                    runtime_home, ".qwen", "system-settings.json"
                 )
-                env["OMNI_CODE_SYSTEM_DEFAULTS_PATH"] = os.path.join(
-                    runtime_home, ".omni", "system-defaults.json"
+                env["QWEN_CODE_SYSTEM_DEFAULTS_PATH"] = os.path.join(
+                    runtime_home, ".qwen", "system-defaults.json"
                 )
                 args = self._build_omni_args(
                     omni_path=omni_path,
@@ -5077,7 +5077,7 @@ class OmniCLI(loader.Module):
                 final_text = progress_state["final_text"].strip()
                 generated_files = self._collect_omni_generated_files(
                     tempdir,
-                    ignored_names={".omni", "runtime-home", "input"},
+                    ignored_names={".qwen", "runtime-home", "input"},
                     ignored_paths=input_paths,
                 )
                 stderr_text = "\n".join(stderr_lines).strip()
@@ -5148,7 +5148,7 @@ class OmniCLI(loader.Module):
         backend: str = "omni",
     ) -> list:
         backend = (backend or "omni").strip().lower()
-        if backend != "omni":
+        if backend != "qwen":
             args = [omni_path, prompt]
             if selected_model:
                 args.extend(["--model", selected_model])
@@ -5442,8 +5442,8 @@ class OmniCLI(loader.Module):
         return "".join(parts)
 
     async def _run_omni_device_auth(self, status_msg):
-        device_code_endpoint = "https://chat.omni.ai/api/v1/oauth2/device/code"
-        token_endpoint = "https://chat.omni.ai/api/v1/oauth2/token"
+        device_code_endpoint = "https://chat.qwen.ai/api/v1/oauth2/device/code"
+        token_endpoint = "https://chat.qwen.ai/api/v1/oauth2/token"
         client_id = "f0304373b74a44d2b584a3fb70ca9e56"
         scope = "openid profile email model.completion"
         grant_type = "urn:ietf:params:oauth:grant-type:device_code"
@@ -5511,6 +5511,40 @@ class OmniCLI(loader.Module):
             return False, "timeout"
         except Exception as e:
             return False, str(e)
+
+    async def _run_backend_auth_flow(self, backend: str, status_msg):
+        backend = (backend or "").strip().lower()
+        if backend == "qwen":
+            return await self._run_omni_device_auth(status_msg)
+        await self._ensure_omni_cli_available(backend=backend)
+        bin_path = self._get_omni_binary(backend)
+        if not bin_path:
+            return False, f"CLI backend {backend} не найден"
+        commands = {
+            "codex": ([bin_path, "login"], [bin_path, "auth", "login"]),
+            "gemini": ([bin_path, "auth", "login"], [bin_path, "login"]),
+            "claude": ([bin_path, "login"], [bin_path, "auth", "login"]),
+        }.get(backend, ([bin_path, "login"],))
+        env = self._build_subprocess_env()
+        for cmd in commands:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=240)
+                if proc.returncode == 0:
+                    return True, "ok"
+                details = (stderr or stdout).decode("utf-8", errors="ignore").strip()
+                if details:
+                    last_error = details
+                else:
+                    last_error = f"exit={proc.returncode}"
+            except Exception as exc:
+                last_error = str(exc)
+        return False, last_error if "last_error" in locals() else "auth failed"
 
     async def _cache_omni_credentials(self, credentials: dict):
         omni_dir = self._get_user_omni_dir()
@@ -6973,7 +7007,7 @@ class OmniCLI(loader.Module):
         local_omni = self._get_local_omni_binary(backend)
         if not force:
             if os.path.isfile(local_omni):
-                if backend == "omni":
+                if backend == "qwen":
                     self.config["omni_path"] = local_omni
                 self._set_backend_path(backend, local_omni)
                 return
@@ -6984,7 +7018,7 @@ class OmniCLI(loader.Module):
             return
         async with self._install_lock:
             if not force and os.path.isfile(local_omni):
-                if backend == "omni":
+                if backend == "qwen":
                     self.config["omni_path"] = local_omni
                 self._set_backend_path(backend, local_omni)
                 return
@@ -6994,7 +7028,7 @@ class OmniCLI(loader.Module):
             if backend in JS_BACKENDS:
                 await self._ensure_local_node()
             await self._ensure_local_omni_cli(backend)
-            if backend == "omni":
+            if backend == "qwen":
                 self.config["omni_path"] = local_omni
             self._set_backend_path(backend, local_omni)
             ok, details = await self._verify_omni_installation(backend)
@@ -7093,7 +7127,7 @@ class OmniCLI(loader.Module):
             ).strip()
             if proc.returncode != 0:
                 return False, text or f"exit={proc.returncode}"
-            if argv[-1] == "--help" and "Omni Code" not in text:
+            if argv[-1] == "--help" and "Qwen Code" not in text:
                 return False, text[:400]
         return True, omni_bin
 
@@ -7103,7 +7137,7 @@ class OmniCLI(loader.Module):
         if not omni_bin:
             return
         self._set_backend_path(backend, omni_bin)
-        if backend == "omni" and self.config["omni_path"] != omni_bin:
+        if backend == "qwen" and self.config["omni_path"] != omni_bin:
             self.config["omni_path"] = omni_bin
 
     async def _resolve_node_version(self):
@@ -7320,8 +7354,8 @@ class OmniCLI(loader.Module):
         process_markers = ("node", "omni", "npm", "npx")
         omni_markers = [
             "omnicli_",
-            "/runtime-home/.omni",
-            "\\runtime-home\\.omni",
+            "/runtime-home/.qwen",
+            "\\runtime-home\\.qwen",
             bootstrap_base,
             local_node,
             local_omni,
@@ -7520,17 +7554,16 @@ class OmniCLI(loader.Module):
             return pytz.utc
 
     def _get_selected_backend(self) -> str:
-        backend = (self.config["selected_backend"] or "omni").strip().lower()
-        return backend if backend in SUPPORTED_OMNI_BACKENDS else "omni"
+        backend = (self.config["selected_backend"] or "qwen").strip().lower()
+        return backend if backend in SUPPORTED_OMNI_BACKENDS else "qwen"
 
     def _get_backend_bin_name(self, backend: str) -> str:
         return {
-            "omni": "omni",
             "qwen": "qwen",
             "codex": "codex",
             "gemini": "gemini",
             "claude": "claude",
-        }.get((backend or "").strip().lower(), "omni")
+        }.get((backend or "").strip().lower(), "qwen")
 
     def _get_backend_paths_map(self) -> dict:
         raw = (self.config["backend_paths"] or "").strip()
@@ -7556,12 +7589,11 @@ class OmniCLI(loader.Module):
 
     def _get_backend_package(self, backend: str) -> str:
         return {
-            "omni": "@omni-code/omni-code@latest",
             "qwen": "@qwen-code/qwen-code@latest",
             "codex": "@openai/codex@latest",
             "gemini": "@google/gemini-cli@latest",
             "claude": "@anthropic-ai/claude-code@latest",
-        }.get(backend, "@omni-code/omni-code@latest")
+        }.get(backend, "@qwen-code/qwen-code@latest")
 
     def _iter_omni_binary_candidates(self, backend: str = None):
         backend = (backend or self._get_selected_backend()).strip().lower()
@@ -7621,7 +7653,7 @@ class OmniCLI(loader.Module):
 
     def _prepare_omni_runtime_home(self, tempdir: str) -> str:
         runtime_home = os.path.join(tempdir, "runtime-home")
-        runtime_omni = os.path.join(runtime_home, ".omni")
+        runtime_omni = os.path.join(runtime_home, ".qwen")
         os.makedirs(runtime_omni, exist_ok=True)
         source_omni = self._get_user_omni_dir()
         for name in [
@@ -7787,7 +7819,7 @@ class OmniCLI(loader.Module):
         return obj
 
     def _persist_omni_runtime_state(self, runtime_home: str):
-        runtime_omni = os.path.join(runtime_home, ".omni")
+        runtime_omni = os.path.join(runtime_home, ".qwen")
         if not os.path.isdir(runtime_omni):
             return
         target_omni = self._get_user_omni_dir()
@@ -7814,18 +7846,18 @@ class OmniCLI(loader.Module):
         home = os.path.expanduser("~")
         xdg_state_home = os.environ.get("XDG_STATE_HOME")
         candidates = [
-            os.path.join(home, ".omni"),
+            os.path.join(home, ".qwen"),
         ]
         if xdg_state_home:
             candidates.append(os.path.join(xdg_state_home, "omni"))
         appdata = os.environ.get("APPDATA")
         if appdata:
             candidates.append(os.path.join(appdata, "OmniCode"))
-            candidates.append(os.path.join(appdata, ".omni"))
+            candidates.append(os.path.join(appdata, ".qwen"))
         localappdata = os.environ.get("LOCALAPPDATA")
         if localappdata:
             candidates.append(os.path.join(localappdata, "OmniCode"))
-            candidates.append(os.path.join(localappdata, ".omni"))
+            candidates.append(os.path.join(localappdata, ".qwen"))
         for path in candidates:
             if os.path.isdir(path):
                 return path
@@ -7839,13 +7871,13 @@ class OmniCLI(loader.Module):
         auth_type = self.config["auth_type"]
         if self.backend_auth_state.get(backend):
             return True, f"{backend}-oauth"
-        if auth_type == "omni-oauth" and backend == "omni":
+        if auth_type == "oauth" and backend == "qwen":
             oauth_path = os.path.join(self._get_user_omni_dir(), "oauth_creds.json")
             if not os.path.exists(oauth_path):
                 return False, self.strings["omni_oauth_missing"]
             self.backend_auth_state[backend] = True
             self.db.set(self.strings["name"], DB_BACKEND_AUTH_KEY, self.backend_auth_state)
-            return True, "omni-oauth"
+            return True, "qwen-oauth"
         return False, f"Backend {backend} не авторизован. Используйте .omauth {backend}"
 
     async def _format_auth_status(self):
@@ -7856,7 +7888,7 @@ class OmniCLI(loader.Module):
         out.append(
             self.strings["status_omni"].format(
                 self.strings["status_ready"]
-                if self._get_omni_binary()
+                if self._get_omni_binary(backend)
                 else self.strings["status_not_ready"]
             )
         )
