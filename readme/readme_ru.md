@@ -11,6 +11,7 @@
 - [GoySecurity](./readme_goysec_ru.md) — защитный слой перед установкой модулей: анализ рисков, история сканов, whitelist и AI-пояснения.
 - [OmniLoad](./readme_omniload_ru.md) — универсальная загрузка медиа по ссылке, когда нужен быстрый «скачал и отправил» прямо из чата.
 - [QwenCLI](./readme_qwencli_ru.md) — AI-модуль для чата и DevOps-задач, включая установку зависимостей через `.qwinstall`.
+- [OmniCLI](./readme_omnicli_ru.md) — all-in-one AI CLI хаб: Qwen/Codex/Gemini/Claude в едином интерфейсе `.om*`.
 - [Doom](./readme_doom_ru.md) — мини-игра DOOM прямо в Telegram-интерфейсе.
 - [Recon](./readme_recon_ru.md) — набор recon/OSINT-команд для сбора технической информации по доменам, IP и инфраструктуре.
 - [KeyScanner](./readme_keyscanner_ru.md) — модуль поиска и проверки API-ключей в чатах, с авто-ловлей, экспортом и статистикой по провайдерам.
