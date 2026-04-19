@@ -411,6 +411,62 @@ class KeyScanner(loader.Module):
             pass
         return "Unknown", False
 
+
+    async def _gemini_paid_check(self, session, key: str) -> str:
+        """
+        Gemini has no single balance endpoint. We infer paid tier from the
+        accessible model catalog: if the key can see any paid-tier-only model,
+        it is very likely a paid project.
+        """
+        paid_only_prefixes = (
+            "veo-3.1-",
+            "veo-3.0-",
+            "veo-2.0-",
+            "lyria-3-",
+            "gemini-2.5-computer-use-preview-10-2025",
+        )
+
+        try:
+            async with session.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                params={"key": key, "pageSize": 1000},
+                timeout=6,
+            ) as r:
+                if r.status != 200:
+                    return "unknown"
+                data = await r.json()
+        except Exception:
+            return "unknown"
+
+        models = []
+        for item in data.get("models", []) or []:
+            name = (item.get("name") or "").removeprefix("models/")
+            base = item.get("baseModelId") or ""
+            models.append(name)
+            models.append(base)
+
+        if any(
+            model.startswith(prefix)
+            for model in models
+            for prefix in paid_only_prefixes
+        ):
+            return "paid"
+
+        free_basics = {
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-embedding-001",
+        }
+        preview_models = [m for m in models if m.endswith("-preview") or "-preview-" in m]
+        if preview_models and not any(m in free_basics for m in models):
+            return "paid"
+
+        return "free"
+
     async def _check_paid(self, session, key: str, provider: str) -> str:
         """Returns 'paid', 'free', or 'unknown'."""
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -430,14 +486,18 @@ class KeyScanner(loader.Module):
 
             elif provider == "Anthropic" or key.startswith("sk-ant-"):
                 ant_h = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-                async with session.get("https://api.anthropic.com/v1/organizations",
-                                       headers=ant_h, timeout=5) as r:
+                payload = {"model": "claude-haiku-4-5", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+                async with session.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers=ant_h,
+                    json=payload,
+                    timeout=5,
+                ) as r:
                     if r.status == 200:
-                        d = await r.json()
-                        for org in d.get("data", []):
-                            if org.get("billing_type", "") not in ("free_tier", ""):
-                                return "paid"
-                        return "free"
+                        return "paid"
+                    if r.status == 402:
+                        return "unknown"
+                    return "unknown"
 
             elif provider == "OpenRouter" or key.startswith("sk-or-v1-"):
                 async with session.get("https://openrouter.ai/api/v1/auth/key",
@@ -456,8 +516,8 @@ class KeyScanner(loader.Module):
                         total = sum(a.get("amount", 0) for a in d.get("available", []))
                         return "paid" if total > 0 else "free"
 
-            elif provider in ("Gemini",) or key.startswith("AIza"):
-                return "free"   # AI Studio is always free tier
+            elif provider == "Gemini" or key.startswith("AIza"):
+                return await self._gemini_paid_check(session, key)
 
             elif provider == "Groq" or key.startswith("gsk_"):
                 return "unknown"  # no public billing endpoint
@@ -466,6 +526,7 @@ class KeyScanner(loader.Module):
             pass
         return "unknown"
 
+    # ── Commands ──────────────────────────────────────────────────────────────
     @loader.command(
         ru_doc="[лимит] - Поиск ключей через поиск сообщений.",
         en_doc="[limit] - Fast key scan via Telegram search.",
