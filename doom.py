@@ -22,11 +22,12 @@
 
 """запускает doom."""
 
-__version__ = (1, 1, 1)
+__version__ = (1, 1, 4)
 
 import math
 import time
 import asyncio
+import re
 import traceback
 from herokutl.types import Message
 from .. import loader, utils
@@ -37,7 +38,7 @@ class Doom(loader.Module):
 
     def __init__(self):
         self.sessions = {}
-        self.config = {
+        self.game_config = {
             "scr_w": 24,
             "scr_h": 12,
             "fov": math.pi / 3,
@@ -66,13 +67,32 @@ class Doom(loader.Module):
         self.client = client
         self.db = db
 
+    async def safe_edit(self, call, text, reply_markup):
+        try:
+            await call.edit(text, reply_markup=reply_markup)
+            return True
+        except Exception as e:
+            wait_s = getattr(e, "seconds", 0) or getattr(e, "value", 0)
+            if not wait_s:
+                m = re.search(r"(\d+)\s*seconds", str(e))
+                if m:
+                    wait_s = int(m.group(1))
+            if wait_s:
+                await asyncio.sleep(wait_s + 0.1)
+                try:
+                    await call.edit(text, reply_markup=reply_markup)
+                    return True
+                except Exception:
+                    return False
+            return False
+
     @loader.command(ru_doc="Справка по игре DOOM")
     async def hdoomcmd(self, message: Message):
         text = (
             "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Справка по DOOM</b>\n\n"
             "<b>Интерфейс (Карта / 3D):</b>\n"
             "<code>P</code> - Ваш персонаж\n"
-            "<code>E</code> / <code>Ж</code> - Монстр (Атакует вблизи)\n"
+            "<code>M</code> / <code>👾</code> - Монстр (Атакует вблизи)\n"
             "<code>A</code> / <code>[A]</code> - Патроны (+5)\n"
             "<code>H</code> / <code>[+]</code> - Аптечка (+25 HP)\n\n"
             "Запуск игры: <code>(префикс)doom</code>"
@@ -92,11 +112,11 @@ class Doom(loader.Module):
         )
 
     def render_3d_frame(self, state):
-        w = self.config["scr_w"]
-        h = self.config["scr_h"]
-        fov = self.config["fov"]
-        depth = self.config["depth"]
-        shades = self.config["shades"]
+        w = self.game_config["scr_w"]
+        h = self.game_config["scr_h"]
+        fov = self.game_config["fov"]
+        depth = self.game_config["depth"]
+        shades = self.game_config["shades"]
 
         px, py, pa = state["x"], state["y"], state["a"]
         screen = []
@@ -140,7 +160,7 @@ class Doom(loader.Module):
                 if y <= ceil:
                     col.append(" ")
                 elif y > ceil and y <= floor:
-                    if cell_hit == "E": col.append("Ж")
+                    if cell_hit == "E": col.append("👾")
                     elif cell_hit == "A":
                         if y == int(floor): col.append("A")
                         elif y == int(floor) - 1: col.append("[")
@@ -165,6 +185,12 @@ class Doom(loader.Module):
         for y in range(h):
             row = "".join([screen[x][y] for x in range(w)])
             out.append(row)
+        cx = w // 2
+        cy = h // 2
+        if 0 <= cy < len(out) and 0 <= cx < len(out[cy]):
+            r = list(out[cy])
+            r[cx] = "✚"
+            out[cy] = "".join(r)
         return "\n".join(out)
 
     def get_mini_map(self, state):
@@ -172,6 +198,7 @@ class Doom(loader.Module):
         m = []
         for y, row in enumerate(state["map"]):
             r = [" " if c == "." else c for c in row]
+            r = ["M" if c == "E" else c for c in r]
             if y == py and 0 <= px < len(r):
                 r[px] = "P"
             m.append("".join(r))
@@ -182,7 +209,7 @@ class Doom(loader.Module):
             st["running"] = False
             dead_text = f"<tg-emoji emoji-id=5256054975389247793>📛</tg-emoji> <b>ВЫ ПОГИБЛИ</b>\n\nСчет: {st['score']}\nНажмите Новая игра, чтобы воскреснуть."
             btn = [[{"text": "🔄 Новая игра", "callback": self.action_new}]]
-            await call.edit(dead_text, reply_markup=btn)
+            await self.safe_edit(call, dead_text, btn)
             return
 
         frame = self.render_3d_frame(st)
@@ -202,7 +229,10 @@ class Doom(loader.Module):
             [{"text": "⬅️", "callback": self.action_m_l}, {"text": "💥", "callback": self.action_shoot}, {"text": "➡️", "callback": self.action_m_r}],
             [{"text": "⬇️", "callback": self.action_bw}, {"text": "💾", "callback": self.action_save}, {"text": "🚪", "callback": self.action_exit}]
         ]
-        await call.edit(hud, reply_markup=btn)
+        if st.get("last_hud") == hud:
+            return
+        if await self.safe_edit(call, hud, btn):
+            st["last_hud"] = hud
 
     async def game_loop(self, call):
         user_id = "doom_user"
@@ -210,7 +240,7 @@ class Doom(loader.Module):
             st = self.sessions[user_id]
             now = time.time()
 
-            if now - st.get("last_ai", 0) > 1.5:
+            if now - st.get("last_ai", 0) > 0.7:
                 moved = False
                 enemies = []
                 for y in range(self.map_h):
@@ -221,8 +251,8 @@ class Doom(loader.Module):
                 for ex, ey in enemies:
                     dist = math.hypot(st["x"] - ex, st["y"] - ey)
                     if dist < 1.5:
-                        st["hp"] -= 15
-                        st["log"] = "Монстр кусает! -15 HP"
+                        st["hp"] -= 8
+                        st["log"] = "Монстр атакует! -8 HP"
                         moved = True
                     else:
                         dx = 1 if st["x"] > ex else (-1 if st["x"] < ex else 0)
@@ -240,7 +270,16 @@ class Doom(loader.Module):
                 if moved: st["dirty"] = True
                 st["last_ai"] = now
 
-            if st.get("dirty") and now - st.get("last_render", 0) >= 1.0:
+            if now - st.get("last_save", 0) >= 15:
+                sv = st.copy()
+                sv["running"] = False
+                self.db.set("Doom", "save", sv)
+                st["last_save"] = now
+                if st.get("log") != "Автосохранение выполнено.":
+                    st["log"] = "Автосохранение выполнено."
+                    st["dirty"] = True
+
+            if st.get("dirty") and now - st.get("last_render", 0) >= 0.6:
                 try:
                     await self.do_render(call, st)
                     st["last_render"] = time.time()
@@ -248,21 +287,32 @@ class Doom(loader.Module):
                 except Exception:
                     pass
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.12)
 
     def update_player(self, dx, dy, dr):
         if "doom_user" not in self.sessions: return
         st = self.sessions["doom_user"]
         if st["hp"] <= 0: return
 
+        def is_walkable(x, y):
+            r = 0.17
+            points = [(x-r, y-r), (x+r, y-r), (x-r, y+r), (x+r, y+r)]
+            for px, py in points:
+                tx, ty = int(px), int(py)
+                if tx < 0 or tx >= self.map_w or ty < 0 or ty >= self.map_h:
+                    return False
+                if st["map"][ty][tx] in ["#", "E"]:
+                    return False
+            return True
+
         st["a"] += dr
         if dx or dy:
             old_x, old_y = st["x"], st["y"]
             nx = st["x"] + dx
-            if 0 <= int(nx) < self.map_w and st["map"][int(st["y"])][int(nx)] not in ["#", "E"]:
+            if is_walkable(nx, st["y"]):
                 st["x"] = nx
             ny = st["y"] + dy
-            if 0 <= int(ny) < self.map_h and st["map"][int(ny)][int(st["x"])] not in ["#", "E"]:
+            if is_walkable(st["x"], ny):
                 st["y"] = ny
 
             cell_x, cell_y = int(st["x"]), int(st["y"])
@@ -292,18 +342,24 @@ class Doom(loader.Module):
         st["ammo"] -= 1
         hit = False
         rx, ry = math.sin(st["a"]), math.cos(st["a"])
+        d = 0.0
 
-        for d in range(1, int(self.config["depth"])):
-            tx, ty = int(st["x"] + rx * d), int(st["y"] + ry * d)
+        while d < self.game_config["depth"]:
+            d += 0.1
+            fx, fy = st["x"] + rx * d, st["y"] + ry * d
+            tx, ty = int(fx), int(fy)
             if 0 <= tx < self.map_w and 0 <= ty < self.map_h:
-                if st["map"][ty][tx] == "E":
+                cell = st["map"][ty][tx]
+                if cell == "E":
                     st["map"][ty][tx] = " "
                     st["score"] += 1
                     st["log"] = "<tg-emoji emoji-id=5253877736207821121>🔥</tg-emoji> Монстр разорван!"
                     hit = True
                     break
-                elif st["map"][ty][tx] == "#":
+                if cell == "#":
                     break
+            else:
+                break
 
         if not hit: st["log"] = "Выстрел в стену."
         st["dirty"] = True
@@ -319,13 +375,15 @@ class Doom(loader.Module):
                 "hp": 100, "ammo": 10, "score": 0,
                 "log": "Добро пожаловать в Ад.",
                 "last_render": 0, "last_ai": 0,
+                "last_save": 0,
                 "dirty": True, "running": True,
-                "map": m
+                "map": m,
+                "last_hud": ""
             }
             asyncio.create_task(self.game_loop(call))
         except Exception as e:
             err = traceback.format_exc()
-            await call.edit(f"<b>CRITICAL ERROR:</b>\n<pre>{err}</pre>", reply_markup=[])
+            await self.safe_edit(call, f"<b>CRITICAL ERROR:</b>\n<pre>{err}</pre>", [])
 
     async def action_cont(self, call):
         try:
@@ -334,13 +392,15 @@ class Doom(loader.Module):
                 sv["running"] = True
                 sv["dirty"] = True
                 sv["log"] = "Игра загружена."
+                sv["last_hud"] = ""
+                sv["last_save"] = time.time()
                 self.sessions["doom_user"] = sv
                 asyncio.create_task(self.game_loop(call))
             else:
-                await call.edit("Нет сохранений! Запустите модуль заново.", reply_markup=[])
+                await self.safe_edit(call, "Нет сохранений! Запустите модуль заново.", [])
         except Exception as e:
             err = traceback.format_exc()
-            await call.edit(f"<b>CRITICAL ERROR:</b>\n<pre>{err}</pre>", reply_markup=[])
+            await self.safe_edit(call, f"<b>CRITICAL ERROR:</b>\n<pre>{err}</pre>", [])
 
     async def action_save(self, call):
         if "doom_user" in self.sessions:
@@ -354,7 +414,7 @@ class Doom(loader.Module):
         if "doom_user" in self.sessions:
             self.sessions["doom_user"]["running"] = False
             del self.sessions["doom_user"]
-        await call.edit("Игра завершена.", reply_markup=[])
+        await self.safe_edit(call, "Игра завершена.", [])
 
     async def action_rot_l(self, call): self.update_player(0, 0, -0.4)
     async def action_rot_r(self, call): self.update_player(0, 0, 0.4)
