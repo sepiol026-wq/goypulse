@@ -65,7 +65,7 @@ class SessionManagerMod(loader.Module):
 
     strings = {
         "name": "SessionManager",
-        "need_api": "❌ Укажи <code>api_id</code> и <code>api_hash</code> через <code>.cfg SessionManager</code>.",
+        "need_api": "❌ Не удалось получить API credentials из клиента Heroku.",
         "import_on": "📥 Импорт включён на 10 минут. Отправляй string-сессии текстом/файлами. Потом жми <b>Finish Import</b> в панели.",
         "import_off": "✅ Импорт завершён. Принято: <code>{}</code>, добавлено: <code>{}</code>, дубликатов: <code>{}</code>, ошибок: <code>{}</code>",
         "panel_title": "🧩 <b>SessionManager</b>\n\nВсего: <code>{total}</code>\nValid: <code>{valid}</code> | Invalid: <code>{invalid}</code>\nTemp SB: <code>{temp}</code> | Perm SB: <code>{perm}</code> | Frozen: <code>{frozen}</code>",
@@ -77,8 +77,8 @@ class SessionManagerMod(loader.Module):
 
     def __init__(self):
         self.config = loader.ModuleConfig(
-            loader.ConfigValue("api_id", 0, "Telegram API ID", validator=loader.validators.Integer(minimum=0)),
-            loader.ConfigValue("api_hash", "", "Telegram API HASH", validator=loader.validators.Hidden()),
+            loader.ConfigValue("api_id_override", 0, "Override API ID (optional)", validator=loader.validators.Integer(minimum=0)),
+            loader.ConfigValue("api_hash_override", "", "Override API HASH (optional)", validator=loader.validators.Hidden()),
             loader.ConfigValue("parallel", 5, "Concurrency for checks/actions", validator=loader.validators.Integer(minimum=1, maximum=100)),
         )
         self._sessions: List[SessionRecord] = []
@@ -89,11 +89,26 @@ class SessionManagerMod(loader.Module):
         self._import_payloads: List[Tuple[str, str]] = []
         self._owner_id: int = 0
         self._lock = asyncio.Lock()
+        self._api_id: int = 0
+        self._api_hash: str = ""
 
     async def client_ready(self, client, db):
         self._db = db
+        self._client = client
         self._owner_id = (await client.get_me()).id
+        self._api_id, self._api_hash = self._resolve_api_credentials()
         self._load_state()
+
+    def _resolve_api_credentials(self) -> Tuple[int, str]:
+        # Prefer explicit override; otherwise reuse main Heroku userbot client credentials.
+        if int(self.config["api_id_override"] or 0) and str(self.config["api_hash_override"] or ""):
+            return int(self.config["api_id_override"]), str(self.config["api_hash_override"])
+        client = getattr(self, "_client", None)
+        if not client:
+            return 0, ""
+        api_id = int(getattr(client, "api_id", 0) or getattr(client, "_api_id", 0) or 0)
+        api_hash = str(getattr(client, "api_hash", "") or getattr(client, "_api_hash", "") or "")
+        return api_id, api_hash
 
     def _load_state(self):
         raw = self._db.get(self.strings("name"), "sessions", None)
@@ -136,7 +151,9 @@ class SessionManagerMod(loader.Module):
         return bool(getattr(message, "sender_id", 0) == self._owner_id)
 
     def _api_ready(self) -> bool:
-        return bool(self.config["api_id"] and self.config["api_hash"])
+        if not self._api_id or not self._api_hash:
+            self._api_id, self._api_hash = self._resolve_api_credentials()
+        return bool(self._api_id and self._api_hash)
 
     async def _render_panel(self, message_or_call):
         st = self._stats()
@@ -156,7 +173,7 @@ class SessionManagerMod(loader.Module):
             await self.inline.form(text, reply_markup=markup)
 
     async def _create_client(self, session_string: str):
-        return TelegramClient(StringSession(session_string), int(self.config["api_id"]), self.config["api_hash"])
+        return TelegramClient(StringSession(session_string), int(self._api_id), self._api_hash)
 
     async def _create_client_for_record(self, rec: SessionRecord):
         if rec.backend == "sqlite_b64":
@@ -165,8 +182,8 @@ class SessionManagerMod(loader.Module):
             tmp.write(raw)
             tmp.flush()
             tmp.close()
-            return TelegramClient(tmp.name, int(self.config["api_id"]), self.config["api_hash"]), tmp.name
-        return TelegramClient(StringSession(rec.session_string), int(self.config["api_id"]), self.config["api_hash"]), None
+            return TelegramClient(tmp.name, int(self._api_id), self._api_hash), tmp.name
+        return TelegramClient(StringSession(rec.session_string), int(self._api_id), self._api_hash), None
 
     async def _quick_validate(self, rec: SessionRecord) -> SessionRecord:
         rec.last_check_at = time.time()
