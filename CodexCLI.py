@@ -19,7 +19,7 @@
 # authors: @justidev
 # Description: Codex CLI module for Heroku.
 
-__version__ = (1, 3, 1)
+__version__ = (1, 3, 2)
 
 import asyncio
 import base64
@@ -56,10 +56,10 @@ from telethon.errors.rpcerrorlist import (
     ChatAdminRequiredError,
     UserNotParticipantError,
 )
-from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.channels import GetFullChannelRequest, GetParticipantsRequest
 from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest, LeaveChannelRequest
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
-from telethon.tl.functions.messages import SendReactionRequest
+from telethon.tl.functions.messages import GetFullChatRequest, SendReactionRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import (
     Channel,
@@ -150,10 +150,12 @@ class CodexCLI(loader.Module):
         "cfg_allow_tg_tools_doc": "Разрешить выполнение Telegram tools (системные действия через execute_telegram_action).",
         "cfg_tool_action_budget_doc": "Макс. число tool-действий в рамках одного активного запроса чата.",
         "cfg_tool_destructive_guard_doc": "Требовать confirm=true для опасных действий (ban/delete/purge/block и т.п.).",
+        "cfg_request_timeout_doc": "Таймаут бездействия Codex CLI в секундах до принудительной остановки запроса.",
+        "cfg_startup_timeout_doc": "Таймаут старта Codex CLI в секундах, если процесс не выдал ни stdout, ни stderr.",
         "codex_not_found": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>CLI-бинарник не найден.</b>\nПроверьте PATH или заполните <code>codex_path</code> в cfg.",
         "codex_auth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Codex CLI не готов к работе.</b>\nНастройте авторизацию.",
         "codex_oauth_missing": "<tg-emoji emoji-id=5332431395266524007>❗️</tg-emoji> <b>Codex login не настроен.</b>\nСделайте <code>codex login</code> на хосте или задайте <code>.cdxauth apikey</code>.",
-        "processing": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>Codex Studio: обрабатываю запрос...</b>",
+        "processing": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji> <b>CodexCLI: обрабатываю запрос...</b>",
         "queue_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Очередь: жду свободный слот выполнения.</b>",
         "bootstrap_wait": "<tg-emoji emoji-id=5415941463764667665>⏳</tg-emoji> <b>Инициализирую runtime Codex CLI...</b>",
         "tool_exec_status": "<tg-emoji emoji-id=5962952497197748583>🔧</tg-emoji> <b>Выполняю Telegram-инструмент:</b> <code>{}</code> <i>(шаг {}/{})</i>",
@@ -221,8 +223,8 @@ class CodexCLI(loader.Module):
         "codex_auth_already": "<tg-emoji emoji-id=5330561907671727296>✅</tg-emoji> <b>Codex OAuth уже настроен.</b>\nДля перевхода используйте <code>.cdxauth auth</code>.",
         "question_prefix": "<tg-emoji emoji-id=5253590213917158323>💬</tg-emoji> <b>Вход:</b>",
         "response_prefix": "<tg-emoji emoji-id=5256230583717079814>📝</tg-emoji> <b>Вывод · {}:</b>",
-        "memory_status": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> контекст <code>{}/{}</code>",
-        "memory_status_unlimited": "<tg-emoji emoji-id=5350445475948414299>🧠</tg-emoji> контекст <code>{}/∞</code>",
+        "memory_status": "<code>[{}/{}]</code>",
+        "memory_status_unlimited": "<code>[{}/∞]</code>",
         "memory_cleared": "<tg-emoji emoji-id=6007942490076745785>🧹</tg-emoji> <b>Память диалога очищена.</b>",
         "memory_cleared_auto": "<tg-emoji emoji-id=6007942490076745785>🧹</tg-emoji> <b>Память авто-ответа в этом чате очищена.</b>",
         "no_memory_to_clear": "<tg-emoji emoji-id=5278753302023004775>ℹ️</tg-emoji> <b>В этом чате нет истории.</b>",
@@ -384,7 +386,7 @@ class CodexCLI(loader.Module):
         "automod_rules_cleared": "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji> Правила AI-модератора очищены.",
         "automod_status_on": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> Automod: <b>ON</b>\nПравила:\n<blockquote>{}</blockquote>",
         "automod_status_off": "<tg-emoji emoji-id=5253780051471642059>🛡</tg-emoji> Automod: <b>OFF</b>",
-        "cfg_check_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Codex Studio · Проверка конфигурации</b>",
+        "cfg_check_title": "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>CodexCLI · Проверка конфигурации</b>",
         "codex_models_note": (
             "<tg-emoji emoji-id=5256230583717079814>📋</tg-emoji> <b>Актуальный список (на 2026-04-20):</b>\n"
             "• <code>gpt-5.4</code> — основной выбор для сложных coding/agent задач\n"
@@ -613,6 +615,18 @@ class CodexCLI(loader.Module):
                 True,
                 self.strings["cfg_tool_destructive_guard_doc"],
                 validator=loader.validators.Boolean(),
+            ),
+            loader.ConfigValue(
+                "request_timeout",
+                CODEX_TIMEOUT,
+                self.strings["cfg_request_timeout_doc"],
+                validator=loader.validators.Integer(minimum=30, maximum=3600),
+            ),
+            loader.ConfigValue(
+                "startup_timeout",
+                max(CODEX_STARTUP_TIMEOUT, 45),
+                self.strings["cfg_startup_timeout_doc"],
+                validator=loader.validators.Integer(minimum=10, maximum=600),
             ),
         )
         self.prompt_presets = []
@@ -2166,6 +2180,16 @@ class CodexCLI(loader.Module):
                     f"{tool_action} · {elapsed}s", agent_tool_step, max_tool_turns
                 )
                 tool_result = await self._execute_telegram_tool(chat_id, tool_json_str)
+                tool_summary = ""
+                with contextlib.suppress(Exception):
+                    tool_result_json = json.loads(tool_result)
+                    if tool_result_json.get("status") == "success":
+                        tool_summary = self._format_tool_success_details(
+                            tool_result_json.get("details") or {}
+                        )
+                tool_summary_block = ""
+                if tool_summary:
+                    tool_summary_block = f"[SYSTEM TOOL SUMMARY]\n{tool_summary}\n"
                 now = int(datetime.utcnow().timestamp())
                 history_override.extend(
                     [
@@ -2180,6 +2204,7 @@ class CodexCLI(loader.Module):
                             "type": "text",
                             "content": (
                                 f"[SYSTEM TOOL RESULT]\n{tool_result}\n"
+                                f"{tool_summary_block}"
                                 "Продолжай выполнение задачи.."
                             ),
                             "date": now,
@@ -2560,8 +2585,8 @@ class CodexCLI(loader.Module):
                 msg_obj, fallback=base_message_id
             )
             text_to_send = (
-                f"<b>Codex Studio</b>\n"
-                f"{model_info} · {mem_ind}\n\n"
+                f"<b>CodexCLI</b>\n"
+                f"{model_info}\n{mem_ind}\n\n"
                 f"{self.strings['question_prefix']}\n{question_html}\n\n"
                 f"{self.strings['response_prefix'].format(utils.escape_html(label))}\n{formatted_body}"
             )
@@ -2575,8 +2600,8 @@ class CodexCLI(loader.Module):
                 chunks = self._paginate_text(result_text, 3000)
                 uid = uuid.uuid4().hex[:6]
                 header = (
-                    f"<b>Codex Studio</b>\n"
-                    f"{model_info} · {mem_ind}\n\n"
+                    f"<b>CodexCLI</b>\n"
+                    f"{model_info}\n{mem_ind}\n\n"
                     f"{self.strings['question_prefix']}\n<blockquote>{utils.escape_html(display_prompt[:100])}</blockquote>\n\n"
                     f"{self.strings['response_prefix'].format(utils.escape_html(label))}\n"
                 )
@@ -2662,33 +2687,181 @@ class CodexCLI(loader.Module):
                 self._request_sessions.pop(chat_id, None)
         return None if impersonation_mode else ""
 
+    def _format_actor_compact(self, item: dict) -> str:
+        if not isinstance(item, dict):
+            return "Unknown"
+        name = str(item.get("name") or "Без имени").strip()
+        username = str(item.get("username") or "").strip()
+        actor_id = item.get("id")
+        bits = [name]
+        if username:
+            bits.append(f"@{username}")
+        if actor_id not in (None, ""):
+            bits.append(f"ID:{actor_id}")
+        if item.get("bot"):
+            bits.append("бот")
+        role = str(item.get("role") or "").strip().lower()
+        if role == "owner":
+            bits.append("owner")
+        rank = str(item.get("rank") or "").strip()
+        if rank:
+            bits.append(f"rank={rank}")
+        return " | ".join(bits)
+
+    async def _get_chat_admin_snapshot(self, entity):
+        snapshot = {"owner": None, "admins": [], "count": 0}
+        if entity is None or isinstance(entity, User):
+            return snapshot
+
+        def _append_admin(user_obj, seen_ids, role="admin", rank=None):
+            if not user_obj:
+                return
+            admin_id = getattr(user_obj, "id", None)
+            if admin_id in seen_ids:
+                return
+            seen_ids.add(admin_id)
+            item = {
+                "id": admin_id,
+                "username": getattr(user_obj, "username", None),
+                "name": get_display_name(user_obj) or "Без имени",
+                "bot": bool(getattr(user_obj, "bot", False)),
+                "role": "owner" if role == "owner" else "admin",
+                "rank": rank or None,
+            }
+            if item["role"] == "owner" and snapshot["owner"] is None:
+                snapshot["owner"] = dict(item)
+            snapshot["admins"].append(item)
+
+        seen_ids = set()
+
+        if isinstance(entity, Channel):
+            with contextlib.suppress(Exception):
+                participants = await self.client(
+                    GetParticipantsRequest(
+                        channel=entity,
+                        filter=tg_types.ChannelParticipantsAdmins(),
+                        offset=0,
+                        limit=200,
+                        hash=0,
+                    )
+                )
+                users_by_id = {
+                    getattr(one, "id", None): one
+                    for one in (getattr(participants, "users", None) or [])
+                }
+                for participant in getattr(participants, "participants", None) or []:
+                    user_obj = users_by_id.get(getattr(participant, "user_id", None))
+                    if not user_obj:
+                        continue
+                    role = (
+                        "owner"
+                        if participant.__class__.__name__.lower().endswith("creator")
+                        else "admin"
+                    )
+                    _append_admin(
+                        user_obj,
+                        seen_ids,
+                        role=role,
+                        rank=getattr(participant, "rank", None),
+                    )
+
+        if isinstance(entity, Chat) and not snapshot["admins"]:
+            with contextlib.suppress(Exception):
+                full_chat = await self.client(GetFullChatRequest(chat_id=entity.id))
+                users_by_id = {
+                    getattr(one, "id", None): one
+                    for one in (getattr(full_chat, "users", None) or [])
+                }
+                participants = getattr(
+                    getattr(getattr(full_chat, "full_chat", None), "participants", None),
+                    "participants",
+                    None,
+                ) or []
+                for participant in participants:
+                    class_name = participant.__class__.__name__.lower()
+                    if not class_name.endswith("creator") and not class_name.endswith("admin"):
+                        continue
+                    user_obj = users_by_id.get(getattr(participant, "user_id", None))
+                    if not user_obj:
+                        continue
+                    role = "owner" if class_name.endswith("creator") else "admin"
+                    _append_admin(user_obj, seen_ids, role=role, rank=None)
+
+        if not snapshot["admins"]:
+            with contextlib.suppress(Exception):
+                async for user_obj in self.client.iter_participants(
+                    entity, filter=tg_types.ChannelParticipantsAdmins()
+                ):
+                    role = "owner" if bool(getattr(user_obj, "creator", False)) else "admin"
+                    _append_admin(
+                        user_obj,
+                        seen_ids,
+                        role=role,
+                        rank=getattr(user_obj, "rank", None),
+                    )
+
+        snapshot["admins"].sort(
+            key=lambda item: (
+                0 if str(item.get("role") or "").lower() == "owner" else 1,
+                str(item.get("name") or "").lower(),
+            )
+        )
+        snapshot["count"] = len(snapshot["admins"])
+        if snapshot["owner"] is None:
+            for item in snapshot["admins"]:
+                if str(item.get("role") or "").lower() == "owner":
+                    snapshot["owner"] = dict(item)
+                    break
+        return snapshot
+
     def _format_tool_success_details(self, details: dict) -> str:
         if not isinstance(details, dict):
             return ""
         action_done = str(details.get("action") or "").strip().lower()
-        if action_done != "get_chat_admins":
-            return ""
+        if action_done == "get_chat_admins":
+            admins = details.get("admins")
+            if not isinstance(admins, list):
+                admins = []
+            if not admins:
+                return "Не удалось найти админов в этом чате."
 
-        admins = details.get("admins")
-        if not isinstance(admins, list):
-            admins = []
-        if not admins:
-            return "Не удалось найти админов в этом чате."
+            total = int(details.get("count") or len(admins))
+            owner = details.get("owner") if isinstance(details.get("owner"), dict) else None
+            lines = [f"Админы чата ({total}):"]
+            if owner:
+                lines.append(f"Owner: {self._format_actor_compact(owner)}")
+            for idx, admin in enumerate(admins[:30], start=1):
+                if not isinstance(admin, dict):
+                    continue
+                lines.append(f"{idx}. {self._format_actor_compact(admin)}")
+            if len(admins) > 30:
+                lines.append(f"… и ещё {len(admins) - 30}.")
+            return "\n".join(lines)
 
-        total = int(details.get("count") or len(admins))
-        lines = [f"Админы чата ({total}):"]
-        for idx, admin in enumerate(admins[:30], start=1):
-            if not isinstance(admin, dict):
-                continue
-            name = str(admin.get("name") or "Без имени")
-            username = str(admin.get("username") or "").strip()
-            admin_id = admin.get("id")
-            bot_mark = " [бот]" if admin.get("bot") else ""
-            uname_part = f"@{username}" if username else "без username"
-            lines.append(f"{idx}. {name} ({uname_part}) — ID: {admin_id}{bot_mark}")
-        if len(admins) > 30:
-            lines.append(f"… и ещё {len(admins) - 30}.")
-        return "\n".join(lines)
+        if action_done == "get_chat_info":
+            owner = details.get("owner") if isinstance(details.get("owner"), dict) else None
+            admins = details.get("admins_preview")
+            if not isinstance(admins, list):
+                admins = []
+            lines = [
+                f"Чат: {details.get('title') or 'Unknown'}",
+                f"Тип: {details.get('chat_type') or 'unknown'}",
+            ]
+            username = str(details.get("username") or "").strip()
+            if username:
+                lines.append(f"Username: @{username}")
+            if details.get("target_chat") is not None:
+                lines.append(f"ID: {details.get('target_chat')}")
+            if owner:
+                lines.append(f"Owner: {self._format_actor_compact(owner)}")
+            if admins:
+                lines.append("Админы: " + "; ".join(self._format_actor_compact(one) for one in admins[:8] if isinstance(one, dict)))
+            about = str(details.get("about") or "").strip()
+            if about and about != "—":
+                lines.append(f"About: {about}")
+            return "\n".join(lines)
+
+        return ""
 
     async def _execute_telegram_tool(self, chat_id: int, tool_json_str: str) -> str:
         if not self.config["allow_tg_tools"]:
@@ -4383,6 +4556,7 @@ class CodexCLI(loader.Module):
                 username = getattr(entity, "username", None)
                 participant_count = None
                 about = ""
+                admin_snapshot = await self._get_chat_admin_snapshot(entity)
                 if isinstance(entity, Channel):
                     with contextlib.suppress(Exception):
                         full = await self.client(GetFullChannelRequest(entity))
@@ -4410,6 +4584,9 @@ class CodexCLI(loader.Module):
                         "participant_count": (
                             participant_count if participant_count is not None else "N/A"
                         ),
+                        "owner": admin_snapshot.get("owner"),
+                        "admins_count": int(admin_snapshot.get("count") or 0),
+                        "admins_preview": (admin_snapshot.get("admins") or [])[:12],
                         "about": about or "—",
                     }
                 )
@@ -4461,10 +4638,16 @@ class CodexCLI(loader.Module):
                 entity = await _resolve_target_entity(chat_id, chat_id)
                 reply_msg = await self._get_request_reply_message(chat_id)
                 session = self._request_sessions.get(chat_id) or {}
+                admin_snapshot = await self._get_chat_admin_snapshot(entity)
                 return _ok(
                     {
                         "action": action,
-                        "chat": await _describe_entity(entity),
+                        "chat": {
+                            **(await _describe_entity(entity)),
+                            "owner": admin_snapshot.get("owner"),
+                            "admins_count": int(admin_snapshot.get("count") or 0),
+                            "admins_preview": (admin_snapshot.get("admins") or [])[:12],
+                        },
                         "request": {
                             "chat_id": chat_id,
                             "base_message_id": session.get("base_message_id"),
@@ -5011,24 +5194,14 @@ class CodexCLI(loader.Module):
             if action == "get_chat_admins":
                 target_chat = tool_data.get("target_chat") or chat_id
                 entity = await _resolve_target_entity(target_chat, chat_id)
-                admins = []
-                async for user in self.client.iter_participants(
-                    entity, filter=tg_types.ChannelParticipantsAdmins()
-                ):
-                    admins.append(
-                        {
-                            "id": getattr(user, "id", None),
-                            "username": getattr(user, "username", None),
-                            "name": get_display_name(user),
-                            "bot": bool(getattr(user, "bot", False)),
-                        }
-                    )
+                admin_snapshot = await self._get_chat_admin_snapshot(entity)
                 return _ok(
                     {
                         "action": action,
                         "target_chat": getattr(entity, "id", target_chat),
-                        "count": len(admins),
-                        "admins": admins,
+                        "count": int(admin_snapshot.get("count") or 0),
+                        "owner": admin_snapshot.get("owner"),
+                        "admins": admin_snapshot.get("admins") or [],
                     }
                 )
 
@@ -6980,11 +7153,8 @@ class CodexCLI(loader.Module):
                             break
                         now = asyncio.get_running_loop().time()
                         backend = (self.config.get("cli_backend") or "codex").strip().lower()
-                        startup_timeout = (
-                            CODEX_STARTUP_TIMEOUT
-                            if backend != "codex"
-                            else max(CODEX_STARTUP_TIMEOUT, 45)
-                        )
+                        startup_timeout = self._get_startup_timeout(backend)
+                        request_timeout = self._get_request_timeout()
                         if (
                             progress_state.get("step", 0) == 0
                             and not stdout_lines
@@ -6995,9 +7165,9 @@ class CodexCLI(loader.Module):
                             raise RuntimeError(
                                 f"Codex CLI завис на старте и не выдал вывод за {startup_timeout} сек."
                             )
-                        if now - progress_state["last_activity_at"] >= CODEX_TIMEOUT:
+                        if now - progress_state["last_activity_at"] >= request_timeout:
                             raise RuntimeError(
-                                f"Codex CLI не подавал признаков жизни {CODEX_TIMEOUT} сек."
+                                f"Codex CLI не подавал признаков жизни {request_timeout} сек."
                             )
                         await asyncio.sleep(1)
                 except CodexRequestInterrupted:
@@ -7013,11 +7183,7 @@ class CodexCLI(loader.Module):
                     )
                     if proc.returncode is None and not stdout_lines and not stderr_lines:
                         backend = (self.config.get("cli_backend") or "codex").strip().lower()
-                        startup_timeout = (
-                            CODEX_STARTUP_TIMEOUT
-                            if backend != "codex"
-                            else max(CODEX_STARTUP_TIMEOUT, 45)
-                        )
+                        startup_timeout = self._get_startup_timeout(backend)
                         raise RuntimeError(
                             f"Codex CLI завис на старте и не выдал вывод за {startup_timeout} сек."
                         )
@@ -7210,9 +7376,30 @@ class CodexCLI(loader.Module):
             "last_activity": "boot",
             "final_text_chars": 0,
             "thought_stream": "",
+            "answer_stream": "",
             "action_stream": "",
             "_runtime_mode": "codex",
         }
+
+    def _get_request_timeout(self) -> int:
+        raw_value = self.config.get("request_timeout", CODEX_TIMEOUT)
+        try:
+            value = int(raw_value)
+        except Exception:
+            value = CODEX_TIMEOUT
+        return max(30, min(3600, value))
+
+    def _get_startup_timeout(self, backend: str = "") -> int:
+        raw_value = self.config.get("startup_timeout", max(CODEX_STARTUP_TIMEOUT, 45))
+        try:
+            value = int(raw_value)
+        except Exception:
+            value = max(CODEX_STARTUP_TIMEOUT, 45)
+        value = max(10, min(600, value))
+        backend = (backend or self.config.get("cli_backend") or "codex").strip().lower()
+        if backend == "codex":
+            return max(45, value)
+        return max(CODEX_STARTUP_TIMEOUT, value)
 
     @staticmethod
     def _fmt_num(n: int) -> str:
@@ -7483,8 +7670,8 @@ class CodexCLI(loader.Module):
                     "thinking",
                     "writing answer",
                 }:
-                    state["thought_stream"] = self._append_status_stream(
-                        state.get("thought_stream", ""), delta_text, limit=220
+                    state["answer_stream"] = self._append_status_stream(
+                        state.get("answer_stream", ""), delta_text, limit=220
                     )
             elif event_type == "tool_progress":
                 state["phase"] = "running tool"
@@ -7511,14 +7698,15 @@ class CodexCLI(loader.Module):
             usage = (payload.get("message") or {}).get("usage") or {}
             self._apply_codex_usage(state, usage)
             if blocks and all(block.get("type") == "text" for block in blocks):
+                answer_text = self._extract_text_from_blocks(blocks)
                 state["phase"] = "writing answer"
-                state["final_text"] += self._extract_text_from_blocks(blocks)
+                state["final_text"] += answer_text
                 state["final_text_chars"] = len(state["final_text"])
                 state["thought_events"] += 1
                 state["last_activity"] = "assistant:text"
-                state["thought_stream"] = self._append_status_stream(
-                    state.get("thought_stream", ""),
-                    self._extract_text_from_blocks(blocks),
+                state["answer_stream"] = self._append_status_stream(
+                    state.get("answer_stream", ""),
+                    answer_text,
                     limit=220,
                 )
             for block in blocks:
@@ -7582,8 +7770,8 @@ class CodexCLI(loader.Module):
                 state["final_text_chars"] = len(state["final_text"])
                 state["last_activity"] = "result:ok"
                 if state["final_text"]:
-                    state["thought_stream"] = self._append_status_stream(
-                        state.get("thought_stream", ""),
+                    state["answer_stream"] = self._append_status_stream(
+                        state.get("answer_stream", ""),
                         state["final_text"],
                         limit=220,
                     )
@@ -7627,6 +7815,8 @@ class CodexCLI(loader.Module):
         candidate = self._find_first_by_keys(
             payload,
             (
+                "thinking",
+                "reasoning_content",
                 "delta",
                 "text_delta",
                 "output_text",
@@ -7634,7 +7824,9 @@ class CodexCLI(loader.Module):
                 "reasoning",
                 "reasoning_text",
                 "summary_text",
+                "summary",
                 "text",
+                "content",
             ),
         )
         if candidate is None:
@@ -7642,10 +7834,35 @@ class CodexCLI(loader.Module):
         if isinstance(candidate, str):
             return candidate
         if isinstance(candidate, dict):
-            for key in ("text", "delta", "content"):
+            for key in (
+                "thinking",
+                "reasoning_content",
+                "reasoning",
+                "summary_text",
+                "summary",
+                "text",
+                "delta",
+                "content",
+            ):
                 val = candidate.get(key)
                 if isinstance(val, str) and val.strip():
                     return val
+                if isinstance(val, list):
+                    joined = " ".join(
+                        str(item).strip()
+                        for item in val
+                        if isinstance(item, str) and str(item).strip()
+                    ).strip()
+                    if joined:
+                        return joined
+        if isinstance(candidate, list):
+            joined = " ".join(
+                str(item).strip()
+                for item in candidate
+                if isinstance(item, str) and str(item).strip()
+            ).strip()
+            if joined:
+                return joined
         return ""
 
     def _extract_event_error(self, payload: dict) -> str:
@@ -7711,8 +7928,8 @@ class CodexCLI(loader.Module):
                 state["thought_events"] += 1
                 state["final_text"] += text_part
                 state["final_text_chars"] = len(state["final_text"])
-                state["thought_stream"] = self._append_status_stream(
-                    state.get("thought_stream", ""), text_part, limit=220
+                state["answer_stream"] = self._append_status_stream(
+                    state.get("answer_stream", ""), text_part, limit=220
                 )
                 state["last_activity"] = event_type[:96]
 
@@ -8474,10 +8691,9 @@ class CodexCLI(loader.Module):
             state.get("final_text_chars") or len(state.get("final_text") or "")
         )
         tools_used = self._fmt_num(len(state.get("tool_use_ids") or {}))
+        thought_preview = state.get("thought_stream") or state.get("answer_stream") or "—"
         thought_text = utils.escape_html(
-            self._short_status_text(
-                state.get("thought_stream") or state.get("phase") or "—", limit=180
-            )
+            self._short_status_text(thought_preview, limit=180)
         )
         action_text = utils.escape_html(
             self._short_status_text(
@@ -8486,7 +8702,7 @@ class CodexCLI(loader.Module):
         )
         return (
             f"<blockquote>"
-            f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>Codex Studio</b>{session_suffix} · {model_part}\n"
+            f"<tg-emoji emoji-id=5256079005731271025>📟</tg-emoji> <b>CodexCLI</b>{session_suffix} · {model_part}\n"
             f"{phase_emoji} <b>{utils.escape_html(phase)}</b> · шаг <code>{state['step']}</code> · <code>{elapsed}с</code>\n"
             f"<tg-emoji emoji-id=5255713220546538619>💳</tg-emoji> <b>Токены:</b> in <code>{self._fmt_num(state['input_tokens'])}</code>{cached_suffix} / out <code>{self._fmt_num(state['output_tokens'])}</code>{reasoning_suffix} / total <code>{self._fmt_num(state['total_tokens'])}</code>\n"
             f"<tg-emoji emoji-id=5253490441826870592>🔗</tg-emoji> <b>События:</b> <code>{thought_events}</code> → <code>{action_events}</code> · всего <code>{total_events}</code>\n"
@@ -8716,7 +8932,9 @@ class CodexCLI(loader.Module):
             session["pending_approval_uid"] = None
             return False
         try:
-            decision = await asyncio.wait_for(fut, timeout=CODEX_TIMEOUT)
+            decision = await asyncio.wait_for(
+                fut, timeout=self._get_request_timeout()
+            )
         except Exception:
             session.get("pending_approvals", {}).pop(uid, None)
             session["pending_approval_uid"] = None
@@ -9061,6 +9279,22 @@ class CodexCLI(loader.Module):
             if getattr(chat_entity, "broadcast", False):
                 chat_meta.append("broadcast=yes")
         prompt_chunks.append(f"[CHAT] ({', '.join(chat_meta)})")
+        if isinstance(chat_entity, (Chat, Channel)):
+            with contextlib.suppress(Exception):
+                admin_snapshot = await self._get_chat_admin_snapshot(chat_entity)
+                owner = admin_snapshot.get("owner") if isinstance(admin_snapshot, dict) else None
+                admins = (admin_snapshot.get("admins") or []) if isinstance(admin_snapshot, dict) else []
+                if owner:
+                    prompt_chunks.append(f"[CHAT OWNER] {self._format_actor_compact(owner)}")
+                if admins:
+                    admin_preview = "; ".join(
+                        self._format_actor_compact(one)
+                        for one in admins[:8]
+                        if isinstance(one, dict)
+                    )
+                    prompt_chunks.append(
+                        f"[CHAT ADMINS] count={int(admin_snapshot.get('count') or len(admins))}; {admin_preview}"
+                    )
         prompt_chunks.append(
             f"[REQUEST META] message_id={getattr(message, 'id', None)}"
             f" reply_to={getattr(message, 'reply_to_msg_id', None) or '—'}"
