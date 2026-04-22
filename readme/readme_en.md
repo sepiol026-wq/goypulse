@@ -11,6 +11,7 @@
 - [GoySecurity](./readme_goysec_en.md) — pre-install security scanner with risk explanations, history, whitelist, and AI-based insights.
 - [OmniLoad](./readme_omniload_en.md) — one-command media downloader for links and direct repost workflows.
 - [QwenCLI](./readme_qwencli_en.md) — AI command center for chat and automation tasks, including dependency bootstrap via `.qwinstall`.
+- [CodexCLI](./readme_codexcli_en.md) — Codex-focused AI module, collaboratively maintained as a QwenCLI fork (contact: [@justidev](https://t.me/justidev)).
 - [Doom](./readme_doom_en.md) — inline DOOM mini-game directly inside Telegram.
 - [Recon](./readme_recon_en.md) — recon/OSINT toolkit for collecting technical metadata about targets and infrastructure.
 - [KeyScanner](./readme_keyscanner_en.md) — API key scanner/validator for chats with auto-catch, export, and provider-based stats.
