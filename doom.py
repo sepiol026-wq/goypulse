@@ -22,7 +22,7 @@
 
 """запускает doom."""
 
-__version__ = (1, 1, 5)
+__version__ = (1, 1, 6)
 
 import math
 import time
@@ -34,7 +34,13 @@ from .. import loader, utils
 
 @loader.tds
 class Doom(loader.Module):
-    strings = {"name": "Doom"}
+    """Inline DOOM mini-game."""
+
+    strings = {
+        "name": "Doom",
+        "_cls_doc": "Inline DOOM mini-game.",
+    }
+    strings_ru = {"_cls_doc": "Мини-игра DOOM в инлайне."}
 
     def __init__(self):
         self.sessions = {}
