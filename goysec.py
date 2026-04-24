@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 
-__version__ = (1, 1, 4)
+__version__ = (1, 1, 5)
 
 import ast
 import asyncio
@@ -3606,3 +3606,40 @@ class GoySecurity(loader.Module):
             items.append(f"{name}: {v}")
 
         return "\n".join(items)
+
+_cls_doc_GoySecurity = (GoySecurity.__doc__ or "").strip()
+if _cls_doc_GoySecurity:
+    GoySecurity.strings.setdefault("_cls_doc", _cls_doc_GoySecurity)
+if not hasattr(GoySecurity, "strings_uk") and hasattr(GoySecurity, "strings_ua"):
+    GoySecurity.strings_uk = dict(getattr(GoySecurity, "strings_ua"))
+for _loc in ("ru", "uk", "de", "jp", "neofit", "tiktok", "leet", "uwu"):
+    _attr = f"strings_{_loc}"
+    if not hasattr(GoySecurity, _attr):
+        setattr(GoySecurity, _attr, dict(getattr(GoySecurity, "strings", {})))
+    _d = getattr(GoySecurity, _attr)
+    if isinstance(_d, dict) and _cls_doc_GoySecurity:
+        _d.setdefault("_cls_doc", _cls_doc_GoySecurity)
+for _name in dir(GoySecurity):
+    _fn = getattr(GoySecurity, _name, None)
+    if not callable(_fn) or not getattr(_fn, "is_command", False):
+        continue
+    _base = (
+        getattr(_fn, "en_doc", None)
+        or getattr(_fn, "ru_doc", None)
+        or getattr(_fn, "uk_doc", None)
+        or getattr(_fn, "de_doc", None)
+        or getattr(_fn, "jp_doc", None)
+        or getattr(_fn, "neofit_doc", None)
+        or getattr(_fn, "tiktok_doc", None)
+        or getattr(_fn, "leet_doc", None)
+        or getattr(_fn, "uwu_doc", None)
+        or getattr(_fn, "__doc__", None)
+        or ""
+    ).strip()
+    if not _base:
+        continue
+    for _doc in ("en_doc", "ru_doc", "uk_doc", "de_doc", "jp_doc", "neofit_doc", "tiktok_doc", "leet_doc", "uwu_doc"):
+        if not getattr(_fn, _doc, None):
+            setattr(_fn, _doc, _base)
+_i18n_boot_GoySecurity = True
+
