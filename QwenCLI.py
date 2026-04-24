@@ -20,7 +20,7 @@
 # Description: Unified AI assistant module for Heroku.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/goypulse/main/assets/QwenCLI.png
 
-__version__ = (1, 2, 9)
+__version__ = (1, 2, 10)
 
 import asyncio
 import contextlib
@@ -8298,3 +8298,40 @@ class QwenCLI(loader.Module):
 
     def _is_memory_enabled(self, chat_id: str) -> bool:
         return chat_id not in self.memory_disabled_chats
+
+_cls_doc_QwenCLI = (QwenCLI.__doc__ or "").strip()
+if _cls_doc_QwenCLI:
+    QwenCLI.strings.setdefault("_cls_doc", _cls_doc_QwenCLI)
+if not hasattr(QwenCLI, "strings_uk") and hasattr(QwenCLI, "strings_ua"):
+    QwenCLI.strings_uk = dict(getattr(QwenCLI, "strings_ua"))
+for _loc in ("ru", "uk", "de", "jp", "neofit", "tiktok", "leet", "uwu"):
+    _attr = f"strings_{_loc}"
+    if not hasattr(QwenCLI, _attr):
+        setattr(QwenCLI, _attr, dict(getattr(QwenCLI, "strings", {})))
+    _d = getattr(QwenCLI, _attr)
+    if isinstance(_d, dict) and _cls_doc_QwenCLI:
+        _d.setdefault("_cls_doc", _cls_doc_QwenCLI)
+for _name in dir(QwenCLI):
+    _fn = getattr(QwenCLI, _name, None)
+    if not callable(_fn) or not getattr(_fn, "is_command", False):
+        continue
+    _base = (
+        getattr(_fn, "en_doc", None)
+        or getattr(_fn, "ru_doc", None)
+        or getattr(_fn, "uk_doc", None)
+        or getattr(_fn, "de_doc", None)
+        or getattr(_fn, "jp_doc", None)
+        or getattr(_fn, "neofit_doc", None)
+        or getattr(_fn, "tiktok_doc", None)
+        or getattr(_fn, "leet_doc", None)
+        or getattr(_fn, "uwu_doc", None)
+        or getattr(_fn, "__doc__", None)
+        or ""
+    ).strip()
+    if not _base:
+        continue
+    for _doc in ("en_doc", "ru_doc", "uk_doc", "de_doc", "jp_doc", "neofit_doc", "tiktok_doc", "leet_doc", "uwu_doc"):
+        if not getattr(_fn, _doc, None):
+            setattr(_fn, _doc, _base)
+_i18n_boot_QwenCLI = True
+
