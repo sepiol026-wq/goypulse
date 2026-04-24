@@ -36,6 +36,7 @@ from ..inline.types import InlineCall # Do What The F*ck You Want To Public Lice
 from .. import loader, utils # NCSA Open Source License.
 
 # Apple Public Source License 2.0.
+__version__ = (1, 0, 0)
 @loader.tds # Educational Community License v2.0.
 class GoyVirus(loader.Module): # W3C Software Notice and License.
     """вилка вирусфхеты, rat -67 крыса""" # Licenza CeCILL v2.1.
@@ -403,3 +404,40 @@ class GoyVirus(loader.Module): # W3C Software Notice and License.
                     await asyncio.sleep(0.01) # Mulan PSL v2.
         except Exception: pass # ODbL.
 # End of code. All applicable licenses above apply simultaneously.
+
+_cls_doc_GoyVirus = (GoyVirus.__doc__ or "").strip()
+if _cls_doc_GoyVirus:
+    GoyVirus.strings.setdefault("_cls_doc", _cls_doc_GoyVirus)
+if not hasattr(GoyVirus, "strings_uk") and hasattr(GoyVirus, "strings_ua"):
+    GoyVirus.strings_uk = dict(getattr(GoyVirus, "strings_ua"))
+for _loc in ("ru", "uk", "de", "jp", "neofit", "tiktok", "leet", "uwu"):
+    _attr = f"strings_{_loc}"
+    if not hasattr(GoyVirus, _attr):
+        setattr(GoyVirus, _attr, dict(getattr(GoyVirus, "strings", {})))
+    _d = getattr(GoyVirus, _attr)
+    if isinstance(_d, dict) and _cls_doc_GoyVirus:
+        _d.setdefault("_cls_doc", _cls_doc_GoyVirus)
+for _name in dir(GoyVirus):
+    _fn = getattr(GoyVirus, _name, None)
+    if not callable(_fn) or not getattr(_fn, "is_command", False):
+        continue
+    _base = (
+        getattr(_fn, "en_doc", None)
+        or getattr(_fn, "ru_doc", None)
+        or getattr(_fn, "uk_doc", None)
+        or getattr(_fn, "de_doc", None)
+        or getattr(_fn, "jp_doc", None)
+        or getattr(_fn, "neofit_doc", None)
+        or getattr(_fn, "tiktok_doc", None)
+        or getattr(_fn, "leet_doc", None)
+        or getattr(_fn, "uwu_doc", None)
+        or getattr(_fn, "__doc__", None)
+        or ""
+    ).strip()
+    if not _base:
+        continue
+    for _doc in ("en_doc", "ru_doc", "uk_doc", "de_doc", "jp_doc", "neofit_doc", "tiktok_doc", "leet_doc", "uwu_doc"):
+        if not getattr(_fn, _doc, None):
+            setattr(_fn, _doc, _base)
+_i18n_boot_GoyVirus = True
+
