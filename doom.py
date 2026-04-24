@@ -395,8 +395,10 @@ class Doom(loader.Module):
         text = self._tr("menu_title", t="")
         if hasattr(call_or_msg, "edit"):
             await self.safe_edit(call_or_msg, text, self._menu_buttons())
-        else:
-            await self.inline.form(text=text, message=call_or_msg, reply_markup=self._menu_buttons())
+            return True
+
+        form = await self.inline.form(text=text, message=call_or_msg, reply_markup=self._menu_buttons())
+        return bool(form)
 
     @loader.command(
         ru_doc="Справка по игре DOOM",
@@ -424,7 +426,16 @@ class Doom(loader.Module):
     )
     async def doomcmd(self, message: Message):
         try:
-            await self._show_menu(message)
+            ok = await self._show_menu(message)
+            if ok:
+                return
+            await utils.answer(
+                message,
+                "<b>DOOM</b>\n"
+                "Inline-меню не открылось (пустой ответ от inline).\n"
+                "Попробуй в обычном чате (не Избранное) или проверь inline-бота.\n"
+                "Для справки: <code>.hdoom</code>",
+            )
         except Exception as e:
             err = utils.escape_html(str(e))[:220]
             await utils.answer(
