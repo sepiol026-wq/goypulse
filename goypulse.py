@@ -28,7 +28,7 @@ import asyncio, base64, hashlib, hmac, json, math, os, random, re, sqlite3, time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
-__version__ = (10, 0, 1)
+__version__ = (10, 0, 2)
 
 from telethon import events, utils as tl_utils
 from telethon.tl.types import Message
@@ -2331,3 +2331,40 @@ class GoyPulseMod(loader.Module):
                 self._db_conn = None
         except Exception:
             pass
+
+_cls_doc_GoyPulseMod = (GoyPulseMod.__doc__ or "").strip()
+if _cls_doc_GoyPulseMod:
+    GoyPulseMod.strings.setdefault("_cls_doc", _cls_doc_GoyPulseMod)
+if not hasattr(GoyPulseMod, "strings_uk") and hasattr(GoyPulseMod, "strings_ua"):
+    GoyPulseMod.strings_uk = dict(getattr(GoyPulseMod, "strings_ua"))
+for _loc in ("ru", "uk", "de", "jp", "neofit", "tiktok", "leet", "uwu"):
+    _attr = f"strings_{_loc}"
+    if not hasattr(GoyPulseMod, _attr):
+        setattr(GoyPulseMod, _attr, dict(getattr(GoyPulseMod, "strings", {})))
+    _d = getattr(GoyPulseMod, _attr)
+    if isinstance(_d, dict) and _cls_doc_GoyPulseMod:
+        _d.setdefault("_cls_doc", _cls_doc_GoyPulseMod)
+for _name in dir(GoyPulseMod):
+    _fn = getattr(GoyPulseMod, _name, None)
+    if not callable(_fn) or not getattr(_fn, "is_command", False):
+        continue
+    _base = (
+        getattr(_fn, "en_doc", None)
+        or getattr(_fn, "ru_doc", None)
+        or getattr(_fn, "uk_doc", None)
+        or getattr(_fn, "de_doc", None)
+        or getattr(_fn, "jp_doc", None)
+        or getattr(_fn, "neofit_doc", None)
+        or getattr(_fn, "tiktok_doc", None)
+        or getattr(_fn, "leet_doc", None)
+        or getattr(_fn, "uwu_doc", None)
+        or getattr(_fn, "__doc__", None)
+        or ""
+    ).strip()
+    if not _base:
+        continue
+    for _doc in ("en_doc", "ru_doc", "uk_doc", "de_doc", "jp_doc", "neofit_doc", "tiktok_doc", "leet_doc", "uwu_doc"):
+        if not getattr(_fn, _doc, None):
+            setattr(_fn, _doc, _base)
+_i18n_boot_GoyPulseMod = True
+
