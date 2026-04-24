@@ -401,6 +401,16 @@ class CodexCLI(loader.Module):
         "resource_profile_updated": "<b>Профиль ресурсов обновлен:</b> <code>{}</code>",
         "tg_tools_disabled_error": "telegram tools disabled by config (allow_tg_tools=False)",
     }
+    if "_cls_doc" not in strings and __doc__:
+        strings["_cls_doc"] = (__doc__ or "").strip()
+    strings_ru = {**strings, **locals().get("strings_ru", {})}
+    strings_uk = {**strings, **locals().get("strings_ua", {}), **locals().get("strings_uk", {})}
+    strings_de = {**strings, **locals().get("strings_de", {})}
+    strings_jp = {**strings, **locals().get("strings_jp", {})}
+    strings_neofit = {**strings, **locals().get("strings_neofit", {})}
+    strings_tiktok = {**strings, **locals().get("strings_tiktok", {})}
+    strings_leet = {**strings, **locals().get("strings_leet", {})}
+    strings_uwu = {**strings, **locals().get("strings_uwu", {})}
 
     _PHASE_EMOJI = {
         "starting": "<tg-emoji emoji-id=5255971360965930740>🕔</tg-emoji>",
@@ -11665,39 +11675,4 @@ class CodexCLI(loader.Module):
     def _is_memory_enabled(self, chat_id: str) -> bool:
         return chat_id not in self.memory_disabled_chats
 
-_cls_doc_CodexCLI = (CodexCLI.__doc__ or "").strip()
-if _cls_doc_CodexCLI:
-    CodexCLI.strings.setdefault("_cls_doc", _cls_doc_CodexCLI)
-if not hasattr(CodexCLI, "strings_uk") and hasattr(CodexCLI, "strings_ua"):
-    CodexCLI.strings_uk = dict(getattr(CodexCLI, "strings_ua"))
-for _loc in ("ru", "uk", "de", "jp", "neofit", "tiktok", "leet", "uwu"):
-    _attr = f"strings_{_loc}"
-    if not hasattr(CodexCLI, _attr):
-        setattr(CodexCLI, _attr, dict(getattr(CodexCLI, "strings", {})))
-    _d = getattr(CodexCLI, _attr)
-    if isinstance(_d, dict) and _cls_doc_CodexCLI:
-        _d.setdefault("_cls_doc", _cls_doc_CodexCLI)
-for _name in dir(CodexCLI):
-    _fn = getattr(CodexCLI, _name, None)
-    if not callable(_fn) or not getattr(_fn, "is_command", False):
-        continue
-    _base = (
-        getattr(_fn, "en_doc", None)
-        or getattr(_fn, "ru_doc", None)
-        or getattr(_fn, "uk_doc", None)
-        or getattr(_fn, "de_doc", None)
-        or getattr(_fn, "jp_doc", None)
-        or getattr(_fn, "neofit_doc", None)
-        or getattr(_fn, "tiktok_doc", None)
-        or getattr(_fn, "leet_doc", None)
-        or getattr(_fn, "uwu_doc", None)
-        or getattr(_fn, "__doc__", None)
-        or ""
-    ).strip()
-    if not _base:
-        continue
-    for _doc in ("en_doc", "ru_doc", "uk_doc", "de_doc", "jp_doc", "neofit_doc", "tiktok_doc", "leet_doc", "uwu_doc"):
-        if not getattr(_fn, _doc, None):
-            setattr(_fn, _doc, _base)
-_i18n_boot_CodexCLI = True
 
