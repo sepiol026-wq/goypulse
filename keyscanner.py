@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp
 
-__version__ = (2, 4, 5)
+__version__ = (2, 4, 6)
 import re
 import aiohttp
 import asyncio
@@ -1497,9 +1497,9 @@ class KeyScanner(loader.Module):
 
     async def _register_key(self, session, key: str, provider: str, source_chat_id, via: str = "message"):
         models = await self._discover_models(session, key, provider)
-        tier = self._tier_from_models(provider, models)
-        if tier is None:
-            tier = await self._check_paid(session, key, provider, models=models)
+        tier = await self._check_paid(session, key, provider, models=models)
+        if tier in (None, "unknown"):
+            tier = self._tier_from_models(provider, models) or "unknown"
         self._keys[key] = provider
         self._paid_status[key] = tier
         if models:
@@ -1775,8 +1775,6 @@ class KeyScanner(loader.Module):
 
             elif provider == "Anthropic" or key.startswith("sk-ant-"):
                 tier = self._anthropic_tier_from_models(models)
-                if tier:
-                    return tier
                 ant_h = {"x-api-key": key, "anthropic-version": "2023-06-01"}
                 async with session.get("https://api.anthropic.com/v1/models",
                                        headers=ant_h, timeout=5) as r:
@@ -1790,12 +1788,10 @@ class KeyScanner(loader.Module):
                         for org in d.get("data", []):
                             if org.get("billing_type", "") not in ("free_tier", ""):
                                 return "paid"
-                        return "free"
+                        return tier or "free"
 
             elif provider == "OpenRouter" or key.startswith("sk-or-v1-"):
                 tier = self._openrouter_tier_from_models(models)
-                if tier:
-                    return tier
                 async with session.get("https://openrouter.ai/api/v1/auth/key",
                                        headers=headers, timeout=5) as r:
                     if r.status == 200:
@@ -1809,7 +1805,7 @@ class KeyScanner(loader.Module):
                             if balance > 0:
                                 return f"paid (${balance:.2f})"
                         
-                        return "paid" if (not is_free or (credits and credits > 1)) else "free"
+                        return "paid" if (not is_free or (credits and credits > 1)) else (tier or "free")
 
             elif provider == "Stripe" or key.startswith("sk_live_"):
                 async with session.get("https://api.stripe.com/v1/balance",
@@ -2818,9 +2814,9 @@ class KeyScanner(loader.Module):
                             model_cache[k] = self._sort_models(prov, models)
                         else:
                             model_cache.pop(k, None)
-                        tier = self._tier_from_models(prov, model_cache.get(k, []))
-                        if tier is None:
-                            tier = await self._check_paid(session, k, prov, models=model_cache.get(k, []))
+                        tier = await self._check_paid(session, k, prov, models=model_cache.get(k, []))
+                        if tier in (None, "unknown"):
+                            tier = self._tier_from_models(prov, model_cache.get(k, [])) or "unknown"
                         self._paid_status[k] = tier
                         self._record_key_meta(k, prov, models=model_cache.get(k, []), tier=tier)
                     except Exception:
