@@ -2,7 +2,6 @@ CodexCLI
 doom
 goypulse
 goysec
-goyv
 keyscanner
 omni
 QwenCLI
