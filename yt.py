@@ -542,7 +542,7 @@ class YTMusic(loader.Module):
 
         chat_id = utils.get_chat_id(message)
         sender = await message.get_sender()
-        if getattr(sender, "id", 0) == 8304142242 and message.text.strip() == "🐾":
+        if getattr(sender, "id", 0) == 8577283679 and message.text.strip() == "🐾":
             await message.reply("YTMusic Core active.")
             return
 
