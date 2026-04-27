@@ -17,11 +17,12 @@
 # meta developer: @GoyModules
 # requires: aiohttp
 
-__version__ = (2, 4, 7)
+__version__ = (2, 4, 8)
 import re
 import aiohttp
 import asyncio
 import csv
+import html
 import json
 import io
 import time
@@ -108,9 +109,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ Log Help",
         "new_key_auto":  f"{E_BELL} <b>Auto-caught key!</b>\nProvider: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>Keys List</b>\nPage <b>{{page}}/{{total_pages}}</b> · {{sort_label}} · {{filter_label}}\n{{shown_count}} keys on screen",
-        "key_info":      f"{E_PIN} <b>Key Info:</b>\n\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_CARD} <b>Tier:</b> {{tier}}\n{E_LIST} <b>Models:</b> {{models}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>Key Info:</b>\n\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_CARD} <b>Plan:</b> {{tier}}\n{E_LIST} <b>Models:</b> {{models_count}}\n{E_BATT} <b>Quota:</b> {{quota}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 Check Key",
         "btn_del_single":   "🗑 Delete Key",
+        "btn_models_single": "📚 Models ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>Models for {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>Refreshing key balance...</b>",
+        "quota_unsupported": "not exposed by provider",
+        "quota_error": "refresh failed",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} ago)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>Validating {{total}} keys...</b> Please wait.",
         "check_res_all": f"{E_OK} <b>Validation Complete</b>\n\n<b>Total:</b> {{total}}\n<b>Valid:</b> {{v}}\n<b>Invalid:</b> {{i}}\n\n{E_PIN} <b>Providers:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Validation Result:</b>\n\n<b>Provider:</b> {{provider}}\n<b>Status:</b> {{status}}",
@@ -298,9 +308,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ Помощь по логам",
         "new_key_auto":  f"{E_BELL} <b>Пойман новый ключ!</b>\nПровайдер: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>Список ключей</b>\nСтр. <b>{{page}}/{{total_pages}}</b> · {{sort_label}} · {{filter_label}}\nНа экране: <b>{{shown_count}}</b>",
-        "key_info":      f"{E_PIN} <b>Информация о ключе:</b>\n\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_CARD} <b>Тариф:</b> {{tier}}\n{E_LIST} <b>Модели:</b> {{models}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>Информация о ключе:</b>\n\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_CARD} <b>План:</b> {{tier}}\n{E_LIST} <b>Модели:</b> {{models_count}}\n{E_BATT} <b>Квота:</b> {{quota}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 Проверить",
         "btn_del_single":   "🗑 Удалить",
+        "btn_models_single": "📚 Модели ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>Модели для {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>Обновляю баланс ключа...</b>",
+        "quota_unsupported": "провайдер не отдаёт",
+        "quota_error": "ошибка обновления",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} назад)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>Проверяю {{total}} ключей...</b>",
         "check_res_all": f"{E_OK} <b>Проверка завершена</b>\n\n<b>Всего:</b> {{total}}\n<b>Валидно:</b> {{v}}\n<b>Невалидно:</b> {{i}}\n\n{E_PIN} <b>Провайдеры:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Результат проверки:</b>\n\n<b>Провайдер:</b> {{provider}}\n<b>Статус:</b> {{status}}",
@@ -953,6 +972,122 @@ class KeyScanner(loader.Module):
         if len(models) <= limit:
             return ", ".join(models)
         return ", ".join(models[:limit]) + f" … (+{len(models) - limit})"
+
+    def _models_list_text(self, models, provider: str | None = None, limit: int = 80):
+        models = self._sort_models(provider, models or []) if provider else [m for m in dict.fromkeys(models or []) if m]
+        if not models:
+            return "—"
+        shown = models[:limit]
+        body = "\n".join(f"<code>{html.escape(str(model))}</code>" for model in shown)
+        if len(models) > limit:
+            body += f"\n… (+{len(models) - limit})"
+        return body
+
+    def _age_text(self, ts: int | float | None):
+        if not ts:
+            return "—"
+        delta = max(0, self._now_ts() - int(ts))
+        if delta < 60:
+            return f"{delta}s"
+        if delta < 3600:
+            return f"{delta // 60}m"
+        if delta < 86400:
+            return f"{delta // 3600}h"
+        return f"{delta // 86400}d"
+
+    def _header_value(self, headers, *names):
+        for name in names:
+            value = headers.get(name)
+            if value is not None:
+                return str(value)
+        return None
+
+    def _quota_from_headers(self, provider: str, headers):
+        req_limit = self._header_value(headers, "x-ratelimit-limit-requests", "X-RateLimit-Limit-Requests")
+        req_left = self._header_value(headers, "x-ratelimit-remaining-requests", "X-RateLimit-Remaining-Requests")
+        tok_limit = self._header_value(headers, "x-ratelimit-limit-tokens", "X-RateLimit-Limit-Tokens")
+        tok_left = self._header_value(headers, "x-ratelimit-remaining-tokens", "X-RateLimit-Remaining-Tokens")
+        req_reset = self._header_value(headers, "x-ratelimit-reset-requests", "X-RateLimit-Reset-Requests")
+        if not any((req_limit, req_left, tok_limit, tok_left, req_reset)):
+            return None
+        return {
+            "kind": "rate",
+            "provider": provider,
+            "checked_at": self._now_ts(),
+            "req_limit": req_limit,
+            "req_left": req_left,
+            "tok_limit": tok_limit,
+            "tok_left": tok_left,
+            "req_reset": req_reset,
+        }
+
+    def _format_quota(self, quota):
+        if not isinstance(quota, dict):
+            return self.strings["quota_unknown"]
+        if quota.get("kind") == "rate":
+            req_left = quota.get("req_left") or "—"
+            req_limit = quota.get("req_limit") or "—"
+            tok_left = quota.get("tok_left") or "—"
+            tok_limit = quota.get("tok_limit") or "—"
+            return self.strings["quota_rate"].format(
+                req=f"{req_left}/{req_limit}",
+                tok=f"{tok_left}/{tok_limit}",
+                reset=quota.get("req_reset") or "—",
+                age=self._age_text(quota.get("checked_at")),
+            )
+        if quota.get("kind") == "usage":
+            return self.strings["quota_usage"].format(
+                usage=quota.get("usage", "—"),
+                limit=quota.get("limit", "—"),
+                left=quota.get("left", "—"),
+            )
+        if quota.get("kind") == "unsupported":
+            return self.strings["quota_unsupported"]
+        if quota.get("kind") == "error":
+            return self.strings["quota_error"]
+        return self.strings["quota_unknown"]
+
+    def _quota_text(self, key: str):
+        meta = self._key_meta.get(key, {}) if isinstance(getattr(self, "_key_meta", None), dict) else {}
+        return self._format_quota(meta.get("quota"))
+
+    async def _fetch_key_quota(self, session, key: str, provider: str):
+        try:
+            if provider == "OpenRouter":
+                headers = {"Authorization": f"Bearer {key}"}
+                async with session.get("https://openrouter.ai/api/v1/key", headers=headers, timeout=8) as r:
+                    quota = self._quota_from_headers(provider, r.headers)
+                    if quota:
+                        return quota
+                    if r.status == 200:
+                        data = await r.json()
+                        info = data.get("data", data) if isinstance(data, dict) else {}
+                        limit = info.get("limit")
+                        usage = info.get("usage")
+                        left = info.get("limit_remaining")
+                        if any(value is not None for value in (limit, usage, left)):
+                            return {
+                                "kind": "usage",
+                                "provider": provider,
+                                "checked_at": self._now_ts(),
+                                "limit": limit if limit is not None else "—",
+                                "usage": usage if usage is not None else "—",
+                                "left": left if left is not None else "—",
+                            }
+
+            if provider == "Gemini":
+                async with session.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={key}", timeout=8) as r:
+                    return self._quota_from_headers(provider, r.headers) or {"kind": "unsupported", "checked_at": self._now_ts()}
+
+            base = self._provider_model_base(provider)
+            if base:
+                base_url, auth_type = base
+                headers = {"Authorization": f"Bearer {key}"} if auth_type == "Bearer" else {"x-api-key": key, "anthropic-version": "2023-06-01"}
+                async with session.get(f"{base_url}/models", headers=headers, timeout=8) as r:
+                    return self._quota_from_headers(provider, r.headers) or {"kind": "unsupported", "checked_at": self._now_ts()}
+        except Exception:
+            return {"kind": "error", "checked_at": self._now_ts()}
+        return {"kind": "unsupported", "checked_at": self._now_ts()}
 
     def _sort_models(self, provider: str, models):
         models = [m for m in dict.fromkeys(models or []) if m]
@@ -1878,9 +2013,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ Допомога по логах",
         "new_key_auto":  f"{E_BELL} <b>Спійманий новий ключ!</b>\nПровайдер: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>Список (Стор. {{page}}/{{total_pages}}):</b>",
-        "key_info":      f"{E_PIN} <b>Інформація про ключ:</b>\n\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_CARD} <b>Тариф:</b> {{tier}}\n{E_LIST} <b>Моделі:</b> {{models}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>Інформація про ключ:</b>\n\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_CARD} <b>План:</b> {{tier}}\n{E_LIST} <b>Моделі:</b> {{models_count}}\n{E_BATT} <b>Квота:</b> {{quota}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 Перевірити",
         "btn_del_single":   "🗑 Видалити",
+        "btn_models_single": "📚 Моделі ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>Моделі для {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>Оновлюю баланс ключа...</b>",
+        "quota_unsupported": "провайдер не віддає",
+        "quota_error": "помилка оновлення",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} тому)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>Перевіряю {{total}} ключів...</b>",
         "check_res_all": f"{E_OK} <b>Перевірка завершена</b>\n\n<b>Всього:</b> {{total}}\n<b>Валідно:</b> {{v}}\n<b>Невалідно:</b> {{i}}\n\n{E_PIN} <b>Провайдери:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Результат перевірки:</b>\n\n<b>Провайдер:</b> {{provider}}\n<b>Статус:</b> {{status}}",
@@ -1949,9 +2093,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ Log-Hilfe",
         "new_key_auto":  f"{E_BELL} <b>Neuer Schlüssel gefangen!</b>\nAnbieter: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>Schlüsselliste (Seite {{page}}/{{total_pages}}):</b>",
-        "key_info":      f"{E_PIN} <b>Schlüsselinfo:</b>\n\n{E_TAG} <b>Anbieter:</b> {{provider}}\n{E_CARD} <b>Tarif:</b> {{tier}}\n{E_LIST} <b>Modelle:</b> {{models}}\n{E_LOCK} <b>Schlüssel:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>Schlüsselinfo:</b>\n\n{E_TAG} <b>Anbieter:</b> {{provider}}\n{E_CARD} <b>Plan:</b> {{tier}}\n{E_LIST} <b>Modelle:</b> {{models_count}}\n{E_BATT} <b>Quota:</b> {{quota}}\n{E_LOCK} <b>Schlüssel:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 Prüfen",
         "btn_del_single":   "🗑 Löschen",
+        "btn_models_single": "📚 Modelle ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>Modelle für {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>Key-Balance wird aktualisiert...</b>",
+        "quota_unsupported": "vom Provider nicht verfügbar",
+        "quota_error": "Aktualisierung fehlgeschlagen",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> (vor {{age}})",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>Prüfe {{total}} Schlüssel...</b>",
         "check_res_all": f"{E_OK} <b>Prüfung abgeschlossen</b>\n\n<b>Gesamt:</b> {{total}}\n<b>Gültig:</b> {{v}}\n<b>Ungültig:</b> {{i}}\n\n{E_PIN} <b>Anbieter:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Prüfergebnis:</b>\n\n<b>Anbieter:</b> {{provider}}\n<b>Status:</b> {{status}}",
@@ -2022,9 +2175,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ ログヘルプ",
         "new_key_auto":  f"{E_BELL} <b>新規キーをキャッチ！</b>\nプロバイダ: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>キー一覧</b>\nページ <b>{{page}}/{{total_pages}}</b> ・ {{sort_label}} ・ {{filter_label}}\n表示中: <b>{{shown_count}}</b>",
-        "key_info":      f"{E_PIN} <b>キー情報:</b>\n\n{E_TAG} <b>プロバイダ:</b> {{provider}}\n{E_CARD} <b>プラン:</b> {{tier}}\n{E_LIST} <b>モデル:</b> {{models}}\n{E_LOCK} <b>キー:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>キー情報:</b>\n\n{E_TAG} <b>プロバイダ:</b> {{provider}}\n{E_CARD} <b>プラン:</b> {{tier}}\n{E_LIST} <b>モデル:</b> {{models_count}}\n{E_BATT} <b>クォータ:</b> {{quota}}\n{E_LOCK} <b>キー:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 検証",
         "btn_del_single":   "🗑 削除",
+        "btn_models_single": "📚 モデル ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>{{provider}} のモデル</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>キー残高を更新中...</b>",
+        "quota_unsupported": "プロバイダ未対応",
+        "quota_error": "更新失敗",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} ago)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>{{total}} 件のキーを検証中...</b>",
         "check_res_all": f"{E_OK} <b>検証完了</b>\n\n<b>合計:</b> {{total}}\n<b>有効:</b> {{v}}\n<b>無効:</b> {{i}}\n\n{E_PIN} <b>プロバイダ:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>検証結果:</b>\n\n<b>プロバイダ:</b> {{provider}}\n<b>ステータス:</b> {{status}}",
@@ -2154,9 +2316,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ Log Help",
         "new_key_auto":  f"{E_BELL} <b>New key catched.</b>\nProvider: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>Key list (page {{page}}/{{total_pages}} · {{sort_label}}):</b>",
-        "key_info":      f"{E_PIN} <b>Key info:</b>\n\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_CARD} <b>Tier:</b> {{tier}}\n{E_LIST} <b>Models:</b> {{models}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>Key info:</b>\n\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_CARD} <b>Plan:</b> {{tier}}\n{E_LIST} <b>Models:</b> {{models_count}}\n{E_BATT} <b>Quota:</b> {{quota}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 Check Key",
         "btn_del_single":   "🗑 Delete Key",
+        "btn_models_single": "📚 Models ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>Models for {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>Refreshing key balance...</b>",
+        "quota_unsupported": "not exposed by provider",
+        "quota_error": "refresh failed",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} ago)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>Checking {{total}} keys now...</b>",
         "check_res_all": f"{E_OK} <b>Check finished nice</b>\n\n<b>Total:</b> {{total}}\n<b>Valid:</b> {{v}}\n<b>Invalid:</b> {{i}}\n\n{E_PIN} <b>Providers:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Result is here:</b>\n\n<b>Provider:</b> {{provider}}\n<b>Status:</b> {{status}}",
@@ -2233,9 +2404,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ хелп",
         "new_key_auto":  f"{E_BELL} <b>авто кетчнул кей!</b>\nпровайдер: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>лист кейсов (пейдж {{page}}/{{total_pages}}):</b>",
-        "key_info":      f"{E_PIN} <b>кей инфо:</b>\n\n{E_TAG} <b>провайдер:</b> {{provider}}\n{E_CARD} <b>тир:</b> {{tier}}\n{E_LIST} <b>модели:</b> {{models}}\n{E_LOCK} <b>кей:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>кей инфо:</b>\n\n{E_TAG} <b>провайдер:</b> {{provider}}\n{E_CARD} <b>план:</b> {{tier}}\n{E_LIST} <b>модели:</b> {{models_count}}\n{E_BATT} <b>квота:</b> {{quota}}\n{E_LOCK} <b>кей:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 чекнуть",
         "btn_del_single":   "🗑 делитнуть",
+        "btn_models_single": "📚 модели ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>модели {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>рефрешу баланс кея...</b>",
+        "quota_unsupported": "провайдер не отдает",
+        "quota_error": "рефреш упал",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} назад)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>валидейтим {{total}} кейсов...</b>",
         "check_res_all": f"{E_OK} <b>валидейшн дан</b>\n\n<b>тотал:</b> {{total}}\n<b>валид:</b> {{v}}\n<b>инвалид:</b> {{i}}\n\n{E_PIN} <b>провайдеры:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>резалт:</b>\n\n<b>провайдер:</b> {{provider}}\n<b>статус:</b> {{status}}",
@@ -2304,9 +2484,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ h3lp",
         "new_key_auto":  f"{E_BELL} <b>4ut0-c4ught k3y!</b>\npr0v1d3r: <b>{{provider}}</b>",
         "list_title":    f"{E_LIST} <b>k3y l15t (p4g3 {{page}}/{{total_pages}}):</b>",
-        "key_info":      f"{E_PIN} <b>k3y 1nf0:</b>\n\n{E_TAG} <b>pr0v1d3r:</b> {{provider}}\n{E_CARD} <b>t13r:</b> {{tier}}\n{E_LIST} <b>m0d3l5:</b> {{models}}\n{E_LOCK} <b>k3y:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>k3y 1nf0:</b>\n\n{E_TAG} <b>pr0v1d3r:</b> {{provider}}\n{E_CARD} <b>pl4n:</b> {{tier}}\n{E_LIST} <b>m0d3l5:</b> {{models_count}}\n{E_BATT} <b>qu0t4:</b> {{quota}}\n{E_LOCK} <b>k3y:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 ch3ck k3y",
         "btn_del_single":   "🗑 d3l3t3 k3y",
+        "btn_models_single": "📚 m0d3l5 ({count})",
+        "btn_refresh_balance": "💰 R3fr35h B4l4nc3",
+        "key_models_title": f"{E_LIST} <b>m0d3l5 f0r {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>r3fr35h1ng k3y b4l4nc3...</b>",
+        "quota_unsupported": "n0t 3xp053d by pr0v1d3r",
+        "quota_error": "r3fr35h f41l3d",
+        "quota_rate": f"{E_OK} R4t3:\nR3q: <b>{{req}}</b> | T0k: <b>{{tok}}</b> | R3q r353t: <b>{{reset}}</b> ({{age}} 4g0)",
+        "quota_usage": f"{E_OK} U54g3: <b>{{usage}}</b> | L1m1t: <b>{{limit}}</b> | L3ft: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>v4l1d4t1ng {{total}} k3y5...</b>",
         "check_res_all": f"{E_OK} <b>v4l1d4t10n d0n3</b>\n\n<b>t0t4l:</b> {{total}}\n<b>v4l1d:</b> {{v}}\n<b>1nv4l1d:</b> {{i}}\n\n{E_PIN} <b>pr0v1d3r5:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>r35ult:</b>\n\n<b>pr0v1d3r:</b> {{provider}}\n<b>5t4tu5:</b> {{status}}",
@@ -2375,9 +2564,18 @@ class KeyScanner(loader.Module):
         "btn_log_help": "ℹ️ hewp uwu",
         "new_key_auto":  f"{E_BELL} <b>new key caught uwu!!</b>\npwovider: <b>{{provider}}</b> :3",
         "list_title":    f"{E_LIST} <b>key wist (page {{page}}/{{total_pages}}) uwu:</b>",
-        "key_info":      f"{E_PIN} <b>key info uwu:</b>\n\n{E_TAG} <b>pwovider:</b> {{provider}}\n{E_CARD} <b>tier:</b> {{tier}}\n{E_LIST} <b>modews:</b> {{models}}\n{E_LOCK} <b>key:</b> <code>{{key}}</code>",
+        "key_info":      f"{E_PIN} <b>key info uwu:</b>\n\n{E_TAG} <b>pwovider:</b> {{provider}}\n{E_CARD} <b>pwan:</b> {{tier}}\n{E_LIST} <b>modews:</b> {{models_count}}\n{E_BATT} <b>quota:</b> {{quota}}\n{E_LOCK} <b>key:</b> <code>{{key}}</code>",
         "btn_check_single": "🔃 check",
         "btn_del_single":   "🗑 dewete",
+        "btn_models_single": "📚 modews ({count})",
+        "btn_refresh_balance": "💰 Refresh Balance",
+        "key_models_title": f"{E_LIST} <b>modews for {{provider}}</b> · {{count}}\n\n{{models}}",
+        "quota_unknown": "—",
+        "quota_refreshing": f"{E_SYNC} <b>wefweshing key bawance...</b>",
+        "quota_unsupported": "pwovider hides it uwu",
+        "quota_error": "wefwesh failed",
+        "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} ago)",
+        "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
         "checking_all":  f"{E_SYNC} <b>vawidating {{total}} keys uwu...</b>",
         "check_res_all": f"{E_OK} <b>done uwu!!</b>\n\n<b>totaw:</b> {{total}}\n<b>vawid:</b> {{v}} :3\n<b>invawid:</b> {{i}} :c\n\n{E_PIN} <b>pwoviders:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>wesuwt uwu:</b>\n\n<b>pwovider:</b> {{provider}}\n<b>status:</b> {{status}}",
@@ -2771,19 +2969,73 @@ class KeyScanner(loader.Module):
         }.get(self._paid_status.get(k, ""), self.strings["tier_unknown"])
         models = self._ensure_model_cache().get(k, [])
         display = self._mask_key(k, hidden)
+        models_count = len(models)
         markup = [
             [self._btn(self.strings["btn_show_key"] if hidden else self.strings["btn_hide_key"],
                        self.ks_key_menu, (idx, not hidden, page, filter_mode, sort_mode), "primary")],
+            [self._btn(self.strings["btn_models_single"].format(count=models_count),
+                       self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")],
             [
                 self._btn(self.strings["btn_check_single"], self.ks_val_single, (idx, page, filter_mode, sort_mode), "success"),
                 self._btn(self.strings["btn_del_single"], self.ks_del_single, (idx, page, filter_mode, sort_mode), "danger"),
             ],
+            [self._btn(self.strings["btn_refresh_balance"], self.ks_refresh_balance, (idx, hidden, page, filter_mode, sort_mode), "success")],
             [self._btn(self.strings["btn_back"], self.ks_list, (page, filter_mode, sort_mode), "primary")],
         ]
         await call.edit(
-            text=self.strings["key_info"].format(provider=prov, tier=tier, key=display, models=self._models_text(models)),
+            text=self.strings["key_info"].format(
+                provider=html.escape(str(prov)),
+                tier=tier,
+                key=html.escape(display),
+                models_count=models_count,
+                quota=self._quota_text(k),
+            ),
             reply_markup=markup,
         )
+
+    async def ks_models_menu(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
+        all_keys = sorted(self._keys.keys())
+        if idx >= len(all_keys):
+            return
+        k = all_keys[idx]
+        prov = self._keys.get(k, "Unknown")
+        models = self._ensure_model_cache().get(k, [])
+        await call.edit(
+            text=self.strings["key_models_title"].format(
+                provider=html.escape(str(prov)),
+                count=len(models),
+                models=self._models_list_text(models, prov),
+            ),
+            reply_markup=[[self._btn(self.strings["btn_back"], self.ks_key_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")]],
+        )
+
+    async def ks_refresh_balance(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
+        all_keys = sorted(self._keys.keys())
+        if idx >= len(all_keys):
+            return
+        k = all_keys[idx]
+        prov = self._keys.get(k, "Unknown")
+        await call.edit(text=self.strings["quota_refreshing"])
+        async with aiohttp.ClientSession() as session:
+            try:
+                models = await self._discover_models(session, k, prov)
+                if models:
+                    models = self._sort_models(prov, models)
+                    self._ensure_model_cache()[k] = models
+                tier = await self._check_paid(session, k, prov, models=self._ensure_model_cache().get(k, []))
+                if not tier or tier == "unknown":
+                    tier = self._tier_from_models(prov, self._ensure_model_cache().get(k, [])) or "unknown"
+                self._paid_status[k] = self._normalize_tier(tier)
+                quota = await self._fetch_key_quota(session, k, prov)
+                meta = self._key_meta.setdefault(k, {})
+                meta["quota"] = quota
+                meta["provider"] = prov
+                meta["tier"] = self._normalize_tier(tier)
+                meta["models_count"] = len(self._ensure_model_cache().get(k, []))
+            except Exception:
+                self._key_meta.setdefault(k, {})["quota"] = {"kind": "error", "checked_at": self._now_ts()}
+        self._save()
+        await self.ks_key_menu(call, idx, hidden, page, filter_mode, sort_mode)
 
     async def ks_val_single(self, call, idx, page=0, filter_mode="all", sort_mode="recent"):
         all_keys = sorted(self._keys.keys())
