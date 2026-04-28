@@ -5,15 +5,10 @@
 [![Telegram](https://img.shields.io/badge/Telegram-@goymodules-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/goymodules)
 [![Stars](https://img.shields.io/github/stars/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=stars)](https://github.com/sepiol026-wq/GoyModules/stargazers)
 [![Forks](https://img.shields.io/github/forks/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=forks)](https://github.com/sepiol026-wq/GoyModules/forks)
-[![Watchers](https://img.shields.io/github/watchers/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=watchers)](https://github.com/sepiol026-wq/GoyModules/watchers)
 [![Issues](https://img.shields.io/github/issues/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=issues)](https://github.com/sepiol026-wq/GoyModules/issues)
 [![Pull requests](https://img.shields.io/github/issues-pr/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=pull%20requests)](https://github.com/sepiol026-wq/GoyModules/pulls)
 [![Commits](https://img.shields.io/github/commit-activity/t/sepiol026-wq/GoyModules?style=for-the-badge&logo=git&label=commits)](https://github.com/sepiol026-wq/GoyModules/commits/main)
 [![Last commit](https://img.shields.io/github/last-commit/sepiol026-wq/GoyModules?style=for-the-badge&logo=git&label=last%20commit)](https://github.com/sepiol026-wq/GoyModules/commits/main)
-[![Repo size](https://img.shields.io/github/repo-size/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=repo%20size)](https://github.com/sepiol026-wq/GoyModules)
-[![Code size](https://img.shields.io/github/languages/code-size/sepiol026-wq/GoyModules?style=for-the-badge&logo=github&label=code%20size)](https://github.com/sepiol026-wq/GoyModules)
-[![Lines](https://img.shields.io/tokei/lines/github/sepiol026-wq/GoyModules?style=for-the-badge&logo=files&label=lines)](https://github.com/sepiol026-wq/GoyModules)
-[![Top language](https://img.shields.io/github/languages/top/sepiol026-wq/GoyModules?style=for-the-badge&logo=python&label=top%20lang)](https://github.com/sepiol026-wq/GoyModules)
 [![License](https://img.shields.io/github/license/sepiol026-wq/GoyModules?style=for-the-badge&label=license)](https://github.com/sepiol026-wq/GoyModules/blob/main/LICENSE)
 
 Русская документация переехала в модульную структуру.
