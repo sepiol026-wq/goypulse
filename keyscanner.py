@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 2)
+__version__ = (2, 5, 3)
 import base64
 import binascii
 import re
@@ -55,15 +55,15 @@ PROVIDER_BANNERS = {
     "openai":      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/512px-OpenAI_Logo.svg.png",
     "anthropic":   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/512px-Anthropic_logo.svg.png",
     "gemini":      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Google_Gemini_logo.svg/512px-Google_Gemini_logo.svg.png",
-    "groq":        "https://avatars.githubusercontent.com/u/134160386",
-    "mistral":     "https://avatars.githubusercontent.com/u/132372032",
-    "deepseek":    "https://avatars.githubusercontent.com/u/148684274",
-    "cohere":      "https://avatars.githubusercontent.com/u/54850923",
-    "perplexity":  "https://avatars.githubusercontent.com/u/100691412",
-    "together":    "https://avatars.githubusercontent.com/u/97654823",
-    "openrouter":  "https://avatars.githubusercontent.com/u/138042996",
+    "groq":        "https://groq.com/favicon.ico",
+    "mistral":     "https://mistral.ai/favicon.ico",
+    "deepseek":    "https://deepseek.com/favicon.ico",
+    "cohere":      "https://cohere.com/favicon.ico",
+    "perplexity":  "https://www.perplexity.ai/static/icons/favicon.ico",
+    "together":    "https://together.ai/favicon.ico",
+    "openrouter":  "https://openrouter.ai/favicon.ico",
     "huggingface": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
-    "voyage":      "https://avatars.githubusercontent.com/u/131950042",
+    "voyage":      "https://blog.voyageai.com/wp-content/uploads/2023/10/cropped-logo.png",
 }
 
 E_OK    = "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>"
@@ -1216,6 +1216,12 @@ class KeyScanner(loader.Module):
             size = 5
         return size
 
+    def _models_page_size(self):
+        size = self._settings.get("models_page_size", 12)
+        if size not in {8, 10, 12, 15, 20}:
+            size = 12
+        return size
+
     def _mask_key(self, key: str, hidden: bool = True):
         if not hidden:
             return key
@@ -1535,6 +1541,14 @@ class KeyScanner(loader.Module):
         if len(models) > limit:
             body += f"\n… (+{len(models) - limit})"
         return body
+
+    def _paginate_models(self, models, page: int, page_size: int):
+        models = [m for m in dict.fromkeys(models or []) if m]
+        total = len(models)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(0, min(int(page or 0), total_pages - 1))
+        start = page * page_size
+        return models[start:start + page_size], page, total_pages, total
 
     def _age_text(self, ts: int | float | None):
         if not ts:
@@ -4242,7 +4256,7 @@ class KeyScanner(loader.Module):
             [self._btn(self.strings["btn_show_key"] if hidden else self.strings["btn_hide_key"],
                        self.ks_key_menu, (idx, not hidden, page, filter_mode, sort_mode), "primary")],
             [self._btn(self.strings["btn_models_single"].format(count=models_count),
-                       self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")],
+                       self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, 0), "primary")],
             [
                 self._btn(self.strings["btn_check_single"], self.ks_val_single, (idx, page, filter_mode, sort_mode), "success"),
                 self._btn(self.strings["btn_del_single"], self.ks_del_single, (idx, page, filter_mode, sort_mode), "danger"),
@@ -4264,21 +4278,36 @@ class KeyScanner(loader.Module):
             preview_banner=self._preview_banner(prov)
         )
 
-    async def ks_models_menu(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
+    async def ks_models_menu(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent", model_page=0):
         all_keys = sorted(self._keys.keys())
         if idx >= len(all_keys):
             return
         k = all_keys[idx]
         prov = self._keys.get(k, "Unknown")
         models = self._ensure_model_cache().get(k, [])
+        page_models, model_page, total_pages, total_models = self._paginate_models(models, model_page, self._models_page_size())
+        models_text = self._models_list_text(page_models, prov, limit=self._models_page_size())
+        page_header = (
+            f"{E_LIST} <b>Page:</b> {model_page + 1}/{total_pages}\n"
+            f"{E_RIGHT} <b>Shown:</b> {len(page_models)}/{total_models}"
+        )
+        markup = [[self._btn(self.strings["btn_back"], self.ks_key_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")]]
+        if total_pages > 1:
+            markup.insert(0, [
+                self._btn("⏮", self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, 0), "primary"),
+                self._btn("◀️", self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, max(0, model_page - 1)), "primary"),
+                self._btn(f"{model_page + 1}/{total_pages}", self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, model_page), "success"),
+                self._btn("▶️", self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, min(total_pages - 1, model_page + 1)), "primary"),
+                self._btn("⏭", self.ks_models_menu, (idx, hidden, page, filter_mode, sort_mode, total_pages - 1), "primary"),
+            ])
         await self._edit(
             call,
             text=self.strings["key_models_title"].format(
                 provider=html.escape(str(prov)),
-                count=len(models),
-                models=self._models_list_text(models, prov),
+                count=total_models,
+                models=f"{page_header}\n\n{models_text}",
             ),
-            reply_markup=[[self._btn(self.strings["btn_back"], self.ks_key_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")]],
+            reply_markup=markup,
             preview_banner=self._preview_banner(prov)
         )
 
