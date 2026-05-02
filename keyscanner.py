@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 1)
+__version__ = (2, 5, 2)
 import base64
 import binascii
 import re
@@ -4274,13 +4274,12 @@ class KeyScanner(loader.Module):
         await self._edit(
             call,
             text=self.strings["key_models_title"].format(
-                provider=html.escape(str(prov,
-            preview_banner=self._preview_banner(prov)
-        )),
+                provider=html.escape(str(prov)),
                 count=len(models),
                 models=self._models_list_text(models, prov),
             ),
             reply_markup=[[self._btn(self.strings["btn_back"], self.ks_key_menu, (idx, hidden, page, filter_mode, sort_mode), "primary")]],
+            preview_banner=self._preview_banner(prov)
         )
 
     async def ks_refresh_balance(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
@@ -4353,10 +4352,9 @@ class KeyScanner(loader.Module):
         status = self.strings["status_valid"] if ok else self.strings["status_invalid"]
         await self._edit(
             call,
-            text=self.strings["check_res_single"].format(provider=prov, status=status,
-            preview_banner=self._preview_banner()
-        ),
+            text=self.strings["check_res_single"].format(provider=prov, status=status),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_key_menu, "args": (idx, True, page, filter_mode, sort_mode)}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_del_single(self, call, idx, page=0, filter_mode="all", sort_mode="recent"):
@@ -4417,9 +4415,9 @@ class KeyScanner(loader.Module):
             call,
             text=self.strings["check_res_all"].format(
                 total=total, v=valid_c, i=invalid_c, prov_stats=stats_str,
-            preview_banner=self._preview_banner()
-        ),
+            ),
             reply_markup=markup,
+            preview_banner=self._preview_banner()
         )
 
     async def ks_clr_inv(self, call):
@@ -4482,10 +4480,9 @@ class KeyScanner(loader.Module):
 
         await self._edit(
             call,
-            text=header + ("\n".join(lines,
-            preview_banner=self._preview_banner()
-        ) or "—"),
+            text=header + ("\n".join(lines) or "—"),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back, "style": "primary"}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_exp_menu(self, call, tier_raw="", provider_raw="", page=0):
@@ -4531,12 +4528,11 @@ class KeyScanner(loader.Module):
             text=(
                 f"{E_DOWN} <b>{self.strings['export_scope_title']}</b>\n"
                 f"{E_LIST} <b>{scope}</b>\n"
-                f"{E_BOX} {self.strings['export_matching_label']}: <b>{len(matched,
-            preview_banner=self._preview_banner()
-        )}</b>\n"
+                f"{E_BOX} {self.strings['export_matching_label']}: <b>{len(matched)}</b>\n"
                 f"{self.strings['export_scope_hint']}"
             ),
             reply_markup=markup,
+            preview_banner=self._preview_banner()
         )
 
     async def ks_exp_toggle_tier(self, call, tier, tier_raw="", provider_raw="", page=0):
@@ -4570,12 +4566,11 @@ class KeyScanner(loader.Module):
             call,
             text=(
                 f"{E_DOWN} <b>{self.strings['export_format_title']}</b>\n"
-                f"{E_LIST} <b>{self._export_scope_label(tier_raw, provider_raw,
-            preview_banner=self._preview_banner()
-        )}</b>\n"
+                f"{E_LIST} <b>{self._export_scope_label(tier_raw, provider_raw)}</b>\n"
                 f"{E_BOX} {self.strings['export_key_count_label']}: <b>{len(data)}</b>"
             ),
             reply_markup=markup,
+            preview_banner=self._preview_banner()
         )
 
     async def ks_exp_send(self, call, fmt, tier_raw="", provider_raw=""):
@@ -4651,10 +4646,12 @@ class KeyScanner(loader.Module):
     async def ks_sort_paid_free(self, call):
         all_items = list(self._keys.items())
         if not all_items:
-            await self._edit(call, text=self.strings["empty"],
-                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary",
-            preview_banner=self._preview_banner()
-        )]])
+            await self._edit(
+                call,
+                text=self.strings["empty"],
+                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary")]],
+                preview_banner=self._preview_banner()
+            )
             return
         keys_to_sort = [(key, prov) for key, prov in all_items if self._normalize_tier(self._paid_status.get(key)) == "unknown"]
         total = len(keys_to_sort)
@@ -4674,10 +4671,9 @@ class KeyScanner(loader.Module):
             markup.append([self._btn(self.strings["btn_back"], self.ks_back, style="primary")])
             await self._edit(
                 call,
-                text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown,
-            preview_banner=self._preview_banner()
-        ),
+                text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown),
                 reply_markup=markup,
+                preview_banner=self._preview_banner()
             )
             return
         await self._edit(call, text=self.strings["sorting"].format(done=0, total=total))
@@ -4737,10 +4733,9 @@ class KeyScanner(loader.Module):
         markup.append([self._btn(self.strings["btn_back"], self.ks_back, style="primary")])
         await self._edit(
             call,
-            text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown,
-            preview_banner=self._preview_banner()
-        ),
+            text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown),
             reply_markup=markup,
+            preview_banner=self._preview_banner()
         )
 
     async def ks_del_by_filter(self, call, filter_mode):
@@ -4753,10 +4748,9 @@ class KeyScanner(loader.Module):
         self._save()
         await self._edit(
             call,
-            text=self.strings["deleted_filter"].format(count=len(to_del,
-            preview_banner=self._preview_banner()
-        )),
+            text=self.strings["deleted_filter"].format(count=len(to_del)),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_settings_menu(self, call, section="main"):
@@ -5422,9 +5416,12 @@ class KeyScanner(loader.Module):
     async def ks_clr_paid_confirm(self, call):
         count = sum(1 for k in self._keys if self._paid_status.get(k) == "paid")
         if not count:
-            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
-            preview_banner=self._preview_banner()
-        )]])
+            return await self._edit(
+                call,
+                text=self.strings["empty"],
+                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]],
+                preview_banner=self._preview_banner()
+            )
         markup = [
             [self._btn(self._clear_paid_yes_text(), self.ks_clr_paid_execute, style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
@@ -5434,9 +5431,12 @@ class KeyScanner(loader.Module):
     async def ks_clr_free_confirm(self, call):
         count = sum(1 for k in self._keys if self._paid_status.get(k) == "free")
         if not count:
-            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
-            preview_banner=self._preview_banner()
-        )]])
+            return await self._edit(
+                call,
+                text=self.strings["empty"],
+                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]],
+                preview_banner=self._preview_banner()
+            )
         markup = [
             [self._btn(self._clear_free_yes_text(), self.ks_clr_free_execute, style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
@@ -5452,9 +5452,12 @@ class KeyScanner(loader.Module):
             self._ensure_model_cache().pop(k, None)
         self._save()
         msg = self.strings["clear_paid_done"].format(count=len(to_del))
-        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+        await self._edit(
+            call,
+            text=msg,
+            reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]],
             preview_banner=self._preview_banner()
-        )]])
+        )
 
     async def ks_clr_free_execute(self, call):
         to_del = [k for k in list(self._keys.keys()) if self._paid_status.get(k) == "free"]
@@ -5465,9 +5468,12 @@ class KeyScanner(loader.Module):
             self._ensure_model_cache().pop(k, None)
         self._save()
         msg = self.strings["clear_free_done"].format(count=len(to_del))
-        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+        await self._edit(
+            call,
+            text=msg,
+            reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]],
             preview_banner=self._preview_banner()
-        )]])
+        )
 
     async def ks_clr_all_step(self, call, step=0):
         warns = self._clear_all_warnings()
@@ -5495,9 +5501,12 @@ class KeyScanner(loader.Module):
         self._key_meta.clear()
         self._ensure_model_cache().clear()
         self._save()
-        await self._edit(call, text=self.strings["clear_all_done"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary",
+        await self._edit(
+            call,
+            text=self.strings["clear_all_done"],
+            reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary")]],
             preview_banner=self._preview_banner()
-        )]])
+        )
 
     async def ks_back(self, call):
         await self._edit(call, text=self._db_stats_text(), reply_markup=self._get_main_markup(), preview_banner=self._preview_banner())
