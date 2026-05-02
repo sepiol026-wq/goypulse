@@ -15,26 +15,56 @@
 # ====================================================================================================================
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png
 # meta developer: @GoyModules
-# requires: aiohttp
+# requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 0)
+__version__ = (1, 5, 1)
+import base64
+import binascii
 import re
 import aiohttp
 import asyncio
 import csv
+import hashlib
 import html
 import json
 import io
+import ssl
+import statistics
 import time
 from urllib.parse import urlparse, unquote
 from herokutl.types import Message
 from herokutl.tl.functions.messages import CreateForumTopicRequest, EditForumTopicRequest, GetForumTopicsByIDRequest, GetForumTopicsRequest
 from herokutl.tl.types import Channel, ForumTopicDeleted
 try:
+    from aiogram.types import LinkPreviewOptions as _LinkPreviewOptions
+except ImportError:
+    _LinkPreviewOptions = None
+try:
     from herokutl.errors import FloodWaitError
 except ImportError:
     FloodWaitError = Exception
 from .. import loader, utils
+
+try:
+    from aiohttp_socks import ProxyConnector
+except ImportError:
+    ProxyConnector = None
+
+BANNER_URL = "https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png"
+PROVIDER_BANNERS = {
+    "openai":      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/512px-OpenAI_Logo.svg.png",
+    "anthropic":   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/512px-Anthropic_logo.svg.png",
+    "gemini":      "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Google_Gemini_logo.svg/512px-Google_Gemini_logo.svg.png",
+    "groq":        "https://avatars.githubusercontent.com/u/134160386",
+    "mistral":     "https://avatars.githubusercontent.com/u/132372032",
+    "deepseek":    "https://avatars.githubusercontent.com/u/148684274",
+    "cohere":      "https://avatars.githubusercontent.com/u/54850923",
+    "perplexity":  "https://avatars.githubusercontent.com/u/100691412",
+    "together":    "https://avatars.githubusercontent.com/u/97654823",
+    "openrouter":  "https://avatars.githubusercontent.com/u/138042996",
+    "huggingface": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
+    "voyage":      "https://avatars.githubusercontent.com/u/131950042",
+}
 
 E_OK    = "<tg-emoji emoji-id=5255813619702049821>✅</tg-emoji>"
 E_ERR   = "<tg-emoji emoji-id=5253864872780769235>❗️</tg-emoji>"
@@ -121,7 +151,7 @@ class KeyScanner(loader.Module):
         "quota_error": "refresh failed",
         "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} ago)",
         "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
-        "checking_all":  f"{E_SYNC} <b>Validating {{total}} keys...</b> Please wait.",
+        "checking_all":  f"{E_SYNC} <b>Validating {{done}}/{{total}} keys...</b> Please wait.",
         "check_res_all": f"{E_OK} <b>Validation Complete</b>\n\n<b>Total:</b> {{total}}\n<b>Valid:</b> {{v}}\n<b>Invalid:</b> {{i}}\n\n{E_PIN} <b>Providers:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Validation Result:</b>\n\n<b>Provider:</b> {{provider}}\n<b>Status:</b> {{status}}",
         "status_valid":   f"{E_OK} Valid",
@@ -194,6 +224,7 @@ class KeyScanner(loader.Module):
             f"Auto-hide keys: <b>{{auto_hide}}</b>\n"
             f"Premium emoji: <b>{{premium_emoji}}</b>\n"
             f"Color buttons: <b>{{color_buttons}}</b>\n"
+            f"Show preview: <b>{{show_preview}}</b>\n"
             f"Page size: <b>{{page_size}}</b>\n"
             f"Default sort: <b>{{default_sort}}</b>"
         ),
@@ -215,6 +246,7 @@ class KeyScanner(loader.Module):
         "btn_toggle_autohide": "🙈 Auto-Hide Key",
         "btn_toggle_premium_emoji": "© Premium Emoji",
         "btn_toggle_color_buttons": "🎨 Color Buttons",
+        "btn_toggle_preview":    "🖼 Show Preview",
         "btn_open_list": "📝 Open List",
         "btn_open_export": "⬇️ Export",
         "state_on": "ON",
@@ -325,7 +357,7 @@ class KeyScanner(loader.Module):
         "quota_error": "ошибка обновления",
         "quota_rate": f"{E_OK} Rate:\nReq: <b>{{req}}</b> | Tok: <b>{{tok}}</b> | Req reset: <b>{{reset}}</b> ({{age}} назад)",
         "quota_usage": f"{E_OK} Usage: <b>{{usage}}</b> | Limit: <b>{{limit}}</b> | Left: <b>{{left}}</b>",
-        "checking_all":  f"{E_SYNC} <b>Проверяю {{total}} ключей...</b>",
+        "checking_all":  f"{E_SYNC} <b>Проверяю {{done}}/{{total}} ключей...</b>",
         "check_res_all": f"{E_OK} <b>Проверка завершена</b>\n\n<b>Всего:</b> {{total}}\n<b>Валидно:</b> {{v}}\n<b>Невалидно:</b> {{i}}\n\n{E_PIN} <b>Провайдеры:</b>\n{{prov_stats}}",
         "check_res_single": f"{E_SYNC} <b>Результат проверки:</b>\n\n<b>Провайдер:</b> {{provider}}\n<b>Статус:</b> {{status}}",
         "status_valid":   f"{E_OK} Валид",
@@ -419,6 +451,7 @@ class KeyScanner(loader.Module):
         "btn_toggle_autohide": "🙈 Скрывать ключ",
         "btn_toggle_premium_emoji": "© Премиум эмодзи",
         "btn_toggle_color_buttons": "🎨 Цветные кнопки",
+        "btn_toggle_preview":    "🖼 Превью карточки",
         "btn_open_list": "📝 Открыть список",
         "btn_open_export": "⬇️ Экспорт",
         "state_on": "ON",
@@ -494,23 +527,30 @@ class KeyScanner(loader.Module):
             r"gsk_[a-zA-Z0-9]{20,}|"
             r"hf_[a-zA-Z0-9]{20,}|"
             r"r8_[a-zA-Z0-9]{36}|"
-            r"gh[pousr]_[a-zA-Z0-9]{36}|"
-            r"github_pat_[a-zA-Z0-9_]{82}|"
-            r"sk_live_[0-9a-zA-Z]{24}|"
-            r"xox[baprs]-[0-9a-zA-Z]{10,}|"
-            r"SG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}|"
-            r"secret_[a-zA-Z0-9]{43}|"
-            r"figd_[a-zA-Z0-9\-]{40,}"
+            r"co-[a-zA-Z0-9\-]{36,}|"
+            r"TKN-[a-zA-Z0-9\-]{20,}|"
+            r"AUTH_TOKEN=[a-zA-Z0-9\-]{20,}|"
+            r"pa-[a-zA-Z0-9\-_]{40,}|"
+            r"voyage-[a-zA-Z0-9]{16,}|"
+            r"vp-[a-zA-Z0-9]{16,}|"
+            r"csk_[a-zA-Z0-9_-]{16,}|"
+            r"pplx-[a-zA-Z0-9]{16,}|"
+            r"together_[a-zA-Z0-9]{20,}|"
+            r"fw_[a-zA-Z0-9]{20,}|"
+            r"xai-[a-zA-Z0-9_-]{20,}"
             r")\b"
         )
         self.search_queries = [
-            "sk-", "AIza", "gsk_", "hf_", "r8_", "ghp_",
-            "sk_live_", "xoxb-", "SG.", "secret_", "figd_",
+            "sk-", "sk-proj-", "sk-ant-", "AIza", "gsk_", "hf_", "r8_",
+            "co-", "TKN-", "AUTH_TOKEN=", "pa-", "voyage-", "vp-",
+            "csk_", "pplx-", "together_", "fw_", "xai-",
         ]
         self._invalid_keys_cache: list = []
         self._edit_tasks: dict = {}
         self._recent_scan_fingerprints: dict = {}
+        self._proxy_health: dict = {}
         self._scan_semaphore = asyncio.Semaphore(3)
+        self._validation_semaphore = asyncio.Semaphore(8)
         self._max_file_scan_size = 1_500_000
 
     def _default_settings(self):
@@ -525,6 +565,9 @@ class KeyScanner(loader.Module):
             "auto_hide_keys": True,
             "premium_emoji": True,
             "color_buttons": True,
+            "safe_auto_checks": True,
+            "log_full_keys": False,
+            "check_proxy": "",
             "log_target": {
                 "chat_id": None,
                 "thread_id": None,
@@ -541,10 +584,13 @@ class KeyScanner(loader.Module):
         self._paid_status = self.get("paid_status", {})
         self._key_meta    = self.get("keys_meta_v1", {})
         self._model_cache = self.get("models_v2", {})
+        self._proxy_health = self.get("proxy_health_v1", {})
         if not isinstance(self._key_meta, dict):
             self._key_meta = {}
         if not isinstance(self._model_cache, dict):
             self._model_cache = {}
+        if not isinstance(self._proxy_health, dict):
+            self._proxy_health = {}
         self._settings    = self.get("ks_settings", self._default_settings())
         defaults = self._default_settings()
         if not isinstance(self._settings, dict):
@@ -608,6 +654,318 @@ class KeyScanner(loader.Module):
         self.set("paid_status", self._paid_status)
         self.set("keys_meta_v1", getattr(self, "_key_meta", {}))
         self.set("models_v2",   getattr(self, "_model_cache", {}))
+        self.set("proxy_health_v1", getattr(self, "_proxy_health", {}))
+
+    def _clean_proxy_text(self, value: str) -> str:
+        raw = str(value or "").replace("&amp;", "&").replace("：", ":")
+        raw = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2066-\u2069]", "", raw)
+        return raw.strip().strip("<>\"'")
+
+    def _supported_http_proxy_schemes(self):
+        return {"http", "https", "socks4", "socks4a", "socks5", "socks5h", "socks"}
+
+    def _supported_proxy_schemes(self):
+        return self._supported_http_proxy_schemes() | {"vless", "trojan", "ss", "outline"}
+
+    def _split_proxy_entries(self, value: str):
+        raw = str(value or "").replace("\r", "\n")
+        entries = []
+        for part in re.split(r"[\n;]+", raw):
+            cleaned = self._clean_proxy_text(part)
+            if cleaned:
+                entries.append(cleaned)
+        return entries[:12]
+
+    def _b64_decode_loose(self, value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        raw += "=" * (-len(raw) % 4)
+        try:
+            return base64.urlsafe_b64decode(raw.encode()).decode("utf-8", errors="ignore")
+        except (ValueError, binascii.Error):
+            return ""
+
+    def _parse_ss_endpoint(self, raw: str):
+        value = raw
+        if raw.lower().startswith("outline://"):
+            value = "ss://" + raw.split("://", 1)[1]
+        body = value.split("://", 1)[1]
+        body = body.split("#", 1)[0]
+        body = body.split("?", 1)[0]
+        body = unquote(body)
+        parsed = None
+        if "@" in body and ":" in body.rsplit("@", 1)[-1]:
+            parsed = urlparse(f"ss://{body}" if not value.lower().startswith("ss://") else value)
+        else:
+            decoded = self._b64_decode_loose(body)
+            if decoded and "@" in decoded and ":" in decoded.rsplit("@", 1)[-1]:
+                parsed = urlparse(f"ss://{decoded}")
+        if not parsed or not parsed.hostname or not parsed.port:
+            return None, "Invalid Shadowsocks / Outline URL."
+        normalized = raw if raw.lower().startswith(("ss://", "outline://")) else f"ss://{body}"
+        return {
+            "raw": raw,
+            "normalized": normalized,
+            "scheme": "outline" if raw.lower().startswith("outline://") else "ss",
+            "host": parsed.hostname,
+            "port": int(parsed.port),
+            "sni": None,
+            "tls": False,
+            "usable_http": False,
+            "probe_mode": "tcp",
+            "display": f"{raw.split('://', 1)[0].lower()}://{parsed.hostname}:{int(parsed.port)}",
+        }, None
+
+    def _parse_proxy_spec(self, value: str):
+        raw = self._clean_proxy_text(value)
+        if not raw:
+            return None, "Proxy is empty."
+        low = raw.lower()
+        if low in {"off", "none", "disable", "disabled", "0"}:
+            return {"raw": "", "normalized": "", "scheme": "off", "usable_http": False}, None
+        if "://" not in raw:
+            return None, "Proxy must include a scheme like http:// or socks5://."
+        scheme = raw.split("://", 1)[0].lower()
+        if scheme == "socks":
+            raw = "socks5://" + raw.split("://", 1)[1]
+            scheme = "socks5"
+        if scheme in {"ss", "outline"}:
+            return self._parse_ss_endpoint(raw)
+        if scheme not in self._supported_proxy_schemes():
+            return None, "Supported: http(s), socks4/socks4a/socks5/socks5h, vless, trojan, ss, outline."
+        parsed = urlparse(raw)
+        if not parsed.hostname or not parsed.port:
+            return None, "Proxy must include host:port."
+        query = dict(part.split("=", 1) if "=" in part else (part, "") for part in (parsed.query or "").split("&") if part)
+        tls = scheme == "trojan" or query.get("security", "").lower() == "tls" or int(parsed.port) == 443
+        sni = query.get("sni") or query.get("host") or parsed.hostname
+        usable_http = scheme in self._supported_http_proxy_schemes()
+        return {
+            "raw": raw,
+            "normalized": raw,
+            "scheme": scheme,
+            "host": parsed.hostname,
+            "port": int(parsed.port),
+            "sni": sni,
+            "tls": bool(tls),
+            "usable_http": usable_http,
+            "probe_mode": "proxy" if usable_http else ("tls" if tls else "tcp"),
+            "display": f"{scheme}://{parsed.hostname}:{int(parsed.port)}",
+        }, None
+
+    def _normalize_proxy_url(self, value: str):
+        spec, error = self._parse_proxy_spec(value)
+        if error:
+            return None, error
+        return spec.get("normalized", ""), None
+
+    def _normalize_proxy_pool(self, value: str):
+        entries = self._split_proxy_entries(value)
+        if not entries:
+            return "", None
+        normalized = []
+        seen = set()
+        for entry in entries:
+            spec, error = self._parse_proxy_spec(entry)
+            if error:
+                return None, f"{entry}\n{error}"
+            norm = spec.get("normalized", "")
+            if not norm:
+                continue
+            key = norm.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(norm)
+        return "\n".join(normalized), None
+
+    def _load_proxy_specs(self):
+        raw = self._settings.get("check_proxy", "")
+        specs = []
+        seen = set()
+        for entry in self._split_proxy_entries(raw):
+            spec, _ = self._parse_proxy_spec(entry)
+            if not spec or not spec.get("normalized"):
+                continue
+            key = spec["normalized"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(spec)
+        return specs
+
+    def _proxy_health_sort_key(self, spec: dict):
+        health = self._proxy_health.get(spec["normalized"], {})
+        alive = 0 if health.get("alive") else 1
+        latency = health.get("latency_ms")
+        latency = latency if isinstance(latency, (int, float)) else 10**9
+        runtime_penalty = 0 if spec.get("usable_http") else 1
+        return (alive, runtime_penalty, latency, spec.get("scheme", ""))
+
+    def _best_check_proxy_spec(self, require_http: bool = True):
+        specs = self._load_proxy_specs()
+        if require_http:
+            specs = [spec for spec in specs if spec.get("usable_http")]
+        if not specs:
+            return None
+        alive = [spec for spec in specs if self._proxy_health.get(spec["normalized"], {}).get("alive")]
+        candidates = alive or specs
+        candidates.sort(key=self._proxy_health_sort_key)
+        return candidates[0]
+
+    async def _probe_tcp_endpoint(self, spec: dict, timeout: float = 3.5):
+        host = spec.get("host")
+        port = int(spec.get("port") or 0)
+        if not host or not port:
+            return {"alive": False, "mode": "tcp", "error": "missing endpoint", "checked_at": self._now_ts()}
+        samples = []
+        last_error = "connect failed"
+        for _ in range(2):
+            started = time.perf_counter()
+            writer = None
+            try:
+                ssl_ctx = None
+                server_hostname = None
+                if spec.get("probe_mode") == "tls":
+                    ssl_ctx = ssl.create_default_context()
+                    server_hostname = spec.get("sni") or host
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host=host, port=port, ssl=ssl_ctx, server_hostname=server_hostname),
+                    timeout=timeout,
+                )
+                samples.append((time.perf_counter() - started) * 1000)
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+            except Exception as e:
+                last_error = self._short_api_error(e)
+                if writer is not None:
+                    writer.close()
+                continue
+        if not samples:
+            return {"alive": False, "mode": spec.get("probe_mode") or "tcp", "error": last_error, "checked_at": self._now_ts()}
+        return {
+            "alive": True,
+            "mode": spec.get("probe_mode") or "tcp",
+            "latency_ms": int(statistics.median(samples)),
+            "checked_at": self._now_ts(),
+        }
+
+    async def _probe_connector_proxy(self, spec: dict):
+        if not spec.get("usable_http") or not ProxyConnector:
+            return await self._probe_tcp_endpoint(spec)
+        timeout = aiohttp.ClientTimeout(total=5, connect=3, sock_connect=3, sock_read=4)
+        started = time.perf_counter()
+        try:
+            async with aiohttp.ClientSession(
+                connector=ProxyConnector.from_url(spec["normalized"]),
+                timeout=timeout,
+                headers={"User-Agent": "KeyScanner/1.5.1"},
+            ) as session:
+                async with session.get("https://www.gstatic.com/generate_204") as response:
+                    if response.status not in {200, 204}:
+                        return {"alive": False, "mode": "proxy", "error": f"HTTP {response.status}", "checked_at": self._now_ts()}
+            return {
+                "alive": True,
+                "mode": "proxy",
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "checked_at": self._now_ts(),
+            }
+        except Exception:
+            return await self._probe_tcp_endpoint(spec)
+
+    async def _refresh_proxy_health(self, force: bool = False):
+        specs = self._load_proxy_specs()
+        if not specs:
+            self._proxy_health = {}
+            return {}
+
+        async def run_probe(spec: dict):
+            cached = self._proxy_health.get(spec["normalized"], {})
+            if not force and cached.get("checked_at") and (self._now_ts() - int(cached.get("checked_at", 0))) < 600:
+                return spec["normalized"], cached
+            health = await self._probe_connector_proxy(spec)
+            return spec["normalized"], health
+
+        results = await asyncio.gather(*(run_probe(spec) for spec in specs), return_exceptions=True)
+        alive_map = {}
+        for item in results:
+            if isinstance(item, Exception):
+                continue
+            key, health = item
+            if not isinstance(health, dict):
+                continue
+            alive_map[key] = health
+        self._proxy_health = alive_map
+        self._save()
+        return alive_map
+
+    def _mask_proxy_for_display(self, value: str) -> str:
+        return re.sub(r":([^:@/]+)@", ":***@", value)
+
+    def _proxy_status_text(self, spec: dict):
+        health = self._proxy_health.get(spec["normalized"], {})
+        masked = html.escape(self._mask_proxy_for_display(spec["display"]))
+        if not health:
+            return f"<code>{masked}</code> · ?"
+        if not health.get("alive"):
+            return f"<code>{masked}</code> · dead ({html.escape(str(health.get('error', 'fail')))})"
+        latency = health.get("latency_ms")
+        latency_text = f"{int(latency)}ms" if isinstance(latency, (int, float)) else "alive"
+        mode = health.get("mode") or spec.get("probe_mode") or spec.get("scheme")
+        runtime = "runtime" if spec.get("usable_http") else "endpoint"
+        return f"<code>{masked}</code> · {latency_text} · {html.escape(str(mode))} · {runtime}"
+
+    def _masked_check_proxy_text(self) -> str:
+        specs = self._load_proxy_specs()
+        if not specs:
+            return "<code>off</code>"
+        best = self._best_check_proxy_spec(require_http=False) or specs[0]
+        return self._proxy_status_text(best)
+
+    def _proxy_help_examples(self):
+        return (
+            "<code>.ksproxy http://user:pass@host:port</code>\n"
+            "<code>.ksproxy socks5h://host:port</code>\n"
+            "<code>.ksproxy socks4a://host:port</code>\n"
+            "<code>.ksproxy vless://uuid@host:443?security=tls&sni=example.com</code>\n"
+            "<code>.ksproxy trojan://password@host:443?sni=example.com</code>\n"
+            "<code>.ksproxy ss://method:password@host:port</code>\n"
+            "<code>.ksproxy outline://method:password@host:port</code>\n"
+            "<code>.ksproxy off</code>"
+        )
+
+    def _proxy_pool_status_block(self):
+        specs = self._load_proxy_specs()
+        if not specs:
+            return ""
+        lines = [self._proxy_status_text(spec) for spec in specs[:8]]
+        runtime = self._best_check_proxy_spec(require_http=True)
+        runtime_line = self._proxy_status_text(runtime) if runtime else "<code>none</code> · no runtime-capable proxy"
+        return "\n".join(
+            [
+                "",
+                f"{E_LIST} <b>Pool:</b>",
+                *lines,
+                f"{E_OK} <b>Runtime pick:</b> {runtime_line}",
+            ]
+        )
+
+    def _check_proxy(self) -> str:
+        spec = self._best_check_proxy_spec(require_http=True)
+        return spec["normalized"] if spec else ""
+
+    def _http_session(self, **kwargs):
+        proxy = self._check_proxy()
+        if proxy and ProxyConnector:
+            try:
+                return aiohttp.ClientSession(connector=ProxyConnector.from_url(proxy), **kwargs)
+            except Exception:
+                pass
+        return aiohttp.ClientSession(**kwargs)
 
     def _ensure_model_cache(self):
         cache = getattr(self, "_model_cache", None)
@@ -793,7 +1151,8 @@ class KeyScanner(loader.Module):
 
     def _should_skip_scan(self, chat_id, message_id, text: str, via: str) -> bool:
         self._recent_scan_cleanup()
-        fingerprint = f"{via}:{chat_id}:{message_id}:{hash(text)}"
+        text_hash = hashlib.sha1((text or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
+        fingerprint = f"{via}:{chat_id}:{message_id}:{text_hash}"
         now = self._now_ts()
         if fingerprint in self._recent_scan_fingerprints:
             return True
@@ -917,56 +1276,160 @@ class KeyScanner(loader.Module):
         tokens = [token for token in (raw_args or "").split() if token]
         global_mode = False
         limit = default_limit
+        scan_mode = "simple"
+        include_files = False
         for token in tokens:
             low = token.lower()
             if low in {"global", "all", "-g", "--global"}:
                 global_mode = True
                 continue
+            if low in {"fast", "quick", "search"}:
+                scan_mode = "fast"
+                continue
+            if low in {"simple", "normal", "hybrid", "обычный", "простой"}:
+                scan_mode = "simple"
+                continue
+            if low in {"deep", "full", "raw", "slow", "глубокий", "дип"}:
+                scan_mode = "deep"
+                continue
+            if low in {"files", "file", "withfiles", "attachments", "файлы"}:
+                include_files = True
+                continue
             if token.isdigit():
                 limit = int(token)
-        return global_mode, limit
+        return global_mode, limit, scan_mode, include_files
+
+    def _message_text_for_scan(self, message) -> str:
+        return (
+            getattr(message, "raw_text", None)
+            or getattr(message, "message", None)
+            or getattr(message, "text", None)
+            or ""
+        )
+
+    def _is_text_file_message(self, message) -> bool:
+        file = getattr(message, "file", None)
+        if not file:
+            return False
+        mime = getattr(file, "mime_type", "") or ""
+        name = (getattr(file, "name", "") or "").lower()
+        size = int(getattr(file, "size", 0) or 0)
+        text_exts = (".txt", ".json", ".env", ".py", ".js", ".ts", ".sh",
+                     ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".md",
+                     ".xml", ".csv", ".conf", ".properties")
+        text_mimes = ("text/", "application/json", "application/x-yaml",
+                      "application/xml", "application/x-sh")
+        return (size == 0 or size <= self._max_file_scan_size) and (
+            any(mime.startswith(m) for m in text_mimes) or any(name.endswith(e) for e in text_exts)
+        )
+
+    async def _message_texts_for_scan(self, message, include_files: bool = False):
+        texts = []
+        text = self._message_text_for_scan(message)
+        if text:
+            texts.append(text)
+        if include_files and self._settings.get("file_scan", True) and self._is_text_file_message(message):
+            try:
+                raw = await self.client.download_media(message, bytes)
+                if raw:
+                    texts.append(raw.decode("utf-8", errors="ignore"))
+            except Exception:
+                pass
+        return texts
+
+    async def _scan_search_prefixes(self, target, limit: int, found: set, include_files: bool = False) -> int:
+        scanned = 0
+        per_prefix_limit = min(limit, 5000) if target is None else limit
+        for query in self.search_queries:
+            try:
+                async for message in self.client.iter_messages(target, search=query, limit=per_prefix_limit):
+                    scanned += 1
+                    for text in await self._message_texts_for_scan(message, include_files=include_files):
+                        if text:
+                            found.update(self.key_regex.findall(text))
+            except FloodWaitError as e:
+                wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
+                await asyncio.sleep(int(wait))
+            except Exception:
+                pass
+            await asyncio.sleep(0.25)
+        return scanned
+
+    async def _scan_raw_messages(self, target, limit: int, found: set, include_files: bool = False) -> int:
+        scanned = 0
+        try:
+            async for message in self.client.iter_messages(target, limit=limit):
+                scanned += 1
+                for text in await self._message_texts_for_scan(message, include_files=include_files):
+                    if text and self._text_might_contain_key(text):
+                        found.update(self.key_regex.findall(text))
+        except FloodWaitError as e:
+            wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
+            await asyncio.sleep(int(wait))
+        except Exception:
+            pass
+        return scanned
+
+    async def _scan_global_dialogs(self, limit: int, found: set, include_files: bool = False) -> int:
+        scanned = 0
+        try:
+            async for dialog in self.client.iter_dialogs():
+                if scanned >= limit:
+                    break
+                entity = getattr(dialog, "entity", None) or dialog
+                per_dialog = min(5000, max(0, limit - scanned))
+                if per_dialog <= 0:
+                    break
+                try:
+                    async for message in self.client.iter_messages(entity, limit=per_dialog):
+                        scanned += 1
+                        for text in await self._message_texts_for_scan(message, include_files=include_files):
+                            if text and self._text_might_contain_key(text):
+                                found.update(self.key_regex.findall(text))
+                        if scanned >= limit:
+                            break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return scanned
 
     def _is_autocatch_enabled_for(self, chat_id) -> bool:
         return GLOBAL_AUTOCATCH in self._auto_chats or chat_id in self._auto_chats
 
-    async def _run_scan(self, message: Message, limit: int, global_mode: bool):
+    async def _run_scan(self, message: Message, limit: int, global_mode: bool, scan_mode: str = "simple", include_files: bool = False):
         target = None if global_mode else message.to_id
         progress_key = "global_scanning" if global_mode else "scanning"
         source = "Global Scan" if global_mode else getattr(message.to_id, "chat_id", "ScanLLM")
         via = "global" if global_mode else "scan"
         msg = await self._answer(message, self.strings[progress_key].format(limit=limit))
         found = set()
+        scan_mode = scan_mode if scan_mode in {"fast", "simple", "deep"} else "simple"
+        scanned_count = 0
 
-        for query in self.search_queries:
-            try:
-                async for m in self.client.iter_messages(target, search=query, limit=limit):
-                    if getattr(m, "raw_text", None):
-                        found.update(self.key_regex.findall(m.raw_text))
-            except FloodWaitError as e:
-                wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
-                await asyncio.sleep(int(wait))
-                try:
-                    async for m in self.client.iter_messages(target, search=query, limit=limit):
-                        if getattr(m, "raw_text", None):
-                            found.update(self.key_regex.findall(m.raw_text))
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            await asyncio.sleep(0.4)
+        scanned_count += await self._scan_search_prefixes(target, limit, found, include_files=include_files)
+        if scan_mode != "fast":
+            raw_limit = limit
+            if scan_mode == "simple":
+                raw_limit = min(limit, 50_000 if global_mode else 10_000)
+            if global_mode:
+                scanned_count += await self._scan_global_dialogs(raw_limit, found, include_files=include_files)
+            else:
+                scanned_count += await self._scan_raw_messages(target, raw_limit, found, include_files=include_files)
 
         valid_count = 0
         if found:
-            async with aiohttp.ClientSession() as session:
-                tasks = [self._validate_key(session, k) for k in found]
+            safe_mode = bool(self._settings.get("safe_auto_checks", True))
+            async with self._http_session() as session:
+                tasks = [self._validate_key(session, k, allow_spend=not safe_mode) for k in found]
                 results = await self._gather_chunked(tasks)
                 for key, (prov, ok) in zip(found, results):
                     if ok and key not in self._keys:
                         valid_count += 1
-                        await self._register_key(session, key, prov, source, via=via)
+                        await self._register_key(session, key, prov, source, via=via, safe_mode=safe_mode)
             self._save()
 
-        await self._answer(msg, self.strings["found"].format(valid_count=valid_count))
+        await self._answer(msg, self.strings["found"].format(valid_count=valid_count, raw_count=len(found), scanned_count=scanned_count))
 
     def _style(self, kind: str | None):
         if not self._settings.get("color_buttons", True):
@@ -1008,11 +1471,49 @@ class KeyScanner(loader.Module):
             kwargs["reply_markup"] = self._ui_markup(kwargs["reply_markup"])
         return await utils.answer(message, self._ui_text(text), **kwargs)
 
-    async def _edit(self, call, *, text=None, reply_markup=None, **kwargs):
+    def _preview_banner(self, provider: str | None = None) -> str | None:
+        """Return banner URL for preview. Uses provider-specific banner if available."""
+        if not self._settings.get("show_preview", True):
+            return None
+        if provider:
+            key = str(provider).lower().strip()
+            banner = PROVIDER_BANNERS.get(key)
+            if banner:
+                return banner
+        return BANNER_URL
+
+    async def _edit(self, call, *, text=None, reply_markup=None, preview_banner=None, **kwargs):
         if text is not None:
             kwargs["text"] = self._ui_text(text)
         if reply_markup is not None:
             kwargs["reply_markup"] = self._ui_markup(reply_markup)
+        if preview_banner is not None and _LinkPreviewOptions is not None:
+            try:
+                options = _LinkPreviewOptions(url=preview_banner, show_above_text=True, prefer_large_media=True)
+                markup = self.inline.generate_markup(kwargs.get("reply_markup", []))
+                bot = getattr(self.inline, "bot", None)
+                if bot:
+                    arguments = {
+                        "text": kwargs.get("text", ""),
+                        "reply_markup": markup,
+                        "link_preview_options": options,
+                        "parse_mode": "HTML",
+                    }
+                    inline_id = getattr(call, "inline_message_id", None)
+                    if inline_id:
+                        arguments["inline_message_id"] = inline_id
+                    else:
+                        message = getattr(call, "message", call)
+                        chat = getattr(getattr(message, "chat", message), "id", getattr(message, "chat_id", None))
+                        identifier = getattr(message, "message_id", getattr(message, "id", None))
+                        if chat and identifier:
+                            arguments["chat_id"] = chat
+                            arguments["message_id"] = identifier
+                        else:
+                            return await call.edit(**kwargs)
+                    return await bot.edit_message_text(**arguments)
+            except Exception:
+                pass
         return await call.edit(**kwargs)
 
     def _models_text(self, models, limit: int = 5, provider: str | None = None):
@@ -1106,6 +1607,23 @@ class KeyScanner(loader.Module):
         meta = self._key_meta.get(key, {}) if isinstance(getattr(self, "_key_meta", None), dict) else {}
         return self._format_quota(meta.get("quota"))
 
+    def _quota_is_refreshable(self, quota) -> bool:
+        if not isinstance(quota, dict):
+            return False
+        kind = quota.get("kind")
+        if kind == "rate":
+            return True
+        if kind != "usage":
+            return False
+        limit = quota.get("limit")
+        left = quota.get("left")
+        return any(value not in (None, "", "—") for value in (limit, left))
+
+    def _provider_supports_quota(self, provider: str, quota=None) -> bool:
+        if self._quota_is_refreshable(quota):
+            return True
+        return provider in {"OpenRouter"}
+
     def _short_api_error(self, text: str) -> str:
         text = re.sub(r"\s+", " ", str(text or "")).strip()
         low = text.lower()
@@ -1114,6 +1632,201 @@ class KeyScanner(loader.Module):
         if "insufficient_quota" in low or "quota" in low:
             return "quota/billing error"
         return text[:96] if text else self.strings["quota_error"]
+
+    def _extract_models_from_payload(self, data) -> list:
+        items = []
+        if isinstance(data, dict):
+            items = data.get("data") or data.get("models") or data.get("results") or []
+        out = []
+        for item in items or []:
+            if isinstance(item, str):
+                out.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            name = item.get("id") or item.get("name") or item.get("model")
+            if name:
+                out.append(str(name).rsplit("/", 1)[-1])
+        return [m for m in dict.fromkeys(out) if m]
+
+    def _extract_reply_text(self, data) -> str:
+        texts = []
+        if isinstance(data, dict):
+            content = data.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    text = part.get("text")
+                    if isinstance(text, str) and text.strip():
+                        texts.append(text.strip())
+            choices = data.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    message = choice.get("message")
+                    if isinstance(message, dict):
+                        msg_content = message.get("content")
+                        if isinstance(msg_content, str) and msg_content.strip():
+                            texts.append(msg_content.strip())
+                        elif isinstance(msg_content, list):
+                            for part in msg_content:
+                                if not isinstance(part, dict):
+                                    continue
+                                text = part.get("text")
+                                if isinstance(text, str) and text.strip():
+                                    texts.append(text.strip())
+                    text = choice.get("text")
+                    if isinstance(text, str) and text.strip():
+                        texts.append(text.strip())
+            candidates = data.get("candidates")
+            if isinstance(candidates, list):
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    content = candidate.get("content") or {}
+                    if isinstance(content, dict):
+                        parts = content.get("parts") or []
+                        for part in parts:
+                            if not isinstance(part, dict):
+                                continue
+                            text = part.get("text")
+                            if isinstance(text, str) and text.strip():
+                                texts.append(text.strip())
+            message = data.get("message")
+            if isinstance(message, dict):
+                parts = message.get("content")
+                if isinstance(parts, list):
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        text = part.get("text")
+                        if isinstance(text, str) and text.strip():
+                            texts.append(text.strip())
+            generations = data.get("generations")
+            if isinstance(generations, list):
+                for item in generations:
+                    if not isinstance(item, dict):
+                        continue
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        texts.append(text.strip())
+            text = data.get("text")
+            if isinstance(text, str) and text.strip():
+                texts.append(text.strip())
+        return next((text for text in texts if text), "")
+
+    def _candidate_text_models(self, provider: str, models) -> list:
+        provider = provider or ""
+        clean = []
+        bad_tokens = (
+            "embed", "embedding", "rerank", "moderation", "whisper", "tts",
+            "speech", "transcribe", "audio", "image", "vision-preview",
+            "omni-moderation", "safety", "guard", "realtime",
+        )
+        for model in models or []:
+            if not model:
+                continue
+            name = str(model).rsplit("/", 1)[-1]
+            low = name.lower()
+            if any(token in low for token in bad_tokens):
+                continue
+            clean.append(name)
+        if provider == "Gemini":
+            clean = [m for m in clean if m.lower().startswith("gemini-")]
+        elif provider == "Anthropic":
+            clean = [m for m in clean if m.lower().startswith("claude")]
+        elif provider == "Cohere":
+            clean = [m for m in clean if "command" in m.lower() or "chat" in m.lower()]
+        elif provider == "Voyage":
+            clean = [m for m in clean if "rerank" not in m.lower()]
+        return [m for m in dict.fromkeys(clean) if m]
+
+    async def _probe_openai_compatible_response(self, session, provider: str, key: str, base_url: str, models=None, headers=None, fallback_models=None):
+        req_headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if headers:
+            req_headers.update(headers)
+        probe_models = list(models or [])
+        if not probe_models:
+            try:
+                async with session.get(f"{base_url}/models", headers=req_headers, timeout=6) as r:
+                    if r.status == 200:
+                        payload = await r.json()
+                        probe_models = self._extract_models_from_payload(payload)
+            except Exception:
+                probe_models = []
+        probe_models = self._candidate_text_models(provider, probe_models or fallback_models or [])
+        for model in probe_models[:5]:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "1"}],
+                "max_tokens": 1,
+                "temperature": 0,
+            }
+            try:
+                async with session.post(f"{base_url}/chat/completions", headers=req_headers, json=payload, timeout=8) as r:
+                    body = await r.text()
+                    if r.status == 200:
+                        try:
+                            data = json.loads(body)
+                        except Exception:
+                            data = {}
+                        if self._extract_reply_text(data):
+                            return True, model
+                    low = body.lower()
+                    if "credit balance is too low" in low or "insufficient_quota" in low:
+                        return False, None
+                    if any(token in low for token in ("model", "not found", "does not exist", "unsupported", "unknown model")):
+                        continue
+            except Exception:
+                continue
+        return False, None
+
+    async def _probe_gemini_response(self, session, key: str):
+        models = []
+        try:
+            async with session.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                params={"key": key, "pageSize": 1000},
+                timeout=6,
+            ) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    raw_models = []
+                    for item in data.get("models", []) or []:
+                        name = (item.get("name") or "").removeprefix("models/")
+                        if name:
+                            raw_models.append(name)
+                    models = self._candidate_text_models("Gemini", raw_models)
+        except Exception:
+            models = []
+        fallback_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        for model in models[:5] or fallback_models:
+            try:
+                async with session.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                    params={"key": key},
+                    json={
+                        "contents": [{"parts": [{"text": "1"}]}],
+                        "generationConfig": {"maxOutputTokens": 1, "temperature": 0},
+                    },
+                    timeout=8,
+                ) as r:
+                    body = await r.text()
+                    if r.status == 200:
+                        try:
+                            data = json.loads(body)
+                        except Exception:
+                            data = {}
+                        if self._extract_reply_text(data):
+                            return True, model
+                    low = body.lower()
+                    if any(token in low for token in ("not found", "unsupported", "not supported for generatecontent", "unknown model")):
+                        continue
+            except Exception:
+                continue
+        return False, None
 
     async def _anthropic_messages_probe(self, session, key: str):
         headers = {
@@ -1131,12 +1844,86 @@ class KeyScanner(loader.Module):
             }
             async with session.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=8) as r:
                 if r.status == 200:
-                    return True, r.headers, ""
+                    try:
+                        data = await r.json()
+                    except Exception:
+                        data = {}
+                    if self._extract_reply_text(data):
+                        return True, r.headers, ""
                 last_headers = r.headers
                 last_text = await r.text()
                 if "model" not in last_text.lower() and "not_found" not in last_text.lower():
                     break
         return False, last_headers, last_text
+
+    async def _probe_cohere_response(self, session, key: str):
+        clean_key = key.split("=", 1)[1] if key.startswith("AUTH_TOKEN=") and "=" in key else key
+        headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
+        models = []
+        for url in ("https://api.cohere.com/v2/models", "https://api.cohere.com/v1/models"):
+            try:
+                async with session.get(url, headers=headers, timeout=6) as r:
+                    if r.status != 200:
+                        continue
+                    data = await r.json()
+                    models = self._candidate_text_models("Cohere", self._extract_models_from_payload(data))
+                    if models:
+                        break
+            except Exception:
+                continue
+        fallback_models = ["command-a-03-2025", "command-r7b-12-2024", "command-r-plus-08-2024"]
+        for model in models[:5] or fallback_models:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "1"}],
+                "max_tokens": 1,
+                "temperature": 0,
+            }
+            try:
+                async with session.post("https://api.cohere.com/v2/chat", headers=headers, json=payload, timeout=8) as r:
+                    body = await r.text()
+                    if r.status == 200:
+                        try:
+                            data = json.loads(body)
+                        except Exception:
+                            data = {}
+                        if self._extract_reply_text(data):
+                            return True, model
+                    low = body.lower()
+                    if any(token in low for token in ("model", "not found", "unsupported")):
+                        continue
+            except Exception:
+                continue
+        return False, None
+
+    async def _probe_voyage_response(self, session, key: str):
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        models = []
+        try:
+            async with session.get("https://api.voyageai.com/v1/models", headers=headers, timeout=6) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    models = self._candidate_text_models("Voyage", self._extract_models_from_payload(data))
+        except Exception:
+            models = []
+        fallback_models = ["voyage-3.5-lite", "voyage-3-lite", "voyage-3"]
+        for model in models[:5] or fallback_models:
+            try:
+                async with session.post(
+                    "https://api.voyageai.com/v1/embeddings",
+                    headers=headers,
+                    json={"model": model, "input": ["1"]},
+                    timeout=8,
+                ) as r:
+                    if r.status != 200:
+                        continue
+                    data = await r.json()
+                    vectors = data.get("data") or []
+                    if vectors and isinstance(vectors[0], dict) and vectors[0].get("embedding"):
+                        return True, model
+            except Exception:
+                continue
+        return False, None
 
     def _hf_has_zerogpu(self, data: dict) -> bool:
         if data.get("isPro") or str(data.get("role", "")).upper() == "PRO":
@@ -1271,6 +2058,65 @@ class KeyScanner(loader.Module):
             out.append(name)
         return list(dict.fromkeys(out))
 
+    def _gemini_free_model_markers(self) -> tuple[str, ...]:
+        return (
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro",
+            "gemini-2.5-pro",
+        )
+
+    def _gemini_paid_only_markers(self) -> tuple[str, ...]:
+        return (
+            "veo-",
+            "lyria-",
+            "computer-use",
+            "imagen",
+            "ultra",
+            "pro-preview-customtools",
+            "gemini-3.1-pro-preview",
+        )
+
+    def _gemini_is_paid_only_model(self, name: str) -> bool:
+        low = str(name or "").strip().lower()
+        if not low:
+            return False
+        return any(marker in low for marker in self._gemini_paid_only_markers())
+
+    def _gemini_is_known_free_model(self, name: str) -> bool:
+        low = str(name or "").strip().lower()
+        if not low.startswith("gemini-"):
+            return False
+        if self._gemini_is_paid_only_model(low):
+            return False
+        if any(token in low for token in ("customtools", "embedding", "vision", "robotics")):
+            return False
+        if any(token in low for token in ("native-audio", "-tts", "audio-thinking", "-live")):
+            return False
+        return any(
+            low == root
+            or low.startswith(f"{root}-preview")
+            or low.startswith(f"{root}-latest")
+            or low.startswith(f"{root}-exp")
+            for root in self._gemini_free_model_markers()
+        )
+
+    def _gemini_tier_from_models(self, models) -> str | None:
+        names = self._model_names_normalized(models)
+        if not names:
+            return None
+        if any(self._gemini_is_paid_only_model(name) for name in names):
+            return "paid"
+        if any(self._gemini_is_known_free_model(name) for name in names):
+            return "free"
+        if any("preview" in name or "experimental" in name for name in names):
+            return "unknown"
+        return "unknown"
+
     def _openrouter_tier_from_models(self, models) -> str | None:
         names = self._model_names_normalized(models)
         if not names:
@@ -1285,12 +2131,9 @@ class KeyScanner(loader.Module):
         names = self._model_names_normalized(models)
         if not names:
             return None
-        # Models that are heavily restricted or typically indicate paid API access
-        paid_markers = {"gpt-4", "gpt-4-32k", "gpt-5.5"}
-        has_paid = any(any(m.startswith(marker) for marker in paid_markers) for m in names)
-        if has_paid:
+        if any(name.startswith(("gpt-", "o", "text-embedding-", "omni-")) for name in names):
             return "paid"
-        return "free"
+        return "unknown"
 
     def _anthropic_tier_from_models(self, models) -> str | None:
         names = self._model_names_normalized(models)
@@ -1670,6 +2513,9 @@ class KeyScanner(loader.Module):
             "Groq": ("https://api.groq.com/openai/v1", "Bearer"),
             "OpenRouter": ("https://openrouter.ai/api/v1", "Bearer"),
             "Anthropic": ("https://api.anthropic.com/v1", "x-api-key"),
+            "Cohere": ("https://api.cohere.com/v1", "Bearer"),
+            "Cerebras": ("https://api.cerebras.ai/v1", "Bearer"),
+            "Voyage": ("https://api.voyageai.com/v1", "Bearer"),
         }
         return mapping.get(provider)
 
@@ -1708,6 +2554,26 @@ class KeyScanner(loader.Module):
                     items = data.get("data") or []
                     return [i.get("id") for i in items if i.get("id")]
 
+            if provider == "Cohere":
+                clean_key = key.split("=", 1)[1] if key.startswith("AUTH_TOKEN=") and "=" in key else key
+                headers = {"Authorization": f"Bearer {clean_key}"}
+                for url in ("https://api.cohere.com/v2/models", "https://api.cohere.com/v1/models"):
+                    async with session.get(url, headers=headers, timeout=6) as r:
+                        if r.status != 200:
+                            continue
+                        data = await r.json()
+                        items = data.get("models") or data.get("data") or []
+                        out = []
+                        for item in items:
+                            if isinstance(item, str):
+                                out.append(item)
+                                continue
+                            name = item.get("id") or item.get("name") or item.get("model")
+                            if name:
+                                out.append(name)
+                        if out:
+                            return out
+
             base = self._provider_model_base(provider)
             if base:
                 base_url, auth_type = base
@@ -1733,13 +2599,7 @@ class KeyScanner(loader.Module):
     def _tier_from_models(self, provider: str, models):
         models = [m for m in (models or []) if m]
         if provider == "Gemini":
-            paid_markers = (
-                "veo", "lyria", "computer-use", "imagen", "2.5-pro", "3-pro",
-                "preview", "experimental", "thinking", "ultra"
-            )
-            if any(any(tok in m.lower() for tok in paid_markers) for m in models):
-                return "paid"
-            return "unknown" if models else "unknown"
+            return self._gemini_tier_from_models(models) or "unknown"
         if provider == "OpenRouter":
             return self._openrouter_tier_from_models(models)
         if provider == "OpenAI":
@@ -1748,11 +2608,76 @@ class KeyScanner(loader.Module):
             return self._anthropic_tier_from_models(models)
         return None
 
-    async def _register_key(self, session, key: str, provider: str, source_chat_id, via: str = "message"):
+    async def _validate_key_bundle(self, session, key: str):
+        async with self._validation_semaphore:
+            provider, ok = await self._validate_key(session, key)
+            result = {
+                "key": key,
+                "provider": provider,
+                "ok": ok,
+                "models": [],
+                "tier": "unknown",
+                "quota": None,
+            }
+            if not ok:
+                result["quota"] = {
+                    "kind": "error",
+                    "provider": provider,
+                    "checked_at": self._now_ts(),
+                    "message": "real request failed",
+                }
+                return result
+
+            models = await self._discover_models(session, key, provider)
+            if models:
+                models = self._sort_models(provider, models)
+            tier = await self._check_paid(session, key, provider, models=models)
+            if tier in (None, "unknown"):
+                tier = self._tier_from_models(provider, models) or "unknown"
+
+            result["models"] = models or []
+            result["tier"] = self._normalize_tier(tier)
+            result["quota"] = await self._fetch_key_quota(session, key, provider)
+            return result
+
+    def _apply_validated_key_bundle(self, bundle: dict):
+        key = bundle["key"]
+        provider = bundle["provider"]
+        ok = bool(bundle["ok"])
+        meta = self._key_meta.setdefault(key, {})
+        meta["valid"] = ok
+        meta["validated_at"] = self._now_ts()
+        meta["provider"] = provider
+
+        if ok:
+            self._keys[key] = provider
+            models = bundle.get("models") or []
+            if models:
+                self._ensure_model_cache()[key] = models
+            else:
+                self._ensure_model_cache().pop(key, None)
+            tier = self._normalize_tier(bundle.get("tier"))
+            self._paid_status[key] = tier
+            self._record_key_meta(key, provider, models=models, tier=tier)
+            meta["quota"] = bundle.get("quota")
+            meta["tier"] = tier
+            meta["models_count"] = len(models)
+            return True
+
+        self._paid_status[key] = "unknown"
+        self._ensure_model_cache().pop(key, None)
+        meta["quota"] = bundle.get("quota")
+        meta["tier"] = "unknown"
+        meta["models_count"] = 0
+        return False
+
+    async def _register_key(self, session, key: str, provider: str, source_chat_id, via: str = "message", safe_mode: bool = False):
         models = await self._discover_models(session, key, provider)
-        tier = await self._check_paid(session, key, provider, models=models)
-        if tier in (None, "unknown"):
-            tier = self._tier_from_models(provider, models) or "unknown"
+        tier = self._tier_from_models(provider, models) or "unknown"
+        if not safe_mode and tier == "unknown":
+            checked_tier = await self._check_paid(session, key, provider, models=models)
+            if checked_tier not in (None, "unknown"):
+                tier = checked_tier
         tier = self._normalize_tier(tier)
         quota = await self._fetch_key_quota(session, key, provider)
         self._keys[key] = provider
@@ -1773,15 +2698,18 @@ class KeyScanner(loader.Module):
         if mode == "none" or not self._settings.get("notify_new_keys", True):
             return
         text = self.strings["new_key_notif"].format(
-            provider=provider, key=key, chat_id=source_chat_id, via=via
+            provider=provider,
+            key=key if self._settings.get("log_full_keys", False) else self._mask_key(key, True),
+            chat_id=source_chat_id,
+            via=via,
         )
         await self._send_log_text(text)
 
-    async def _gather_chunked(self, tasks, chunk_size: int = 12):
+    async def _gather_chunked(self, tasks, chunk_size: int = 24):
         res = []
         for i in range(0, len(tasks), chunk_size):
             res.extend(await asyncio.gather(*tasks[i:i + chunk_size]))
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.05)
         return res
 
     async def _process_text(self, text: str, chat_id, via: str = "message") -> int:
@@ -1794,144 +2722,161 @@ class KeyScanner(loader.Module):
             return 0
         count = 0
         async with self._scan_semaphore:
-            async with aiohttp.ClientSession() as session:
-                tasks   = [self._validate_key(session, k) for k in new_keys]
+            safe_mode = bool(self._settings.get("safe_auto_checks", True))
+            async with self._http_session() as session:
+                tasks   = [self._validate_key(session, k, allow_spend=not safe_mode) for k in new_keys]
                 results = await self._gather_chunked(tasks)
                 for key, (provider, is_valid) in zip(new_keys, results):
                     if is_valid:
                         count += 1
-                        await self._register_key(session, key, provider, chat_id, via=via)
+                        await self._register_key(session, key, provider, chat_id, via=via, safe_mode=safe_mode)
         if count:
             self._save()
         return count
 
-    async def _validate_key(self, session, key: str):
+    async def _validate_key(self, session, key: str, allow_spend: bool = True):
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        openai_like = {
+            "OpenRouter": {
+                "base_url": "https://openrouter.ai/api/v1",
+                "fallback_models": ["openai/gpt-4o-mini", "openai/gpt-4.1-nano", "anthropic/claude-3.5-haiku"],
+                "headers": None,
+            },
+            "Groq": {
+                "base_url": "https://api.groq.com/openai/v1",
+                "fallback_models": ["llama-3.1-8b-instant", "llama3-8b-8192"],
+                "headers": None,
+            },
+            "Cerebras": {
+                "base_url": "https://api.cerebras.ai/v1",
+                "fallback_models": ["llama3.1-8b", "llama-3.3-70b"],
+                "headers": None,
+            },
+            "Perplexity": {
+                "base_url": "https://api.perplexity.ai",
+                "fallback_models": ["sonar", "sonar-pro"],
+                "headers": None,
+            },
+            "Together": {
+                "base_url": "https://api.together.xyz/v1",
+                "fallback_models": ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"],
+                "headers": None,
+            },
+            "Fireworks": {
+                "base_url": "https://api.fireworks.ai/inference/v1",
+                "fallback_models": ["accounts/fireworks/models/llama-v3p1-8b-instruct", "accounts/fireworks/models/qwen3-8b"],
+                "headers": None,
+            },
+            "XAI": {
+                "base_url": "https://api.x.ai/v1",
+                "fallback_models": ["grok-2-latest", "grok-3-mini-latest"],
+                "headers": None,
+            },
+            "DeepSeek": {
+                "base_url": "https://api.deepseek.com",
+                "fallback_models": ["deepseek-chat"],
+                "headers": None,
+            },
+            "Mistral": {
+                "base_url": "https://api.mistral.ai/v1",
+                "fallback_models": ["mistral-small-latest", "open-mistral-7b"],
+                "headers": None,
+            },
+            "Novita": {
+                "base_url": "https://api.novita.ai/v3/openai",
+                "fallback_models": ["meta-llama/llama-3.1-8b-instruct", "deepseek/deepseek-v3-turbo"],
+                "headers": None,
+            },
+            "SiliconFlow": {
+                "base_url": "https://api.siliconflow.cn/v1",
+                "fallback_models": ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3"],
+                "headers": None,
+            },
+            "DeepInfra": {
+                "base_url": "https://api.deepinfra.com/v1/openai",
+                "fallback_models": ["meta-llama/Meta-Llama-3.1-8B-Instruct", "Qwen/Qwen2.5-7B-Instruct"],
+                "headers": None,
+            },
+            "ZhipuAI": {
+                "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "fallback_models": ["glm-4-flash", "glm-4-air"],
+                "headers": None,
+            },
+            "OpenAI": {
+                "base_url": "https://api.openai.com/v1",
+                "fallback_models": ["gpt-4.1-nano", "gpt-4o-mini", "gpt-3.5-turbo"],
+                "headers": None,
+            },
+        }
+
         try:
             if key.startswith("sk-or-v1-"):
-                payload = {"model": "openrouter/auto", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
-                async with session.post("https://openrouter.ai/api/v1/chat/completions",
-                                        headers=headers, json=payload, timeout=5) as r:
-                    return "OpenRouter", r.status == 200
+                ok, _ = await self._probe_openai_compatible_response(session, "OpenRouter", key, **openai_like["OpenRouter"])
+                return "OpenRouter", ok
 
             elif key.startswith("gsk_"):
-                payload = {"model": "llama3-8b-8192", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
-                async with session.post("https://api.groq.com/openai/v1/chat/completions",
-                                        headers=headers, json=payload, timeout=5) as r:
-                    return "Groq", r.status == 200
+                ok, _ = await self._probe_openai_compatible_response(session, "Groq", key, **openai_like["Groq"])
+                return "Groq", ok
 
             elif key.startswith("AIza"):
-                payload = {"contents": [{"parts": [{"text": "hi"}]}]}
-                async with session.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}",
-                    json=payload, timeout=5,
-                ) as r:
-                    # Explicitly check for 200 OK. 403 means permission denied (invalid key or bad region).
-                    return "Gemini", r.status == 200
+                ok, _ = await self._probe_gemini_response(session, key)
+                return "Gemini", ok
 
             elif key.startswith("sk-ant-"):
-                ok, _, _ = await self._anthropic_messages_probe(session, key)
+                ok, _, err = await self._anthropic_messages_probe(session, key)
+                if "credit balance is too low" in (err or "").lower():
+                    return "Anthropic", False
                 return "Anthropic", ok
 
             elif key.startswith("hf_"):
-                async with session.get("https://huggingface.co/api/whoami-v2", headers=headers, timeout=5) as r:
+                async with session.get(
+                    "https://huggingface.co/api/whoami-v2",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=6,
+                ) as r:
                     return "HuggingFace", r.status == 200
 
             elif key.startswith("r8_"):
-                async with session.get("https://api.replicate.com/v1/account",
-                                       headers={"Authorization": f"Token {key}"}, timeout=5) as r:
+                async with session.get(
+                    "https://api.replicate.com/v1/account",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=6,
+                ) as r:
                     return "Replicate", r.status == 200
 
-            elif key.startswith(("ghp_", "github_pat_", "gho_", "ghs_", "ghu_")):
-                async with session.get("https://api.github.com/user", headers=headers, timeout=5) as r:
-                    return "GitHub", r.status == 200
+            elif key.startswith(("co-", "TKN-", "AUTH_TOKEN=")):
+                ok, _ = await self._probe_cohere_response(session, key)
+                return "Cohere", ok
 
-            elif key.startswith("sk_live_"):
-                async with session.get("https://api.stripe.com/v1/balance", headers=headers, timeout=5) as r:
-                    return "Stripe", r.status == 200
+            elif key.startswith(("voyage-", "vp-")):
+                ok, _ = await self._probe_voyage_response(session, key)
+                return "Voyage", ok
 
-            elif key.startswith("xox"):
-                async with session.post("https://slack.com/api/auth.test", headers=headers, timeout=5) as r:
-                    d = await r.json()
-                    return "Slack", d.get("ok", False) is True
+            elif key.startswith("csk_"):
+                ok, _ = await self._probe_openai_compatible_response(session, "Cerebras", key, **openai_like["Cerebras"])
+                return "Cerebras", ok
 
-            elif key.startswith("SG."):
-                async with session.get("https://api.sendgrid.com/v3/scopes", headers=headers, timeout=5) as r:
-                    return "SendGrid", r.status == 200
+            elif key.startswith("pplx-"):
+                ok, _ = await self._probe_openai_compatible_response(session, "Perplexity", key, **openai_like["Perplexity"])
+                return "Perplexity", ok
 
-            elif key.startswith("secret_"):
-                async with session.get("https://api.notion.com/v1/users/me",
-                    headers={"Authorization": f"Bearer {key}", "Notion-Version": "2022-06-28"}, timeout=5) as r:
-                    return "Notion", r.status == 200
+            elif key.startswith("together_"):
+                ok, _ = await self._probe_openai_compatible_response(session, "Together", key, **openai_like["Together"])
+                return "Together", ok
 
-            elif key.startswith("figd_"):
-                async with session.get("https://api.figma.com/v1/me",
-                                       headers={"X-Figma-Token": key}, timeout=5) as r:
-                    return "Figma", r.status == 200
+            elif key.startswith("fw_"):
+                ok, _ = await self._probe_openai_compatible_response(session, "Fireworks", key, **openai_like["Fireworks"])
+                return "Fireworks", ok
+
+            elif key.startswith("xai-"):
+                ok, _ = await self._probe_openai_compatible_response(session, "XAI", key, **openai_like["XAI"])
+                return "XAI", ok
 
             if key.startswith("sk-"):
-                try:
-                    async with session.get("https://api.openai.com/v1/models", headers=headers, timeout=4) as r:
-                        if r.status == 200:
-                            data = await r.json()
-                            if data.get("data"):
-                                # Check for codex quota (code-davinci-002 or completions endpoint viability)
-                                try:
-                                    payload = {"model": "gpt-3.5-turbo-instruct", "prompt": "hi", "max_tokens": 1}
-                                    async with session.post("https://api.openai.com/v1/completions", headers=headers, json=payload, timeout=4) as cr:
-                                        if cr.status == 429: # Quota exceeded
-                                            return "OpenAI", False
-                                except Exception:
-                                    pass
-                                return "OpenAI", True
-                except Exception:
-                    pass
-
-                providers = [
-                    ("DeepSeek",    "https://api.deepseek.com",                  "deepseek-chat"),
-                    ("Perplexity",  "https://api.perplexity.ai",                 "sonar-small-chat"),
-                    ("Mistral",     "https://api.mistral.ai/v1",                 "mistral-small-latest"),
-                    ("Together",    "https://api.together.xyz/v1",               "meta-llama/Llama-3-8b-chat-hf"),
-                    ("XAI",         "https://api.x.ai/v1",                       "grok-beta"),
-                    ("Fireworks",   "https://api.fireworks.ai/inference/v1",     "accounts/fireworks/models/llama-v3-8b-instruct"),
-                    ("Novita",      "https://api.novita.ai/v3",                  "meta-llama/llama-3-8b-instruct"),
-                    ("SiliconFlow", "https://api.siliconflow.cn/v1",             "Qwen/Qwen2.5-7B-Instruct"),
-                    ("DeepInfra",   "https://api.deepinfra.com/v1/openai",       "meta-llama/Meta-Llama-3-8B-Instruct"),
-                    ("ZhipuAI",     "https://open.bigmodel.cn/api/paas/v4",      "glm-4-flash"),
-                ]
-
-                async def _test(name, base_url, fallback):
-                    try:
-                        model = fallback
-                        try:
-                            async with session.get(f"{base_url}/models", headers=headers, timeout=3) as rm:
-                                if rm.status == 200:
-                                    md = await rm.json()
-                                    if md.get("data"):
-                                        model = md["data"][0]["id"]
-                        except Exception:
-                            pass
-                        payload = {"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
-                        async with session.post(f"{base_url}/chat/completions",
-                                                headers=headers, json=payload, timeout=6) as rc:
-                            if rc.status == 200 and "choices" in await rc.json():
-                                return name
-                    except Exception:
-                        pass
-                    return None
-
-                pending = [asyncio.create_task(_test(n, u, m)) for n, u, m in providers]
-                while pending:
-                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                    for t in done:
-                        try:
-                            res = t.result()
-                            if res:
-                                for p in pending:
-                                    p.cancel()
-                                return res, True
-                        except Exception:
-                            pass
+                for provider in ("OpenAI", "DeepSeek", "Perplexity", "Mistral", "Together", "XAI", "Fireworks", "Novita", "SiliconFlow", "DeepInfra", "ZhipuAI"):
+                    ok, _ = await self._probe_openai_compatible_response(session, provider, key, **openai_like[provider])
+                    if ok:
+                        return provider, True
                 return "Unknown", False
 
         except Exception:
@@ -1942,17 +2887,9 @@ class KeyScanner(loader.Module):
     async def _gemini_paid_check(self, session, key: str) -> str:
         """
         Gemini has no single balance endpoint. We infer paid tier from the
-        accessible model catalog: if the key can see any paid-tier-only model,
-        it is very likely a paid project.
+        accessible model catalog: explicit paid-only models mean paid, known
+        free text families mean free, and everything else stays unknown.
         """
-        paid_only_prefixes = (
-            "veo-3.1-",
-            "veo-3.0-",
-            "veo-2.0-",
-            "lyria-3-",
-            "gemini-2.5-computer-use-preview-10-2025",
-        )
-
         try:
             async with session.get(
                 "https://generativelanguage.googleapis.com/v1beta/models",
@@ -1971,28 +2908,12 @@ class KeyScanner(loader.Module):
             base = item.get("baseModelId") or ""
             models.append(name)
             models.append(base)
-
-        if any(
-            model.startswith(prefix)
-            for model in models
-            for prefix in paid_only_prefixes
-        ):
+        names = self._model_names_normalized(models)
+        if any(self._gemini_is_paid_only_model(name) for name in names):
             return "paid"
-
-        free_basics = {
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-embedding-001",
-        }
-        preview_models = [m for m in models if m.endswith("-preview") or "-preview-" in m]
-        if preview_models and not any(m in free_basics for m in models):
-            return "paid"
-
-        return "free"
+        if any(self._gemini_is_known_free_model(name) for name in names):
+            return "free"
+        return "unknown"
 
     async def _check_paid(self, session, key: str, provider: str, models=None) -> str:
         """Returns 'paid', 'free', or 'unknown'."""
@@ -2000,35 +2921,10 @@ class KeyScanner(loader.Module):
         models = models or []
         try:
             if provider == "Gemini" or key.startswith("AIza"):
-                # Also do a live check if model list is empty
-                paid_status = "unknown"
-                if any(re.search(r"(veo|lyria|computer-use|imagen|2\\.5-pro|3-pro|preview|experimental|thinking|ultra)", m, re.I) for m in models):
-                    paid_status = "paid"
-                else:
-                    # Send a test to gemini-3.1-pro-preview
-                    payload = {"contents": [{"parts": [{"text": "hi"}]}]}
-                    async with session.post(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={key}", json=payload, timeout=5) as r:
-                        if r.status == 200:
-                            paid_status = "paid"
-                        else:
-                            paid_status = "free"
-                return paid_status
+                return self._gemini_tier_from_models(models) or await self._gemini_paid_check(session, key)
 
             if provider == "OpenAI" or (key.startswith("sk-") and not key.startswith(("sk-or-v1-", "sk-ant-"))):
                 tier = self._openai_tier_from_models(models)
-                # Try to get balance via usage API
-                try:
-                    async with session.get("https://api.openai.com/v1/dashboard/billing/credit_grants", headers=headers, timeout=5) as r:
-                        if r.status == 200:
-                            d = await r.json()
-                            total = d.get("total_granted", 0)
-                            used = d.get("total_used", 0)
-                            bal = total - used
-                            if bal > 0:
-                                return f"paid (${bal:.2f})"
-                except Exception:
-                    pass
-                
                 if tier:
                     return tier
                 async with session.get("https://api.openai.com/v1/models", headers=headers, timeout=5) as r:
@@ -2038,33 +2934,22 @@ class KeyScanner(loader.Module):
                     return "unknown"
 
             elif provider == "Anthropic" or key.startswith("sk-ant-"):
-                ok, _, _ = await self._anthropic_messages_probe(session, key)
-                return "paid" if ok else "unknown"
+                tier = self._anthropic_tier_from_models(models)
+                return tier or "unknown"
 
             elif provider == "OpenRouter" or key.startswith("sk-or-v1-"):
                 tier = self._openrouter_tier_from_models(models)
-                async with session.get("https://openrouter.ai/api/v1/auth/key",
+                async with session.get("https://openrouter.ai/api/v1/key",
                                        headers=headers, timeout=5) as r:
                     if r.status == 200:
                         d       = await r.json()
-                        credits = d.get("data", {}).get("limit", None)
-                        usage = d.get("data", {}).get("usage", 0)
-                        is_free = d.get("data", {}).get("is_free_tier", True)
-                        
-                        if credits is not None and usage is not None:
-                            balance = credits - usage
-                            if balance > 0:
-                                return f"paid (${balance:.2f})"
-                        
-                        return "paid" if (not is_free or (credits and credits > 1)) else (tier or "free")
-
-            elif provider == "Stripe" or key.startswith("sk_live_"):
-                async with session.get("https://api.stripe.com/v1/balance",
-                                       headers=headers, timeout=5) as r:
-                    if r.status == 200:
-                        d     = await r.json()
-                        total = sum(a.get("amount", 0) for a in d.get("available", []))
-                        return "paid" if total > 0 else "free"
+                        info = d.get("data", {})
+                        is_free = info.get("is_free_tier")
+                        if is_free is True:
+                            return tier or "free"
+                        if is_free is False:
+                            return "paid"
+                        return tier or "unknown"
 
             elif provider in ("Gemini",) or key.startswith("AIza"):
                 return "unknown"
@@ -2073,11 +2958,29 @@ class KeyScanner(loader.Module):
                 async with session.get("https://huggingface.co/api/whoami-v2", headers=headers, timeout=5) as r:
                     if r.status == 200:
                         d = await r.json()
-                        return "paid" if self._hf_has_zerogpu(d) else "free"
+                        return "paid" if self._hf_has_zerogpu(d) or d.get("isPro") else "free"
                 return "unknown"
 
             elif provider == "Groq" or key.startswith("gsk_"):
+                return "free"
+
+            elif provider == "Cohere":
                 return "unknown"
+
+            elif provider == "Voyage":
+                return "unknown"
+
+            elif provider == "Cerebras":
+                return "free"
+
+            elif provider == "Replicate":
+                return "unknown"
+
+            elif provider in {"Perplexity", "Together", "Fireworks"}:
+                return "unknown"
+
+            elif provider == "XAI":
+                return "paid" if models else "unknown"
 
         except Exception:
             pass
@@ -2484,6 +3387,7 @@ class KeyScanner(loader.Module):
         "deleted_filter": f"{E_TRASH} Deleted <b>{{count}}</b> keys.",
         "btn_toggle_premium_emoji": "© Premium Emoji",
         "btn_toggle_color_buttons": "🎨 Color Buttons",
+        "btn_toggle_preview":    "🖼 Show Preview",
     }
 
     strings_tiktok = {
@@ -2732,35 +3636,259 @@ class KeyScanner(loader.Module):
         "btn_toggle_color_buttons": "🎨 cowow buttons",
     }
 
-    @loader.command(
-        ru_doc="[лимит] - Поиск ключей через поиск сообщений.",
-        en_doc="[limit|global [limit]] - Fast key scan via Telegram search.",
-        uk_doc="[ліміт] - Пошук ключів через пошук повідомлень.",
-        de_doc="[Limit] - Schneller Schlüsselscan via Telegram-Suche.",
-        jp_doc="[制限] - Telegram検索でキーをスキャン。",
-        neofit_doc="[limit|global [limit]] - scan keys fast, can use global too.",
-        tiktok_doc="[лимит] - сканим кейсы.",
-        leet_doc="[l1m1t] - f45t k3y 5c4n v14 t3l3gr4m.",
-        uwu_doc="[wimit] - fast key scan uwu.",
-    )
-    async def scanllm(self, message: Message):
-        global_mode, limit = self._parse_scan_args(utils.get_args_raw(message), 500)
-        await self._run_scan(message, limit=limit, global_mode=global_mode)
+    strings.update({
+        "found": f"{E_OK} <b>Scan complete!</b>\n{E_FIRE} Valid keys found: <b>{{valid_count}}</b>\n{E_LIST} Raw keys matched: <b>{{raw_count}}</b>\n{E_MSG} Messages scanned/read: <b>{{scanned_count}}</b>\n{E_BATT} Saved to database.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>Capture Settings</b>\n\n"
+            f"Chat auto-catch: <b>{{auto_chat}}</b>\n"
+            f"Global auto-catch: <b>{{auto_global}}</b>\n"
+            f"File scan: <b>{{file_scan}}</b>\n"
+            f"Edit scan: <b>{{edit_scan}}</b>\n"
+            f"New key notifications: <b>{{notify_new_keys}}</b>\n"
+            f"Safe checks: <b>{{safe_auto}}</b>\n"
+            f"Full key in logs: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 Safe Checks",
+        "btn_toggle_log_full_keys": "🔐 Full Log Keys",
+        "proxy_help": (
+            f"{E_LINK} <b>Validation proxy:</b> {{proxy}}\n"
+            f"{E_GEAR} One proxy per line. Best alive runtime proxy is selected automatically.\n"
+            f"{E_LIST} Supported: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>Proxy was not saved.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>Validation proxy disabled.</b>",
+        "proxy_set": f"{E_OK} <b>Validation proxy saved:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_ru.update({
+        "btn_toggle_preview":    "🖼 Превью карточки",
+        "found": f"{E_OK} <b>Сканирование завершено!</b>\n{E_FIRE} Валидных ключей найдено: <b>{{valid_count}}</b>\n{E_LIST} Сырых совпадений: <b>{{raw_count}}</b>\n{E_MSG} Сообщений/вложений просмотрено: <b>{{scanned_count}}</b>\n{E_BATT} Сохранено в базу.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>Настройки ловли</b>\n\n"
+            f"Авто-ловля в чате: <b>{{auto_chat}}</b>\n"
+            f"Глобальная авто-ловля: <b>{{auto_global}}</b>\n"
+            f"Скан файлов: <b>{{file_scan}}</b>\n"
+            f"Скан правок: <b>{{edit_scan}}</b>\n"
+            f"Уведомления о новых ключах: <b>{{notify_new_keys}}</b>\n"
+            f"Безопасные проверки: <b>{{safe_auto}}</b>\n"
+            f"Полный ключ в логах: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 Безопасные проверки",
+        "btn_toggle_log_full_keys": "🔐 Полный ключ в логах",
+        "proxy_help": (
+            f"{E_LINK} <b>Прокси для проверок:</b> {{proxy}}\n"
+            f"{E_GEAR} По одному прокси на строку. Для работы берётся самый живой runtime-прокси автоматически.\n"
+            f"{E_LIST} Поддержка: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>Прокси не сохранен.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>Прокси для проверок выключен.</b>",
+        "proxy_set": f"{E_OK} <b>Прокси для проверок сохранен:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_uk.update({
+        "btn_toggle_preview":    "🖼 Превью картки",
+        "found": f"{E_OK} <b>Сканування завершено!</b>\n{E_FIRE} Валідних ключів знайдено: <b>{{valid_count}}</b>\n{E_LIST} Сирих збігів: <b>{{raw_count}}</b>\n{E_MSG} Повідомлень/вкладень прочитано: <b>{{scanned_count}}</b>\n{E_BATT} Збережено в базу.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>Налаштування ловлі</b>\n\n"
+            f"Авто-ловля в чаті: <b>{{auto_chat}}</b>\n"
+            f"Глобальна авто-ловля: <b>{{auto_global}}</b>\n"
+            f"Скан файлів: <b>{{file_scan}}</b>\n"
+            f"Скан правок: <b>{{edit_scan}}</b>\n"
+            f"Сповіщення про нові ключі: <b>{{notify_new_keys}}</b>\n"
+            f"Безпечні перевірки: <b>{{safe_auto}}</b>\n"
+            f"Повний ключ у логах: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 Безпечні перевірки",
+        "btn_toggle_log_full_keys": "🔐 Повний ключ у логах",
+        "proxy_help": (
+            f"{E_LINK} <b>Проксі для перевірок:</b> {{proxy}}\n"
+            f"{E_GEAR} По одному проксі на рядок. Для роботи автоматично береться найживіший runtime-проксі.\n"
+            f"{E_LIST} Підтримка: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>Проксі не збережено.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>Проксі для перевірок вимкнено.</b>",
+        "proxy_set": f"{E_OK} <b>Проксі для перевірок збережено:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_de.update({
+        "btn_toggle_preview":    "🖼 Vorschau",
+        "found": f"{E_OK} <b>Scan abgeschlossen!</b>\n{E_FIRE} Gültige Schlüssel gefunden: <b>{{valid_count}}</b>\n{E_LIST} Roh-Treffer: <b>{{raw_count}}</b>\n{E_MSG} Gelesene Nachrichten/Anhänge: <b>{{scanned_count}}</b>\n{E_BATT} In der Datenbank gespeichert.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>Erfassungs-Einstellungen</b>\n\n"
+            f"Auto-Catch im Chat: <b>{{auto_chat}}</b>\n"
+            f"Globales Auto-Catch: <b>{{auto_global}}</b>\n"
+            f"Datei-Scan: <b>{{file_scan}}</b>\n"
+            f"Edit-Scan: <b>{{edit_scan}}</b>\n"
+            f"Benachrichtigungen bei neuen Schlüsseln: <b>{{notify_new_keys}}</b>\n"
+            f"Sichere Prüfungen: <b>{{safe_auto}}</b>\n"
+            f"Voller Schlüssel in Logs: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 Sichere Checks",
+        "btn_toggle_log_full_keys": "🔐 Volle Keys im Log",
+        "proxy_help": (
+            f"{E_LINK} <b>Proxy für Prüfungen:</b> {{proxy}}\n"
+            f"{E_GEAR} Ein Proxy pro Zeile. Der beste lebende Runtime-Proxy wird automatisch gewählt.\n"
+            f"{E_LIST} Support: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>Proxy wurde nicht gespeichert.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>Prüf-Proxy deaktiviert.</b>",
+        "proxy_set": f"{E_OK} <b>Prüf-Proxy gespeichert:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_jp.update({
+        "btn_toggle_preview":    "🖼 プレビュー",
+        "found": f"{E_OK} <b>スキャン完了！</b>\n{E_FIRE} 有効キー: <b>{{valid_count}}</b>\n{E_LIST} 生一致キー: <b>{{raw_count}}</b>\n{E_MSG} 読み取ったメッセージ/添付: <b>{{scanned_count}}</b>\n{E_BATT} DBへ保存しました。",
+        "settings_capture_title": (
+            f"{E_BELL} <b>収集設定</b>\n\n"
+            f"このチャットの自動収集: <b>{{auto_chat}}</b>\n"
+            f"グローバル自動収集: <b>{{auto_global}}</b>\n"
+            f"ファイルスキャン: <b>{{file_scan}}</b>\n"
+            f"編集スキャン: <b>{{edit_scan}}</b>\n"
+            f"新規キー通知: <b>{{notify_new_keys}}</b>\n"
+            f"安全チェック: <b>{{safe_auto}}</b>\n"
+            f"ログでキー全文表示: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 安全チェック",
+        "btn_toggle_log_full_keys": "🔐 ログで全文表示",
+        "proxy_help": (
+            f"{E_LINK} <b>検証用プロキシ:</b> {{proxy}}\n"
+            f"{E_GEAR} 1行に1つ。最も生きている runtime プロキシを自動選択。\n"
+            f"{E_LIST} 対応: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>プロキシを保存できませんでした。</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>検証用プロキシを無効化しました。</b>",
+        "proxy_set": f"{E_OK} <b>検証用プロキシを保存しました:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_neofit.update({
+        "btn_toggle_preview":    "🖼 превью братан",
+        "found": f"{E_OK} <b>Scan finished nice.</b>\n{E_FIRE} Valid keys found: <b>{{valid_count}}</b>\n{E_LIST} Raw matches: <b>{{raw_count}}</b>\n{E_MSG} Messages/files checked: <b>{{scanned_count}}</b>\n{E_BATT} Saved in database.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>Capture settings, boss</b>\n\n"
+            f"Auto-catch in chat: <b>{{auto_chat}}</b>\n"
+            f"Global auto-catch: <b>{{auto_global}}</b>\n"
+            f"File scan: <b>{{file_scan}}</b>\n"
+            f"Edit scan: <b>{{edit_scan}}</b>\n"
+            f"New key notifications: <b>{{notify_new_keys}}</b>\n"
+            f"Safe checks: <b>{{safe_auto}}</b>\n"
+            f"Full key in logs: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 Safe checks bro",
+        "btn_toggle_log_full_keys": "🔐 Full keys in logs",
+        "proxy_help": (
+            f"{E_LINK} <b>Proxy for checks:</b> {{proxy}}\n"
+            f"{E_GEAR} One proxy per line, boss. Module picks the liveliest runtime proxy itself.\n"
+            f"{E_LIST} Support: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>Proxy not saved, boss.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>Proxy for checks disabled.</b>",
+        "proxy_set": f"{E_OK} <b>Proxy for checks saved:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_tiktok.update({
+        "btn_toggle_preview":    "🖼 превью",
+        "found": f"{E_OK} <b>скан готов!</b>\n{E_FIRE} валид кейсов: <b>{{valid_count}}</b>\n{E_LIST} сырых матчей: <b>{{raw_count}}</b>\n{E_MSG} прочекано месаг/файлов: <b>{{scanned_count}}</b>\n{E_BATT} сохранил в дб.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>настройки ловли</b>\n\n"
+            f"авто ловля в чате: <b>{{auto_chat}}</b>\n"
+            f"глобал авто ловля: <b>{{auto_global}}</b>\n"
+            f"скан файлов: <b>{{file_scan}}</b>\n"
+            f"скан едитов: <b>{{edit_scan}}</b>\n"
+            f"нотифы о новых кейсах: <b>{{notify_new_keys}}</b>\n"
+            f"сейф чеки: <b>{{safe_auto}}</b>\n"
+            f"полный кей в логах: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 сейф чеки",
+        "btn_toggle_log_full_keys": "🔐 фулл кей в логах",
+        "proxy_help": (
+            f"{E_LINK} <b>прокси для чеков:</b> {{proxy}}\n"
+            f"{E_GEAR} один прокси = одна строка. модуль сам юзает самый живой runtime.\n"
+            f"{E_LIST} есть: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>прокси не сейвнулся.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>прокси для чеков выкл.</b>",
+        "proxy_set": f"{E_OK} <b>прокси для чеков сейвнут:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_leet.update({
+        "btn_toggle_preview":    "🖼 pr3v13w",
+        "found": f"{E_OK} <b>5c4n c0mpl3t3!</b>\n{E_FIRE} v4l1d k3y5: <b>{{valid_count}}</b>\n{E_LIST} r4w m4tch35: <b>{{raw_count}}</b>\n{E_MSG} m35s4g35/f1l35 ch3ck3d: <b>{{scanned_count}}</b>\n{E_BATT} 54v3d t0 d8.",
+        "settings_capture_title": (
+            f"{E_BELL} <b>c4ptur3 53tt1ng5</b>\n\n"
+            f"4ut0-c4tch 1n ch4t: <b>{{auto_chat}}</b>\n"
+            f"gl0b4l 4ut0-c4tch: <b>{{auto_global}}</b>\n"
+            f"f1l3 5c4n: <b>{{file_scan}}</b>\n"
+            f"3d1t 5c4n: <b>{{edit_scan}}</b>\n"
+            f"n3w k3y n0t1f5: <b>{{notify_new_keys}}</b>\n"
+            f"54f3 ch3ck5: <b>{{safe_auto}}</b>\n"
+            f"fu11 k3y 1n l0g5: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 54f3 ch3ck5",
+        "btn_toggle_log_full_keys": "🔐 fu11 k3y l0g5",
+        "proxy_help": (
+            f"{E_LINK} <b>pr0xy f0r ch3ck5:</b> {{proxy}}\n"
+            f"{E_GEAR} 0n3 pr0xy p3r l1n3. m0dul3 4ut0-p1ck5 th3 b35t 4l1v3 runt1m3 pr0xy.\n"
+            f"{E_LIST} 5upp0rt: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>pr0xy n0t 54v3d.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>pr0xy f0r ch3ck5 0ff.</b>",
+        "proxy_set": f"{E_OK} <b>pr0xy f0r ch3ck5 54v3d:</b> <code>{{proxy}}</code>",
+    })
+
+    strings_uwu.update({
+        "btn_toggle_preview":    "🖼 pwevew uwu",
+        "found": f"{E_OK} <b>aww done!! uwu</b>\n{E_FIRE} vawid keys: <b>{{valid_count}}</b> :3\n{E_LIST} waw matches: <b>{{raw_count}}</b>\n{E_MSG} msgs/files checked: <b>{{scanned_count}}</b>\n{E_BATT} saved to db OwO",
+        "settings_capture_title": (
+            f"{E_BELL} <b>captuwe settings uwu</b>\n\n"
+            f"auto-catch in chat: <b>{{auto_chat}}</b>\n"
+            f"gwobaw auto-catch: <b>{{auto_global}}</b>\n"
+            f"fiwe scan: <b>{{file_scan}}</b>\n"
+            f"edit scan: <b>{{edit_scan}}</b>\n"
+            f"new key notifications: <b>{{notify_new_keys}}</b>\n"
+            f"safe checks: <b>{{safe_auto}}</b>\n"
+            f"fuww key in wogs: <b>{{log_full_keys}}</b>"
+        ),
+        "btn_toggle_safe_checks": "🛡 safe checks uwu",
+        "btn_toggle_log_full_keys": "🔐 fuww keys in wogs",
+        "proxy_help": (
+            f"{E_LINK} <b>pwoxy for checks:</b> {{proxy}}\n"
+            f"{E_GEAR} one pwoxy per wine, module picks the most alive runtime one uwu.\n"
+            f"{E_LIST} suppowt: HTTP, SOCKS4/4A/5/5H, VLESS, TROJAN, SHADOWSOCKS, OUTLINE."
+        ),
+        "proxy_invalid": f"{E_ERR} <b>pwoxy not saved uwu.</b>\n{{error}}",
+        "proxy_disabled": f"{E_LINK} <b>pwoxy for checks off uwu.</b>",
+        "proxy_set": f"{E_OK} <b>pwoxy for checks saved:</b> <code>{{proxy}}</code>",
+    })
 
     @loader.command(
-        ru_doc="[лимит] - Глобальный поиск ключей по всем диалогам.",
-        en_doc="[limit] - Global key scan across all dialogs.",
-        uk_doc="[ліміт] - Глобальний пошук ключів по всіх діалогах.",
-        de_doc="[Limit] - Globaler Schlüsselscan über alle Dialoge.",
-        jp_doc="[制限] - 全ダイアログでグローバルキースキャン。",
-        neofit_doc="[limit] - global scan for keys in all dialogs.",
-        tiktok_doc="[лимит] - глобал скан по всем чатам.",
-        leet_doc="[l1m1t] - gl0b4l k3y 5c4n 4ll d14l0g5.",
-        uwu_doc="[wimit] - gwobaw key scan uwu.",
+        ru_doc="[fast/simple/deep] [files] [global] [лимит] - Поиск ключей по чату или глобально.",
+        en_doc="[fast/simple/deep] [files] [global] [limit] - Scan this chat or all dialogs.",
+        uk_doc="[fast/simple/deep] [files] [global] [ліміт] - Пошук ключів у чаті або глобально.",
+        de_doc="[fast/simple/deep] [files] [global] [Limit] - Scannt den Chat oder alle Dialoge.",
+        jp_doc="[fast/simple/deep] [files] [global] [制限] - このチャットまたは全体をスキャン。",
+        neofit_doc="[fast/simple/deep] [files] [global] [limit] - scan current chat or everything, boss.",
+        tiktok_doc="[fast/simple/deep] [files] [global] [лимит] - скан по чату или по всем.",
+        leet_doc="[f45t/51mpl3/d33p] [f1l35] [gl0b4l] [l1m1t] - 5c4n ch4t 0r 411.",
+        uwu_doc="[fast/simple/deep] [fiwes] [gwobaw] [wimit] - scan dis chat ow aww chats uwu.",
+    )
+    async def scanllm(self, message: Message):
+        global_mode, limit, scan_mode, include_files = self._parse_scan_args(utils.get_args_raw(message), 500)
+        await self._run_scan(message, limit=limit, global_mode=global_mode, scan_mode=scan_mode, include_files=include_files)
+
+    @loader.command(
+        ru_doc="[fast/simple/deep] [files] [лимит] - Глобальный поиск ключей по всем диалогам.",
+        en_doc="[fast/simple/deep] [files] [limit] - Global key scan across all dialogs.",
+        uk_doc="[fast/simple/deep] [files] [ліміт] - Глобальний пошук ключів по всіх діалогах.",
+        de_doc="[fast/simple/deep] [files] [Limit] - Globaler Schlüsselscan über alle Dialoge.",
+        jp_doc="[fast/simple/deep] [files] [制限] - 全ダイアログでグローバルキースキャン。",
+        neofit_doc="[fast/simple/deep] [files] [limit] - global scan for keys in all dialogs, boss.",
+        tiktok_doc="[fast/simple/deep] [files] [лимит] - глобал скан по всем чатам.",
+        leet_doc="[f45t/51mpl3/d33p] [f1l35] [l1m1t] - gl0b4l k3y 5c4n.",
+        uwu_doc="[fast/simple/deep] [fiwes] [wimit] - gwobaw key scan uwu.",
     )
     async def scanglobal(self, message: Message):
-        _, limit = self._parse_scan_args(utils.get_args_raw(message), 100)
-        await self._run_scan(message, limit=limit, global_mode=True)
+        _, limit, scan_mode, include_files = self._parse_scan_args(utils.get_args_raw(message), 100)
+        await self._run_scan(message, limit=limit, global_mode=True, scan_mode=scan_mode, include_files=include_files)
 
     @loader.command(
         ru_doc="[global] - Вкл/выкл авто-ловлю. global = во всех чатах",
@@ -2817,6 +3945,41 @@ class KeyScanner(loader.Module):
         await self._answer(message, f"{E_BELL} <b>Logging →</b> <b>{nxt.upper()}</b>")
 
     @loader.command(
+        ru_doc="[proxy|off] - HTTP/SOCKS/VLESS/TROJAN/SS/OUTLINE прокси для проверки ключей",
+        en_doc="[proxy|off] - HTTP/SOCKS/VLESS/TROJAN/SS/OUTLINE proxy for key validation",
+        uk_doc="[proxy|off] - HTTP/SOCKS/VLESS/TROJAN/SS/OUTLINE проксі для перевірки ключів",
+        de_doc="[proxy|off] - HTTP/SOCKS/VLESS/TROJAN/SS/OUTLINE Proxy für Schlüssel-Prüfung",
+        jp_doc="[proxy|off] - HTTP/SOCKS/VLESS/TROJAN/SS/OUTLINE キー検証用プロキシ",
+        neofit_doc="[proxy|off] - proxy pool for checks, boss",
+        tiktok_doc="[proxy|off] - прокси пул для чеков",
+        leet_doc="[pr0xy|0ff] - pr0xy p00l f0r ch3ck5",
+        uwu_doc="[pwoxy|off] - pwoxy poow for checks uwu",
+    )
+    async def ksproxy(self, message: Message):
+        args = utils.get_args_raw(message).strip()
+        if not args:
+            if self._load_proxy_specs():
+                await self._refresh_proxy_health(force=False)
+            text = self.strings["proxy_help"].format(proxy=self._masked_check_proxy_text())
+            text += "\n\n" + self._proxy_help_examples()
+            text += self._proxy_pool_status_block()
+            return await self._answer(message, text)
+        proxy, error = self._normalize_proxy_pool(args)
+        if error:
+            return await self._answer(message, self.strings["proxy_invalid"].format(error=html.escape(error)))
+        if not proxy:
+            self._settings["check_proxy"] = ""
+            self._proxy_health = {}
+            self._save()
+            return await self._answer(message, self.strings["proxy_disabled"])
+        self._settings["check_proxy"] = proxy
+        await self._refresh_proxy_health(force=True)
+        self._save()
+        text = self.strings["proxy_set"].format(proxy=html.escape(self._mask_proxy_for_display(proxy.replace("\n", " | "))))
+        text += self._proxy_pool_status_block()
+        return await self._answer(message, text)
+
+    @loader.command(
         ru_doc="Удалить все невалидные ключи",
         en_doc="Remove all invalid keys",
         uk_doc="Видалити всі невалідні ключі",
@@ -2828,10 +3991,10 @@ class KeyScanner(loader.Module):
         uwu_doc="wemove aww invawid keys uwu",
     )
     async def ksclean(self, message: Message):
-        msg   = await self._answer(message, self.strings["checking_all"].format(total=len(self._keys)))
+        msg   = await self._answer(message, self.strings["checking_all"].format(done=0, total=len(self._keys)))
         keys  = list(self._keys.keys())
         inv   = 0
-        async with aiohttp.ClientSession() as session:
+        async with self._http_session() as session:
             results = await self._gather_chunked([self._validate_key(session, k) for k in keys])
             for k, (prov, ok) in zip(keys, results):
                 if not ok:
@@ -2868,7 +4031,7 @@ class KeyScanner(loader.Module):
             text_data = reply.raw_text
         elif args.startswith("http"):
             try:
-                async with aiohttp.ClientSession() as s:
+                async with self._http_session() as s:
                     async with s.get(args, timeout=10) as r:
                         text_data = await r.text()
             except Exception:
@@ -2881,7 +4044,7 @@ class KeyScanner(loader.Module):
 
         unique  = set(self.key_regex.findall(text_data))
         count   = 0
-        async with aiohttp.ClientSession() as session:
+        async with self._http_session() as session:
             results = await self._gather_chunked([self._validate_key(session, k) for k in unique])
             for key, (prov, ok) in zip(unique, results):
                 if ok and key not in self._keys:
@@ -2913,17 +4076,7 @@ class KeyScanner(loader.Module):
         )
         await asyncio.sleep(0.35)
 
-        try:
-            await form.edit(
-                text=self._ui_text(self._db_stats_text()),
-                reply_markup=self._ui_markup(self._get_main_markup()),
-            )
-        except Exception:
-            await self.inline.form(
-                text=self._ui_text(self._db_stats_text()),
-                message=message,
-                reply_markup=self._ui_markup(self._get_main_markup()),
-            )
+        await self._edit(form, text=self._db_stats_text(), reply_markup=self._get_main_markup(), preview_banner=self._preview_banner())
 
     @loader.watcher(only_messages=True)
     async def watcher(self, message: Message):
@@ -2932,34 +4085,22 @@ class KeyScanner(loader.Module):
         if not self._is_autocatch_enabled_for(cid):
             return
 
-        text = getattr(message, "raw_text", None) or ""
+        text = self._message_text_for_scan(message)
         message_id = getattr(message, "id", 0)
         if text and self._text_might_contain_key(text) and not self._should_skip_scan(cid, message_id, text, "message"):
             asyncio.create_task(self._process_text(text, cid, via="message"))
 
-        if self._settings.get("file_scan", True) and getattr(message, "file", None):
-            mime = getattr(message.file, "mime_type", "") or ""
-            name = (getattr(message.file, "name", "") or "").lower()
-            size = int(getattr(message.file, "size", 0) or 0)
-            TEXT_EXTS = (".txt", ".json", ".env", ".py", ".js", ".ts", ".sh",
-                         ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".md",
-                         ".xml", ".csv", ".conf", ".properties")
-            TEXT_MIMES = ("text/", "application/json", "application/x-yaml",
-                          "application/xml", "application/x-sh")
-            is_text = (size == 0 or size <= self._max_file_scan_size) and (
-                any(mime.startswith(m) for m in TEXT_MIMES) or any(name.endswith(e) for e in TEXT_EXTS)
-            )
-            if is_text:
-                async def _scan_file(msg=message):
-                    try:
-                        raw = await self.client.download_media(msg, bytes)
-                        if raw:
-                            text_data = raw.decode("utf-8", errors="ignore")
-                            if self._text_might_contain_key(text_data) and not self._should_skip_scan(cid, message_id, text_data[:4096], "file"):
-                                await self._process_text(text_data, cid, via="file")
-                    except Exception:
-                        pass
-                asyncio.create_task(_scan_file())
+        if self._settings.get("file_scan", True) and self._is_text_file_message(message):
+            async def _scan_file(msg=message):
+                try:
+                    raw = await self.client.download_media(msg, bytes)
+                    if raw:
+                        text_data = raw.decode("utf-8", errors="ignore")
+                        if self._text_might_contain_key(text_data) and not self._should_skip_scan(cid, message_id, text_data[:4096], "file"):
+                            await self._process_text(text_data, cid, via="file")
+                except Exception:
+                    pass
+            asyncio.create_task(_scan_file())
 
     @loader.watcher()
     async def edit_watcher(self, message: Message):
@@ -3038,6 +4179,7 @@ class KeyScanner(loader.Module):
                 shown_count=len(cur_keys),
             ),
             reply_markup=markup,
+            preview_banner=self._preview_banner()
         )
 
     async def ks_sort_menu(self, call, page=0, filter_mode="all", sort_mode=None):
@@ -3053,7 +4195,9 @@ class KeyScanner(loader.Module):
             ],
             [self._btn(self.strings["btn_back"], self.ks_list, (page, filter_mode, sort_mode), "primary")],
         ]
-        await self._edit(call, text=self.strings["sort_menu_title"], reply_markup=markup)
+        await self._edit(call, text=self.strings["sort_menu_title"], reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_provider_menu(self, call, page=0, filter_mode="all", sort_mode=None):
         sort_mode = self._normalize_sort_mode(sort_mode)
@@ -3076,7 +4220,9 @@ class KeyScanner(loader.Module):
                 self._btn("▶️", self.ks_provider_menu, (page + 1, filter_mode, sort_mode), "primary"),
             ])
         markup.append([self._btn(self.strings["btn_back"], self.ks_list, (page, filter_mode, sort_mode), "primary")])
-        await self._edit(call, text=self.strings["provider_menu_title"], reply_markup=markup)
+        await self._edit(call, text=self.strings["provider_menu_title"], reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_key_menu(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
         all_keys = sorted(self._keys.keys())
@@ -3091,6 +4237,7 @@ class KeyScanner(loader.Module):
         models = self._ensure_model_cache().get(k, [])
         display = self._mask_key(k, hidden)
         models_count = len(models)
+        quota = self._key_meta.get(k, {}).get("quota") if isinstance(self._key_meta, dict) else None
         markup = [
             [self._btn(self.strings["btn_show_key"] if hidden else self.strings["btn_hide_key"],
                        self.ks_key_menu, (idx, not hidden, page, filter_mode, sort_mode), "primary")],
@@ -3100,9 +4247,10 @@ class KeyScanner(loader.Module):
                 self._btn(self.strings["btn_check_single"], self.ks_val_single, (idx, page, filter_mode, sort_mode), "success"),
                 self._btn(self.strings["btn_del_single"], self.ks_del_single, (idx, page, filter_mode, sort_mode), "danger"),
             ],
-            [self._btn(self.strings["btn_refresh_balance"], self.ks_refresh_balance, (idx, hidden, page, filter_mode, sort_mode), "success")],
-            [self._btn(self.strings["btn_back"], self.ks_list, (page, filter_mode, sort_mode), "primary")],
         ]
+        if self._provider_supports_quota(prov, quota):
+            markup.append([self._btn(self.strings["btn_refresh_balance"], self.ks_refresh_balance, (idx, hidden, page, filter_mode, sort_mode), "success")])
+        markup.append([self._btn(self.strings["btn_back"], self.ks_list, (page, filter_mode, sort_mode), "primary")])
         await self._edit(
             call,
             text=self.strings["key_info"].format(
@@ -3110,9 +4258,10 @@ class KeyScanner(loader.Module):
                 tier=tier,
                 key=html.escape(display),
                 models_count=models_count,
-                quota=self._quota_text(k),
+                quota=self._format_quota(quota),
             ),
             reply_markup=markup,
+            preview_banner=self._preview_banner(prov)
         )
 
     async def ks_models_menu(self, call, idx, hidden=True, page=0, filter_mode="all", sort_mode="recent"):
@@ -3125,7 +4274,9 @@ class KeyScanner(loader.Module):
         await self._edit(
             call,
             text=self.strings["key_models_title"].format(
-                provider=html.escape(str(prov)),
+                provider=html.escape(str(prov,
+            preview_banner=self._preview_banner(prov)
+        )),
                 count=len(models),
                 models=self._models_list_text(models, prov),
             ),
@@ -3138,8 +4289,10 @@ class KeyScanner(loader.Module):
             return
         k = all_keys[idx]
         prov = self._keys.get(k, "Unknown")
+        if not self._provider_supports_quota(prov, self._key_meta.get(k, {}).get("quota")):
+            return await self.ks_key_menu(call, idx, hidden, page, filter_mode, sort_mode)
         await self._edit(call, text=self.strings["quota_refreshing"])
-        async with aiohttp.ClientSession() as session:
+        async with self._http_session() as session:
             try:
                 prov, ok = await self._validate_key(session, k)
                 self._keys[k] = prov
@@ -3176,7 +4329,7 @@ class KeyScanner(loader.Module):
         if idx >= len(all_keys):
             return
         k = all_keys[idx]
-        async with aiohttp.ClientSession() as session:
+        async with self._http_session() as session:
             prov, ok = await self._validate_key(session, k)
             if prov != "Unknown":
                 self._keys[k] = prov
@@ -3200,7 +4353,9 @@ class KeyScanner(loader.Module):
         status = self.strings["status_valid"] if ok else self.strings["status_invalid"]
         await self._edit(
             call,
-            text=self.strings["check_res_single"].format(provider=prov, status=status),
+            text=self.strings["check_res_single"].format(provider=prov, status=status,
+            preview_banner=self._preview_banner()
+        ),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_key_menu, "args": (idx, True, page, filter_mode, sort_mode)}]],
         )
 
@@ -3217,50 +4372,38 @@ class KeyScanner(loader.Module):
             call,
             text=self.strings["deleted"],
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_list, "args": (page, filter_mode, sort_mode)}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_val_all(self, call):
-        await self._edit(call, text=self.strings["checking_all"].format(total=len(self._keys)))
-        keys        = sorted(self._keys.keys())
-        valid_c     = invalid_c = 0
-        prov_stats  = {}
+        keys = sorted(self._keys.keys())
+        total = len(keys)
+        await self._edit(call, text=self.strings["checking_all"].format(done=0, total=total))
+        valid_c = invalid_c = 0
+        prov_stats = {}
         self._invalid_keys_cache.clear()
-        model_cache = self._ensure_model_cache()
-        async with aiohttp.ClientSession() as session:
-            results = await self._gather_chunked([self._validate_key(session, k) for k in keys])
-            for k, (prov, ok) in zip(keys, results):
-                prov_stats.setdefault(prov, {"total": 0, "valid": 0})
-                prov_stats[prov]["total"] += 1
+        async with self._http_session() as session:
+            tasks = [asyncio.create_task(self._validate_key_bundle(session, key)) for key in keys]
+            done = 0
+            progress_step = max(1, min(5, total // 10 or 1))
+            for task in asyncio.as_completed(tasks):
+                bundle = await task
+                provider = bundle["provider"]
+                ok = self._apply_validated_key_bundle(bundle)
+                prov_stats.setdefault(provider, {"total": 0, "valid": 0})
+                prov_stats[provider]["total"] += 1
                 if ok:
                     valid_c += 1
-                    prov_stats[prov]["valid"] += 1
-                    self._keys[k] = prov
-                    try:
-                        models = await self._discover_models(session, k, prov)
-                        if models:
-                            model_cache[k] = self._sort_models(prov, models)
-                        else:
-                            model_cache.pop(k, None)
-                        tier = await self._check_paid(session, k, prov, models=model_cache.get(k, []))
-                        if tier in (None, "unknown"):
-                            tier = self._tier_from_models(prov, model_cache.get(k, [])) or "unknown"
-                        tier = self._normalize_tier(tier)
-                        self._paid_status[k] = tier
-                        self._record_key_meta(k, prov, models=model_cache.get(k, []), tier=tier)
-                        meta = self._key_meta.setdefault(k, {})
-                        meta["valid"] = True
-                        meta["validated_at"] = self._now_ts()
-                        meta["quota"] = await self._fetch_key_quota(session, k, prov)
-                    except Exception:
-                        pass
+                    prov_stats[provider]["valid"] += 1
                 else:
                     invalid_c += 1
-                    self._invalid_keys_cache.append(k)
-                    meta = self._key_meta.setdefault(k, {})
-                    meta["valid"] = False
-                    meta["validated_at"] = self._now_ts()
-                    meta["quota"] = {"kind": "error", "provider": prov, "checked_at": self._now_ts(), "message": "real request failed"}
-                    self._paid_status[k] = "unknown"
+                    self._invalid_keys_cache.append(bundle["key"])
+                done += 1
+                if done == total or done % progress_step == 0:
+                    try:
+                        await self._edit(call, text=self.strings["checking_all"].format(done=done, total=total))
+                    except Exception:
+                        pass
         self._save()
         stats_str = "".join(
             f"<b>[{p}]:</b> {s['total']} | {s['valid']} valid\n"
@@ -3273,7 +4416,9 @@ class KeyScanner(loader.Module):
         await self._edit(
             call,
             text=self.strings["check_res_all"].format(
-                total=len(self._keys), v=valid_c, i=invalid_c, prov_stats=stats_str),
+                total=total, v=valid_c, i=invalid_c, prov_stats=stats_str,
+            preview_banner=self._preview_banner()
+        ),
             reply_markup=markup,
         )
 
@@ -3289,6 +4434,7 @@ class KeyScanner(loader.Module):
             call,
             text=self.strings["deleted"],
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_stats(self, call):
@@ -3336,7 +4482,9 @@ class KeyScanner(loader.Module):
 
         await self._edit(
             call,
-            text=header + ("\n".join(lines) or "—"),
+            text=header + ("\n".join(lines,
+            preview_banner=self._preview_banner()
+        ) or "—"),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back, "style": "primary"}]],
         )
 
@@ -3383,7 +4531,9 @@ class KeyScanner(loader.Module):
             text=(
                 f"{E_DOWN} <b>{self.strings['export_scope_title']}</b>\n"
                 f"{E_LIST} <b>{scope}</b>\n"
-                f"{E_BOX} {self.strings['export_matching_label']}: <b>{len(matched)}</b>\n"
+                f"{E_BOX} {self.strings['export_matching_label']}: <b>{len(matched,
+            preview_banner=self._preview_banner()
+        )}</b>\n"
                 f"{self.strings['export_scope_hint']}"
             ),
             reply_markup=markup,
@@ -3420,7 +4570,9 @@ class KeyScanner(loader.Module):
             call,
             text=(
                 f"{E_DOWN} <b>{self.strings['export_format_title']}</b>\n"
-                f"{E_LIST} <b>{self._export_scope_label(tier_raw, provider_raw)}</b>\n"
+                f"{E_LIST} <b>{self._export_scope_label(tier_raw, provider_raw,
+            preview_banner=self._preview_banner()
+        )}</b>\n"
                 f"{E_BOX} {self.strings['export_key_count_label']}: <b>{len(data)}</b>"
             ),
             reply_markup=markup,
@@ -3447,6 +4599,7 @@ class KeyScanner(loader.Module):
             call,
             text=self.strings["exported"],
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_exp_json(self, call, filter_mode="all"):
@@ -3468,7 +4621,9 @@ class KeyScanner(loader.Module):
             parse_mode="html",
         )
         await self._edit(call, text=self.strings["exported"],
-            reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]])
+            reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_exp_txt(self, call, filter_mode="all"):
         data  = self._filtered_keys(filter_mode)
@@ -3489,18 +4644,46 @@ class KeyScanner(loader.Module):
             parse_mode="html",
         )
         await self._edit(call, text=self.strings["exported"],
-            reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]])
+            reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_sort_paid_free(self, call):
-        total = len(self._keys)
-        if not total:
+        all_items = list(self._keys.items())
+        if not all_items:
             await self._edit(call, text=self.strings["empty"],
-                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary")]])
+                reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
+            return
+        keys_to_sort = [(key, prov) for key, prov in all_items if self._normalize_tier(self._paid_status.get(key)) == "unknown"]
+        total = len(keys_to_sort)
+        if not total:
+            paid = sum(1 for key in self._keys if self._normalize_tier(self._paid_status.get(key)) == "paid")
+            free = sum(1 for key in self._keys if self._normalize_tier(self._paid_status.get(key)) == "free")
+            unknown = len(self._keys) - paid - free
+            markup = []
+            if free:
+                markup.append([self._btn(f"{self.strings['btn_del_free']} ({free})", self.ks_del_by_filter, ("free",), "danger")])
+            if paid:
+                markup.append([self._btn(f"{self.strings['btn_del_paid']} ({paid})", self.ks_del_by_filter, ("paid",), "danger")])
+            markup.append([
+                self._btn(f"{self.strings['btn_exp_paid']} ({paid})", self.ks_exp_txt, ("paid",), "primary"),
+                self._btn(f"{self.strings['btn_exp_free']} ({free})", self.ks_exp_txt, ("free",), "primary"),
+            ])
+            markup.append([self._btn(self.strings["btn_back"], self.ks_back, style="primary")])
+            await self._edit(
+                call,
+                text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown,
+            preview_banner=self._preview_banner()
+        ),
+                reply_markup=markup,
+            )
             return
         await self._edit(call, text=self.strings["sorting"].format(done=0, total=total))
-        paid = free = unknown = done = 0
-        async with aiohttp.ClientSession() as session:
-            for key, prov in list(self._keys.items()):
+        done = 0
+        async with self._http_session() as session:
+            for key, prov in keys_to_sort:
                 real_prov, ok = await self._validate_key(session, key)
                 if real_prov != "Unknown":
                     prov = real_prov
@@ -3532,9 +4715,6 @@ class KeyScanner(loader.Module):
                 self._paid_status[key] = status
                 self._record_key_meta(key, prov, models=sorted_models, tier=status)
                 self._key_meta.setdefault(key, {})["quota"] = await self._fetch_key_quota(session, key, prov)
-                if status == "paid":   paid    += 1
-                elif status == "free": free    += 1
-                else:                  unknown += 1
                 done += 1
                 if done % 5 == 0:
                     try:
@@ -3542,6 +4722,9 @@ class KeyScanner(loader.Module):
                     except Exception:
                         pass
         self._save()
+        paid = sum(1 for key in self._keys if self._normalize_tier(self._paid_status.get(key)) == "paid")
+        free = sum(1 for key in self._keys if self._normalize_tier(self._paid_status.get(key)) == "free")
+        unknown = len(self._keys) - paid - free
         markup = []
         if free:
             markup.append([self._btn(f"{self.strings['btn_del_free']} ({free})", self.ks_del_by_filter, ("free",), "danger")])
@@ -3554,7 +4737,9 @@ class KeyScanner(loader.Module):
         markup.append([self._btn(self.strings["btn_back"], self.ks_back, style="primary")])
         await self._edit(
             call,
-            text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown),
+            text=self.strings["sort_done"].format(paid=paid, free=free, unknown=unknown,
+            preview_banner=self._preview_banner()
+        ),
             reply_markup=markup,
         )
 
@@ -3568,7 +4753,9 @@ class KeyScanner(loader.Module):
         self._save()
         await self._edit(
             call,
-            text=self.strings["deleted_filter"].format(count=len(to_del)),
+            text=self.strings["deleted_filter"].format(count=len(to_del,
+            preview_banner=self._preview_banner()
+        )),
             reply_markup=[[{"text": self.strings["btn_back"], "callback": self.ks_back}]],
         )
 
@@ -3578,6 +4765,8 @@ class KeyScanner(loader.Module):
         file_scan = self._setting_state(self._settings.get("file_scan", True))
         edit_scan = self._setting_state(self._settings.get("edit_scan", True))
         notify_new_keys = self._setting_state(self._settings.get("notify_new_keys", True))
+        safe_auto = self._setting_state(self._settings.get("safe_auto_checks", True))
+        log_full_keys = self._setting_state(self._settings.get("log_full_keys", False))
         compact = self._setting_state(self._settings.get("list_compact", True))
         auto_hide = self._setting_state(self._settings.get("auto_hide_keys", True))
         premium_emoji = self._setting_state(self._settings.get("premium_emoji", True))
@@ -3596,6 +4785,8 @@ class KeyScanner(loader.Module):
                 file_scan=file_scan,
                 edit_scan=edit_scan,
                 notify_new_keys=notify_new_keys,
+                safe_auto=safe_auto,
+                log_full_keys=log_full_keys,
             )
             markup = [
                 [
@@ -3607,14 +4798,20 @@ class KeyScanner(loader.Module):
                     self._btn(f"{self.strings['btn_toggle_edit']} {edit_scan}", self.ks_toggle_edit, style="success" if self._settings.get("edit_scan", True) else "danger"),
                 ],
                 [self._btn(f"{self.strings['btn_toggle_notify']} {notify_new_keys}", self.ks_toggle_notify, style="success" if self._settings.get("notify_new_keys", True) else "danger")],
+                [
+                    self._btn(f"{self.strings['btn_toggle_safe_checks']} {safe_auto}", self.ks_toggle_safe_checks, style="success" if self._settings.get("safe_auto_checks", True) else "danger"),
+                    self._btn(f"{self.strings['btn_toggle_log_full_keys']} {log_full_keys}", self.ks_toggle_log_full_keys, style="success" if self._settings.get("log_full_keys", False) else "danger"),
+                ],
                 [self._btn(self.strings["btn_back"], self.ks_settings_menu, ("main",), "primary")],
             ]
         elif section == "view":
+            show_preview = self._setting_state(self._settings.get("show_preview", True))
             text = self.strings["settings_view_title"].format(
                 compact=compact,
                 auto_hide=auto_hide,
                 premium_emoji=premium_emoji,
                 color_buttons=color_buttons,
+                show_preview=show_preview,
                 page_size=page_size,
                 default_sort=default_sort,
             )
@@ -3627,6 +4824,7 @@ class KeyScanner(loader.Module):
                     self._btn(f"{self.strings['btn_toggle_premium_emoji']} {premium_emoji}", self.ks_toggle_premium_emoji, style="success" if self._settings.get("premium_emoji", True) else "danger"),
                     self._btn(f"{self.strings['btn_toggle_color_buttons']} {color_buttons}", self.ks_toggle_color_buttons, style="success" if self._settings.get("color_buttons", True) else "danger"),
                 ],
+                [self._btn(f"{self.strings['btn_toggle_preview']} {show_preview}", self.ks_toggle_preview, style="success" if self._settings.get("show_preview", True) else "danger")],
                 [
                     self._btn(f"{self.strings['btn_cycle_page_size']}: {page_size}", self.ks_cycle_page_size, style="primary"),
                     self._btn(f"{self.strings['btn_cycle_default_sort']}: {default_sort}", self.ks_cycle_default_sort, style="primary"),
@@ -3668,7 +4866,9 @@ class KeyScanner(loader.Module):
                 [self._btn(self.strings["btn_logs_settings"], self.ks_settings_menu, ("logs",), "primary")],
                 [self._btn(self.strings["btn_back"], self.ks_back, style="primary")],
             ]
-        await self._edit(call, text=text, reply_markup=markup)
+        await self._edit(call, text=text, reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_cycle_log(self, call):
         modes = ["none", "saved", "heroku", "custom"]
@@ -3782,6 +4982,7 @@ class KeyScanner(loader.Module):
             reply_markup=[
                 [self._btn(self.strings["btn_back"], self.ks_settings_menu, ("logs",), "primary")],
             ],
+            preview_banner=self._preview_banner()
         )
 
     async def ks_toggle_file(self, call):
@@ -3798,6 +4999,21 @@ class KeyScanner(loader.Module):
         self._settings["notify_new_keys"] = not self._settings.get("notify_new_keys", True)
         self._save()
         await self.ks_settings_menu(call, "capture")
+
+    async def ks_toggle_safe_checks(self, call):
+        self._settings["safe_auto_checks"] = not self._settings.get("safe_auto_checks", True)
+        self._save()
+        await self.ks_settings_menu(call, "capture")
+
+    async def ks_toggle_log_full_keys(self, call):
+        self._settings["log_full_keys"] = not self._settings.get("log_full_keys", False)
+        self._save()
+        await self.ks_settings_menu(call, "capture")
+
+    async def ks_toggle_preview(self, call):
+        self._settings["show_preview"] = not self._settings.get("show_preview", True)
+        self._save()
+        await self.ks_settings_menu(call, "view")
 
     async def ks_toggle_auto_chat(self, call):
         self._toggle_autocatch_target(self._callback_chat_id(call))
@@ -4196,7 +5412,9 @@ class KeyScanner(loader.Module):
             [self._btn(self.strings["btn_clear"], self.ks_clr_all_step, (0,), style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_back, style="primary")],
         ]
-        await self._edit(call, text=f"{self.strings['clear_menu_title']}\n{self.strings['clear_menu_subtitle']}", reply_markup=markup)
+        await self._edit(call, text=f"{self.strings['clear_menu_title']}\n{self.strings['clear_menu_subtitle']}", reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_clr_all(self, call):
         await self.ks_clr_menu(call)
@@ -4204,7 +5422,9 @@ class KeyScanner(loader.Module):
     async def ks_clr_paid_confirm(self, call):
         count = sum(1 for k in self._keys if self._paid_status.get(k) == "paid")
         if not count:
-            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]])
+            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
         markup = [
             [self._btn(self._clear_paid_yes_text(), self.ks_clr_paid_execute, style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
@@ -4214,7 +5434,9 @@ class KeyScanner(loader.Module):
     async def ks_clr_free_confirm(self, call):
         count = sum(1 for k in self._keys if self._paid_status.get(k) == "free")
         if not count:
-            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]])
+            return await self._edit(call, text=self.strings["empty"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
         markup = [
             [self._btn(self._clear_free_yes_text(), self.ks_clr_free_execute, style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
@@ -4230,7 +5452,9 @@ class KeyScanner(loader.Module):
             self._ensure_model_cache().pop(k, None)
         self._save()
         msg = self.strings["clear_paid_done"].format(count=len(to_del))
-        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]])
+        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
 
     async def ks_clr_free_execute(self, call):
         to_del = [k for k in list(self._keys.keys()) if self._paid_status.get(k) == "free"]
@@ -4241,7 +5465,9 @@ class KeyScanner(loader.Module):
             self._ensure_model_cache().pop(k, None)
         self._save()
         msg = self.strings["clear_free_done"].format(count=len(to_del))
-        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")]])
+        await self._edit(call, text=msg, reply_markup=[[self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
 
     async def ks_clr_all_step(self, call, step=0):
         warns = self._clear_all_warnings()
@@ -4251,13 +5477,17 @@ class KeyScanner(loader.Module):
                 [self._btn(self._clear_step_button(step), self.ks_clr_all_step, (step + 1,), style="danger")],
                 [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
             ]
-            await self._edit(call, text=warns[step], reply_markup=markup)
+            await self._edit(call, text=warns[step], reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
             return
         markup = [
             [self._btn(self._clear_final_button(), self.ks_clr_all_execute, style="danger")],
             [self._btn(self.strings["btn_back"], self.ks_clr_menu, style="primary")],
         ]
-        await self._edit(call, text=warns[step], reply_markup=markup)
+        await self._edit(call, text=warns[step], reply_markup=markup,
+            preview_banner=self._preview_banner()
+        )
 
     async def ks_clr_all_execute(self, call):
         self._keys.clear()
@@ -4265,7 +5495,9 @@ class KeyScanner(loader.Module):
         self._key_meta.clear()
         self._ensure_model_cache().clear()
         self._save()
-        await self._edit(call, text=self.strings["clear_all_done"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary")]])
+        await self._edit(call, text=self.strings["clear_all_done"], reply_markup=[[self._btn(self.strings["btn_back"], self.ks_back, style="primary",
+            preview_banner=self._preview_banner()
+        )]])
 
     async def ks_back(self, call):
-        await self._edit(call, text=self._db_stats_text(), reply_markup=self._get_main_markup())
+        await self._edit(call, text=self._db_stats_text(), reply_markup=self._get_main_markup(), preview_banner=self._preview_banner())
