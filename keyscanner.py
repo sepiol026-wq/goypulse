@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (1, 5, 1)
+__version__ = (2, 5, 1)
 import base64
 import binascii
 import re
