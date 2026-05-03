@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 3)
+__version__ = (2, 5, 4)
 import base64
 import binascii
 import re
@@ -171,7 +171,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Topic saved to DB</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Global scan initiated...</b>\nSearching all chats up to {{limit}} per prefix.",
-        "new_key_notif": f"{E_BELL} <b>New Key Caught!</b>\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Source:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}",
+        "new_key_msg_title": "Message",
+        "new_key_msg_anchor": "Open",
+        "new_key_notif": f"{E_BELL} <b>New Key Caught!</b>\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Source:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 Show",
         "btn_hide_key":  "🙈 Hide",
         "btn_filter_all":     "📝 All",
@@ -377,7 +379,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Топик сохранён в БД</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Глобальный поиск...</b>\nИщу во всех чатах до {{limit}} сообщений на префикс.",
-        "new_key_notif": f"{E_BELL} <b>Пойман новый ключ!</b>\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Источник:</b> {{chat_id}}\n{E_RIGHT} <b>Откуда:</b> {{via}}",
+        "new_key_msg_title": "Сообщение",
+        "new_key_msg_anchor": "Открыть",
+        "new_key_notif": f"{E_BELL} <b>Пойман новый ключ!</b>\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Источник:</b> {{chat_id}}\n{E_RIGHT} <b>Откуда:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 Показать",
         "btn_hide_key":  "🙈 Скрыть",
         "btn_filter_all":     "📝 Все",
@@ -1009,6 +1013,42 @@ class KeyScanner(loader.Module):
             meta["tier"] = self._normalize_tier(tier)
         meta["hits"] = int(meta.get("hits", 0) or 0) + 1
 
+    @staticmethod
+    def _peer_username_for_link(message) -> str | None:
+        chat = getattr(message, "chat", None)
+        if chat is None:
+            return None
+        un = getattr(chat, "username", None)
+        return str(un).strip() if un else None
+
+    def _telegram_message_url(self, chat_id, message_id: int | None, username: str | None = None) -> str | None:
+        if message_id is None or message_id <= 0:
+            return None
+        un = (username or "").strip().lstrip("@")
+        if un:
+            return f"https://t.me/{un}/{message_id}"
+        try:
+            cid = int(chat_id)
+        except (TypeError, ValueError):
+            return None
+        cs = str(cid)
+        if cs.startswith("-100"):
+            try:
+                internal = int(cs[4:])
+            except ValueError:
+                return None
+            return f"https://t.me/c/{internal}/{message_id}"
+        return f"tg://openmessage?chat_id={cid}&message_id={message_id}"
+
+    def _new_key_message_row_html(self, chat_id, message_id: int | None, username: str | None) -> str:
+        url = self._telegram_message_url(chat_id, message_id, username)
+        if not url:
+            return ""
+        title = html.escape(str(self.strings.get("new_key_msg_title", "Message")))
+        anchor = html.escape(str(self.strings.get("new_key_msg_anchor", "Open")))
+        safe_url = html.escape(url, quote=True)
+        return f"\n{E_LINK} <b>{title}:</b> <a href=\"{safe_url}\">{anchor}</a>"
+
     def _serialize_export_tokens(self, values) -> str:
         return ",".join(sorted({value for value in (values or []) if value}))
 
@@ -1343,7 +1383,33 @@ class KeyScanner(loader.Module):
                 pass
         return texts
 
-    async def _scan_search_prefixes(self, target, limit: int, found: set, include_files: bool = False) -> int:
+    def _remember_key_origin(self, key: str, message, key_origins: dict):
+        if key in key_origins:
+            return
+        message_id = getattr(message, "id", None)
+        chat_id = getattr(message, "chat_id", None)
+        key_origins[key] = {
+            "source_message_id": message_id if message_id else None,
+            "source_chat_username": self._peer_username_for_link(message),
+            "message_link_chat_id": chat_id,
+        }
+
+    def _collect_keys_with_origin(self, text: str, message, found: set, key_origins: dict):
+        keys = self.key_regex.findall(text)
+        if not keys:
+            return
+        found.update(keys)
+        for key in keys:
+            self._remember_key_origin(key, message, key_origins)
+
+    async def _scan_search_prefixes(
+        self,
+        target,
+        limit: int,
+        found: set,
+        key_origins: dict,
+        include_files: bool = False,
+    ) -> int:
         scanned = 0
         per_prefix_limit = min(limit, 5000) if target is None else limit
         for query in self.search_queries:
@@ -1352,7 +1418,7 @@ class KeyScanner(loader.Module):
                     scanned += 1
                     for text in await self._message_texts_for_scan(message, include_files=include_files):
                         if text:
-                            found.update(self.key_regex.findall(text))
+                            self._collect_keys_with_origin(text, message, found, key_origins)
             except FloodWaitError as e:
                 wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
                 await asyncio.sleep(int(wait))
@@ -1361,14 +1427,21 @@ class KeyScanner(loader.Module):
             await asyncio.sleep(0.25)
         return scanned
 
-    async def _scan_raw_messages(self, target, limit: int, found: set, include_files: bool = False) -> int:
+    async def _scan_raw_messages(
+        self,
+        target,
+        limit: int,
+        found: set,
+        key_origins: dict,
+        include_files: bool = False,
+    ) -> int:
         scanned = 0
         try:
             async for message in self.client.iter_messages(target, limit=limit):
                 scanned += 1
                 for text in await self._message_texts_for_scan(message, include_files=include_files):
                     if text and self._text_might_contain_key(text):
-                        found.update(self.key_regex.findall(text))
+                        self._collect_keys_with_origin(text, message, found, key_origins)
         except FloodWaitError as e:
             wait = getattr(e, "seconds", None) or getattr(e, "x", 5)
             await asyncio.sleep(int(wait))
@@ -1376,7 +1449,7 @@ class KeyScanner(loader.Module):
             pass
         return scanned
 
-    async def _scan_global_dialogs(self, limit: int, found: set, include_files: bool = False) -> int:
+    async def _scan_global_dialogs(self, limit: int, found: set, key_origins: dict, include_files: bool = False) -> int:
         scanned = 0
         try:
             async for dialog in self.client.iter_dialogs():
@@ -1391,7 +1464,7 @@ class KeyScanner(loader.Module):
                         scanned += 1
                         for text in await self._message_texts_for_scan(message, include_files=include_files):
                             if text and self._text_might_contain_key(text):
-                                found.update(self.key_regex.findall(text))
+                                self._collect_keys_with_origin(text, message, found, key_origins)
                         if scanned >= limit:
                             break
                 except Exception:
@@ -1410,18 +1483,19 @@ class KeyScanner(loader.Module):
         via = "global" if global_mode else "scan"
         msg = await self._answer(message, self.strings[progress_key].format(limit=limit))
         found = set()
+        key_origins = {}
         scan_mode = scan_mode if scan_mode in {"fast", "simple", "deep"} else "simple"
         scanned_count = 0
 
-        scanned_count += await self._scan_search_prefixes(target, limit, found, include_files=include_files)
+        scanned_count += await self._scan_search_prefixes(target, limit, found, key_origins, include_files=include_files)
         if scan_mode != "fast":
             raw_limit = limit
             if scan_mode == "simple":
                 raw_limit = min(limit, 50_000 if global_mode else 10_000)
             if global_mode:
-                scanned_count += await self._scan_global_dialogs(raw_limit, found, include_files=include_files)
+                scanned_count += await self._scan_global_dialogs(raw_limit, found, key_origins, include_files=include_files)
             else:
-                scanned_count += await self._scan_raw_messages(target, raw_limit, found, include_files=include_files)
+                scanned_count += await self._scan_raw_messages(target, raw_limit, found, key_origins, include_files=include_files)
 
         valid_count = 0
         if found:
@@ -1431,8 +1505,19 @@ class KeyScanner(loader.Module):
                 results = await self._gather_chunked(tasks)
                 for key, (prov, ok) in zip(found, results):
                     if ok and key not in self._keys:
+                        origin = key_origins.get(key, {})
                         valid_count += 1
-                        await self._register_key(session, key, prov, source, via=via, safe_mode=safe_mode)
+                        await self._register_key(
+                            session,
+                            key,
+                            prov,
+                            source,
+                            via=via,
+                            safe_mode=safe_mode,
+                            source_message_id=origin.get("source_message_id"),
+                            source_chat_username=origin.get("source_chat_username"),
+                            message_link_chat_id=origin.get("message_link_chat_id"),
+                        )
             self._save()
 
         await self._answer(msg, self.strings["found"].format(valid_count=valid_count, raw_count=len(found), scanned_count=scanned_count))
@@ -2685,7 +2770,18 @@ class KeyScanner(loader.Module):
         meta["models_count"] = 0
         return False
 
-    async def _register_key(self, session, key: str, provider: str, source_chat_id, via: str = "message", safe_mode: bool = False):
+    async def _register_key(
+        self,
+        session,
+        key: str,
+        provider: str,
+        source_chat_id,
+        via: str = "message",
+        safe_mode: bool = False,
+        source_message_id: int | None = None,
+        source_chat_username: str | None = None,
+        message_link_chat_id=None,
+    ):
         models = await self._discover_models(session, key, provider)
         tier = self._tier_from_models(provider, models) or "unknown"
         if not safe_mode and tier == "unknown":
@@ -2705,17 +2801,37 @@ class KeyScanner(loader.Module):
         meta["quota"] = quota
         meta["valid"] = True
         meta["validated_at"] = self._now_ts()
-        await self._handle_new_key(key, provider, source_chat_id, via=via)
+        await self._handle_new_key(
+            key,
+            provider,
+            source_chat_id,
+            via=via,
+            source_message_id=source_message_id,
+            source_chat_username=source_chat_username,
+            message_link_chat_id=message_link_chat_id,
+        )
 
-    async def _handle_new_key(self, key: str, provider: str, source_chat_id, via: str = "message"):
+    async def _handle_new_key(
+        self,
+        key: str,
+        provider: str,
+        source_chat_id,
+        via: str = "message",
+        source_message_id: int | None = None,
+        source_chat_username: str | None = None,
+        message_link_chat_id=None,
+    ):
         mode = self._settings.get("log_mode", "none")
         if mode == "none" or not self._settings.get("notify_new_keys", True):
             return
+        link_cid = message_link_chat_id if message_link_chat_id is not None else source_chat_id
+        message_row = self._new_key_message_row_html(link_cid, source_message_id, source_chat_username)
         text = self.strings["new_key_notif"].format(
             provider=provider,
             key=key if self._settings.get("log_full_keys", False) else self._mask_key(key, True),
             chat_id=source_chat_id,
             via=via,
+            message_row=message_row,
         )
         await self._send_log_text(text)
 
@@ -2726,7 +2842,14 @@ class KeyScanner(loader.Module):
             await asyncio.sleep(0.05)
         return res
 
-    async def _process_text(self, text: str, chat_id, via: str = "message") -> int:
+    async def _process_text(
+        self,
+        text: str,
+        chat_id,
+        via: str = "message",
+        message_id: int | None = None,
+        chat_username: str | None = None,
+    ) -> int:
         """Extract, validate and store new keys from arbitrary text. Returns new-key count."""
         if not self._text_might_contain_key(text):
             return 0
@@ -2743,7 +2866,16 @@ class KeyScanner(loader.Module):
                 for key, (provider, is_valid) in zip(new_keys, results):
                     if is_valid:
                         count += 1
-                        await self._register_key(session, key, provider, chat_id, via=via, safe_mode=safe_mode)
+                        await self._register_key(
+                            session,
+                            key,
+                            provider,
+                            chat_id,
+                            via=via,
+                            safe_mode=safe_mode,
+                            source_message_id=message_id,
+                            source_chat_username=chat_username,
+                        )
         if count:
             self._save()
         return count
@@ -3065,7 +3197,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Топік збережено в БД</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Глобальний пошук...</b>\nШукаю в усіх чатах до {{limit}} повідомлень на префікс.",
-        "new_key_notif": f"{E_BELL} <b>Спійманий новий ключ!</b>\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Джерело:</b> {{chat_id}}\n{E_RIGHT} <b>Звідки:</b> {{via}}",
+        "new_key_msg_title": "Повідомлення",
+        "new_key_msg_anchor": "Відкрити",
+        "new_key_notif": f"{E_BELL} <b>Спійманий новий ключ!</b>\n{E_TAG} <b>Провайдер:</b> {{provider}}\n{E_LOCK} <b>Ключ:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Джерело:</b> {{chat_id}}\n{E_RIGHT} <b>Звідки:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 Показати",
         "btn_hide_key":  "🙈 Сховати",
         "btn_filter_all":     "📝 Всі",
@@ -3147,7 +3281,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Thema in DB gespeichert</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Globaler Scan gestartet...</b>\nDurchsuche alle Chats bis zu {{limit}} Nachrichten pro Präfix.",
-        "new_key_notif": f"{E_BELL} <b>Neuer Schlüssel gefangen!</b>\n{E_TAG} <b>Anbieter:</b> {{provider}}\n{E_LOCK} <b>Schlüssel:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Quelle:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}",
+        "new_key_msg_title": "Nachricht",
+        "new_key_msg_anchor": "Öffnen",
+        "new_key_notif": f"{E_BELL} <b>Neuer Schlüssel gefangen!</b>\n{E_TAG} <b>Anbieter:</b> {{provider}}\n{E_LOCK} <b>Schlüssel:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Quelle:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 Anzeigen",
         "btn_hide_key":  "🙈 Verbergen",
         "btn_filter_all":     "📝 Alle",
@@ -3231,7 +3367,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] トピックをDBに保存</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>グローバルスキャン開始...</b>\n全チャットで各プレフィックス最大 {{limit}} 件検索。",
-        "new_key_notif": f"{E_BELL} <b>新規キーをキャッチ！</b>\n{E_TAG} <b>プロバイダ:</b> {{provider}}\n{E_LOCK} <b>キー:</b> <code>{{key}}</code>\n{E_FOLD2} <b>ソース:</b> {{chat_id}}\n{E_RIGHT} <b>経由:</b> {{via}}",
+        "new_key_msg_title": "メッセージ",
+        "new_key_msg_anchor": "開く",
+        "new_key_notif": f"{E_BELL} <b>新規キーをキャッチ！</b>\n{E_TAG} <b>プロバイダ:</b> {{provider}}\n{E_LOCK} <b>キー:</b> <code>{{key}}</code>\n{E_FOLD2} <b>ソース:</b> {{chat_id}}\n{E_RIGHT} <b>経由:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 表示",
         "btn_hide_key":  "🙈 隠す",
         "btn_filter_all":     "📝 全て",
@@ -3377,7 +3515,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] Topic saved in DB</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>Global scan started...</b>\nSearching all chats up to {{limit}} messages per prefix.",
-        "new_key_notif": f"{E_BELL} <b>New key catched!</b>\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Source:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}",
+        "new_key_msg_title": "Message",
+        "new_key_msg_anchor": "Open",
+        "new_key_notif": f"{E_BELL} <b>New key catched!</b>\n{E_TAG} <b>Provider:</b> {{provider}}\n{E_LOCK} <b>Key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>Source:</b> {{chat_id}}\n{E_RIGHT} <b>Via:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 Show",
         "btn_hide_key":  "🙈 Hide",
         "btn_filter_all":     "📝 All",
@@ -3468,7 +3608,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] топик сейвнут в дб</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs. The first message is pinned for context and updates.",
         "global_scanning": f"{E_SLOW} <b>глобал скан...</b>\nищу во всех чатах до {{limit}} на префикс.",
-        "new_key_notif": f"{E_BELL} <b>кей кетчнут!</b>\n{E_TAG} <b>провайдер:</b> {{provider}}\n{E_LOCK} <b>кей:</b> <code>{{key}}</code>\n{E_FOLD2} <b>сорс:</b> {{chat_id}}\n{E_RIGHT} <b>виа:</b> {{via}}",
+        "new_key_msg_title": "месага",
+        "new_key_msg_anchor": "открыть",
+        "new_key_notif": f"{E_BELL} <b>кей кетчнут!</b>\n{E_TAG} <b>провайдер:</b> {{provider}}\n{E_LOCK} <b>кей:</b> <code>{{key}}</code>\n{E_FOLD2} <b>сорс:</b> {{chat_id}}\n{E_RIGHT} <b>виа:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 шоу",
         "btn_hide_key":  "🙈 хайд",
         "btn_filter_all":     "📝 ол",
@@ -3550,7 +3692,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[K3y5c4nn3r] t0p1c 54v3d</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "Th15 t0p1c 15 f0r 4ut0m4t1c k3y l0g5.",
         "global_scanning": f"{E_SLOW} <b>gl0b4l 5c4n...</b>\n534rch1ng 4ll ch4t5 up t0 {{limit}} p3r pr3f1x.",
-        "new_key_notif": f"{E_BELL} <b>n3w k3y c4ught!</b>\n{E_TAG} <b>pr0v1d3r:</b> {{provider}}\n{E_LOCK} <b>k3y:</b> <code>{{key}}</code>\n{E_FOLD2} <b>50urc3:</b> {{chat_id}}\n{E_RIGHT} <b>v14:</b> {{via}}",
+        "new_key_msg_title": "m5g",
+        "new_key_msg_anchor": "0p3n",
+        "new_key_notif": f"{E_BELL} <b>n3w k3y c4ught!</b>\n{E_TAG} <b>pr0v1d3r:</b> {{provider}}\n{E_LOCK} <b>k3y:</b> <code>{{key}}</code>\n{E_FOLD2} <b>50urc3:</b> {{chat_id}}\n{E_RIGHT} <b>v14:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 5h0w",
         "btn_hide_key":  "🙈 h1d3",
         "btn_filter_all":     "📝 4ll",
@@ -3632,7 +3776,9 @@ class KeyScanner(loader.Module):
         "heroku_topic_saved": f"{E_FOLD2} <b>[KeyScanner] topic saved uwu</b> · {{title}} · thread_id=<code>{{thread_id}}</code>",
         "heroku_topic_intro": "This topic is for automatic key logs uwu. The first message is pinned >w<",
         "global_scanning": f"{E_SLOW} <b>gwobaw scan uwu...</b>\nsearching aww chats up to {{limit}} per pwefix OwO.",
-        "new_key_notif": f"{E_BELL} <b>new key caught uwu!!</b>\n{E_TAG} <b>pwovider:</b> {{provider}}\n{E_LOCK} <b>key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>souwce:</b> {{chat_id}}\n{E_RIGHT} <b>via:</b> {{via}}",
+        "new_key_msg_title": "messagwe",
+        "new_key_msg_anchor": "open OwO",
+        "new_key_notif": f"{E_BELL} <b>new key caught uwu!!</b>\n{E_TAG} <b>pwovider:</b> {{provider}}\n{E_LOCK} <b>key:</b> <code>{{key}}</code>\n{E_FOLD2} <b>souwce:</b> {{chat_id}}\n{E_RIGHT} <b>via:</b> {{via}}{{message_row}}",
         "btn_show_key":  "👁 show uwu",
         "btn_hide_key":  "🙈 hide",
         "btn_filter_all":     "📝 aww",
@@ -4058,12 +4204,25 @@ class KeyScanner(loader.Module):
 
         unique  = set(self.key_regex.findall(text_data))
         count   = 0
+        reply_mid = getattr(reply, "id", None) if reply else None
+        reply_mid = reply_mid or None
+        reply_un = self._peer_username_for_link(reply) if reply else None
+        reply_link_cid = getattr(reply, "chat_id", None) if reply else None
         async with self._http_session() as session:
             results = await self._gather_chunked([self._validate_key(session, k) for k in unique])
             for key, (prov, ok) in zip(unique, results):
                 if ok and key not in self._keys:
                     count += 1
-                    await self._register_key(session, key, prov, "Import", via="import")
+                    await self._register_key(
+                        session,
+                        key,
+                        prov,
+                        "Import",
+                        via="import",
+                        source_message_id=reply_mid,
+                        source_chat_username=reply_un,
+                        message_link_chat_id=reply_link_cid,
+                    )
         if count:
             self._save()
         await self._answer(msg, self.strings["imported"].format(count=count))
@@ -4101,8 +4260,12 @@ class KeyScanner(loader.Module):
 
         text = self._message_text_for_scan(message)
         message_id = getattr(message, "id", 0)
+        scan_mid = message_id or None
+        peer_username = self._peer_username_for_link(message)
         if text and self._text_might_contain_key(text) and not self._should_skip_scan(cid, message_id, text, "message"):
-            asyncio.create_task(self._process_text(text, cid, via="message"))
+            asyncio.create_task(
+                self._process_text(text, cid, via="message", message_id=scan_mid, chat_username=peer_username)
+            )
 
         if self._settings.get("file_scan", True) and self._is_text_file_message(message):
             async def _scan_file(msg=message):
@@ -4111,7 +4274,9 @@ class KeyScanner(loader.Module):
                     if raw:
                         text_data = raw.decode("utf-8", errors="ignore")
                         if self._text_might_contain_key(text_data) and not self._should_skip_scan(cid, message_id, text_data[:4096], "file"):
-                            await self._process_text(text_data, cid, via="file")
+                            await self._process_text(
+                                text_data, cid, via="file", message_id=scan_mid, chat_username=peer_username
+                            )
                 except Exception:
                     pass
             asyncio.create_task(_scan_file())
@@ -4135,10 +4300,13 @@ class KeyScanner(loader.Module):
         if old and not old.done():
             old.cancel()
 
-        async def _debounced(t=text, c=cid, s=slot):
+        scan_mid = getattr(message, "id", None) or None
+        peer_username = self._peer_username_for_link(message)
+
+        async def _debounced(t=text, c=cid, s=slot, mid=scan_mid, un=peer_username):
             await asyncio.sleep(0.15)
             if not self._should_skip_scan(c, getattr(message, "id", 0), t, "edit"):
-                await self._process_text(t, c, via="edit")
+                await self._process_text(t, c, via="edit", message_id=mid, chat_username=un)
             self._edit_tasks.pop(s, None)
 
         self._edit_tasks[slot] = asyncio.create_task(_debounced())
