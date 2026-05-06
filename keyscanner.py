@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 4)
+__version__ = (2, 5, 5)
 import base64
 import binascii
 import re
@@ -2565,11 +2565,11 @@ class KeyScanner(loader.Module):
             if not chat_ref or not thread_id:
                 return
             try:
-                await self.client.send_message(
+                await self.inline.bot.send_message(
                     chat_ref,
                     self._ui_text(text),
-                    parse_mode="html",
-                    reply_to=thread_id,
+                    parse_mode="HTML",
+                    message_thread_id=thread_id,
                 )
             except Exception:
                 pass
