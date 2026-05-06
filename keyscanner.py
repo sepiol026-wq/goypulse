@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 4)
+__version__ = (2, 5, 7)
 import base64
 import binascii
 import re
@@ -51,6 +51,11 @@ except ImportError:
     ProxyConnector = None
 
 BANNER_URL = "https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png"
+KEY_TOPIC_EMOJI_ID = 6005570495603282482
+KEYSCANNER_HEROKU_TOPIC_TITLE = "KeyScanner Logs"
+KEYSCANNER_HEROKU_TOPIC_INTRO = "Automatic key catch logs."
+EMPTY_LOADING_BUTTON_TEXT = "⁣"
+
 PROVIDER_BANNERS = {
     "openai":      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/512px-OpenAI_Logo.svg.png",
     "anthropic":   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/512px-Anthropic_logo.svg.png",
@@ -616,38 +621,29 @@ class KeyScanner(loader.Module):
             pass
 
     async def _bootstrap_heroku_logs(self):
-        """
-        Finds or creates the heroku forum topic for key logs.
-        Delegates to utils.asset_forum_topic — same helper used by Gemini and
-        other modules. It handles find-or-create, deleted/stale topics, and
-        Hikka-side caching internally, so we never need to re-implement that.
-        """
+        """Find or create the Heroku forum topic without posting helper defaults."""
         asset_channel = self._db.get("heroku.forums", "channel_id", 0)
         if not asset_channel:
             return None, None
 
         chat_ref = int(f"-100{asset_channel}")
 
-        try:
-            notif_topic = await utils.asset_forum_topic(
-                self._client,
-                self._db,
-                asset_channel,
-                "KeyScanner Logs",
-                description="Automatic key catch logs.",
-            )
-        except Exception:
-            return chat_ref, None
-
+        notif_topic = await self._create_forum_topic(
+            chat_ref,
+            KEYSCANNER_HEROKU_TOPIC_TITLE,
+            send_intro=False,
+        )
         if notif_topic is None:
             return chat_ref, None
 
-        thread_id = notif_topic.id
+        thread_id = self._topic_thread_id_from_result(notif_topic)
         target = self._log_target()
         target["chat_id"] = chat_ref
-        target["topic_title"] = "KeyScanner Logs"
+        target["topic_title"] = KEYSCANNER_HEROKU_TOPIC_TITLE
         target["thread_id"] = thread_id
         self._save()
+
+        await self._send_heroku_intro_from_bot(chat_ref, thread_id)
 
         return chat_ref, thread_id
 
@@ -1573,6 +1569,12 @@ class KeyScanner(loader.Module):
                 return banner
         return BANNER_URL
 
+    async def _empty_loading_button(self, call):
+        try:
+            await call.answer(EMPTY_LOADING_BUTTON_TEXT)
+        except Exception:
+            pass
+
     async def _edit(self, call, *, text=None, reply_markup=None, preview_banner=None, **kwargs):
         if text is not None:
             kwargs["text"] = self._ui_text(text)
@@ -2346,7 +2348,7 @@ class KeyScanner(loader.Module):
 
         return raw
 
-    async def _create_forum_topic(self, chat_ref, title: str):
+    async def _create_forum_topic(self, chat_ref, title: str, send_intro: bool = True):
         title = (title or "Logs").strip()[:128] or "Logs"
         if chat_ref is None:
             return None
@@ -2397,33 +2399,44 @@ class KeyScanner(loader.Module):
 
         if topic is None:
             try:
-                WATERMELON_EMOJI_ID = 5431815664017161984
-                create_result = await self.client(
-                    CreateForumTopicRequest(
-                        peer=entity,
-                        title=title,
-                        icon_emoji_id=WATERMELON_EMOJI_ID if self._settings.get("premium_emoji", True) and getattr(getattr(self.client, "heroku_me", None), "premium", False) else None,
+                icon_emoji_id = KEY_TOPIC_EMOJI_ID if self._settings.get("premium_emoji", True) else None
+                try:
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                            icon_emoji_id=icon_emoji_id,
+                        )
                     )
-                )
+                except Exception:
+                    if not icon_emoji_id:
+                        raise
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                        )
+                    )
                 thread_id = create_result.updates[0].id
 
-                intro_text = self.strings.get(
-                    "heroku_topic_intro",
-                    "This topic is for automatic key logs. The first message is pinned for context and updates.",
-                )
-                intro_msg = await self.client.send_message(
-                    entity=entity,
-                    message=intro_text,
-                    reply_to=thread_id,
-                    parse_mode="html",
-                )
-                try:
-                    await self.client.pin_message(entity, intro_msg, notify=False)
-                except Exception:
+                if send_intro:
+                    intro_text = self.strings.get(
+                        "heroku_topic_intro",
+                        KEYSCANNER_HEROKU_TOPIC_INTRO,
+                    )
+                    intro_msg = await self.client.send_message(
+                        entity=entity,
+                        message=intro_text,
+                        reply_to=thread_id,
+                        parse_mode="html",
+                    )
                     try:
-                        await self.client.pin_message(entity, getattr(intro_msg, "id", intro_msg), notify=False)
+                        await self.client.pin_message(entity, intro_msg, notify=False)
                     except Exception:
-                        pass
+                        try:
+                            await self.client.pin_message(entity, getattr(intro_msg, "id", intro_msg), notify=False)
+                        except Exception:
+                            pass
 
                 forums_cache.setdefault(entity_key, {})[title] = thread_id
                 topic_result = await self.client(
@@ -2435,18 +2448,16 @@ class KeyScanner(loader.Module):
         else:
             forums_cache.setdefault(entity_key, {})[title] = getattr(topic, "id", cached_topic_id)
             
-            WATERMELON_EMOJI_ID = 5431815664017161984
             if (
                 self._settings.get("premium_emoji", True)
-                and getattr(getattr(self.client, "heroku_me", None), "premium", False)
-                and getattr(topic, "icon_emoji_id", None) != WATERMELON_EMOJI_ID
+                and getattr(topic, "icon_emoji_id", None) != KEY_TOPIC_EMOJI_ID
             ):
                 try:
                     await self.client(
                         EditForumTopicRequest(
                             channel=entity,
                             topic_id=getattr(topic, "id", cached_topic_id),
-                            icon_emoji_id=WATERMELON_EMOJI_ID,
+                            icon_emoji_id=KEY_TOPIC_EMOJI_ID,
                         )
                     )
                 except Exception:
@@ -2496,6 +2507,51 @@ class KeyScanner(loader.Module):
         except Exception:
             pass
         return {}
+
+    async def _pin_heroku_intro_message(self, bot, chat_ref, msg_id):
+        if not bot or not chat_ref or not msg_id:
+            return
+        try:
+            await bot.pin_chat_message(
+                chat_id=chat_ref,
+                message_id=msg_id,
+                disable_notification=True,
+            )
+            return
+        except Exception:
+            pass
+        try:
+            await self.client.pin_message(chat_ref, msg_id, notify=False)
+        except Exception:
+            pass
+
+    async def _send_heroku_intro_from_bot(self, chat_ref, thread_id):
+        if not chat_ref or not thread_id:
+            return
+        msg_key = f"heroku_intro_bot_msg_id:{chat_ref}:{thread_id}"
+        pin_key = f"heroku_intro_bot_pinned:{chat_ref}:{thread_id}"
+        bot = getattr(getattr(self, "inline", None), "bot", None)
+        if not bot:
+            return
+
+        msg_id = self.get(msg_key, None)
+        if not msg_id:
+            try:
+                intro_msg = await bot.send_message(
+                    chat_ref,
+                    KEYSCANNER_HEROKU_TOPIC_INTRO,
+                    parse_mode="HTML",
+                    message_thread_id=thread_id,
+                )
+                msg_id = getattr(intro_msg, "message_id", None) or getattr(intro_msg, "id", None)
+                if msg_id:
+                    self.set(msg_key, msg_id)
+            except Exception:
+                return
+
+        if not self.get(pin_key, False):
+            await self._pin_heroku_intro_message(bot, chat_ref, msg_id)
+            self.set(pin_key, True)
 
     async def _ensure_heroku_log_destination(self, create_if_missing: bool = True):
         try:
@@ -2565,11 +2621,11 @@ class KeyScanner(loader.Module):
             if not chat_ref or not thread_id:
                 return
             try:
-                await self.client.send_message(
+                await self.inline.bot.send_message(
                     chat_ref,
                     self._ui_text(text),
-                    parse_mode="html",
-                    reply_to=thread_id,
+                    parse_mode="HTML",
+                    message_thread_id=thread_id,
                 )
             except Exception:
                 pass
@@ -4245,7 +4301,7 @@ class KeyScanner(loader.Module):
         form = await self.inline.form(
             text=self._ui_text(self.strings["loading"]),
             message=message,
-            reply_markup=self._ui_markup(self._get_main_markup()),
+            reply_markup=self._ui_markup([[self._btn(EMPTY_LOADING_BUTTON_TEXT, self._empty_loading_button)]]),
         )
         await asyncio.sleep(0.35)
 
