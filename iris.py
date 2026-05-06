@@ -32,7 +32,7 @@ from herokutl.tl.types import InputPeerNotifySettings
 from .. import loader, utils
 from herokutl.types import Message
 
-__version__ = (1, 0, 0)
+__version__ = (1, 0, 1)
 
 logger = logging.getLogger(__name__)
 
@@ -561,6 +561,14 @@ class Iris(loader.Module):
         self._bot_loads = self.db.get(self.strings["name"], "bot_loads", {}) or {}
         self._bot_loads_updated = float(self.db.get(self.strings["name"], "bot_loads_updated", 0.0) or 0.0)
         self._active_bot = self.db.get(self.strings["name"], "active_bot", self._active_bot) or self._active_bot
+        self._restore_runtime_state()
+        if self._running:
+            await self._mute_all(True)
+            if not self._farm_task or self._farm_task.done():
+                self._farm_task = asyncio.create_task(self._farm_loop())
+            if not self._load_task or self._load_task.done():
+                self._load_task = asyncio.create_task(self._load_refresh_loop())
+            self._add_log("↩️ Autofarm restored after restart")
 
     def _tz_hours(self) -> int:
         return int(self.config["timezone_offset"].replace("UTC", ""))
@@ -573,6 +581,9 @@ class Iris(loader.Module):
 
     def _now_local(self) -> datetime:
         return self._now_utc().astimezone(self._tz())
+
+    def _now_ts(self) -> float:
+        return self._now_utc().timestamp()
 
     def _lang_code(self) -> str:
         if hasattr(self, "getlang"):
@@ -630,6 +641,59 @@ class Iris(loader.Module):
         self.db.set(self.strings["name"], "bot_loads", self._bot_loads)
         self.db.set(self.strings["name"], "bot_loads_updated", self._bot_loads_updated)
         self.db.set(self.strings["name"], "active_bot", self._active_bot)
+
+    def _save_runtime_state(self):
+        self.db.set(self.strings["name"], "running", self._running)
+        self.db.set(self.strings["name"], "start_ts", self._start_ts)
+        self.db.set(self.strings["name"], "session_count", self._session_count)
+        self.db.set(self.strings["name"], "cooldown_until", self._cooldown_until)
+        self.db.set(self.strings["name"], "next_run_at", self._next_run_at)
+        self.db.set(self.strings["name"], "last_farm_ts", self._last_farm_ts)
+        self.db.set(self.strings["name"], "last_farm_bot", self._last_farm_bot)
+        self.db.set(self.strings["name"], "last_farm_coins", self._last_farm_coins)
+        self.db.set(self.strings["name"], "watcher_resync", self._watcher_resync)
+
+    def _restore_runtime_state(self):
+        self._running = bool(self.db.get(self.strings["name"], "running", False))
+        self._start_ts = float(self.db.get(self.strings["name"], "start_ts", 0.0) or 0.0)
+        self._session_count = int(self.db.get(self.strings["name"], "session_count", 0) or 0)
+        self._cooldown_until = float(self.db.get(self.strings["name"], "cooldown_until", 0.0) or 0.0)
+        self._next_run_at = float(self.db.get(self.strings["name"], "next_run_at", 0.0) or 0.0)
+        self._last_farm_ts = float(self.db.get(self.strings["name"], "last_farm_ts", 0.0) or 0.0)
+        self._last_farm_bot = self.db.get(self.strings["name"], "last_farm_bot", "") or ""
+        self._last_farm_coins = int(self.db.get(self.strings["name"], "last_farm_coins", 0) or 0)
+        self._watcher_resync = bool(self.db.get(self.strings["name"], "watcher_resync", True))
+        self._normalize_runtime_state()
+
+    def _reset_runtime_state(self):
+        self._running = False
+        self._start_ts = 0.0
+        self._session_count = 0
+        self._cooldown_until = 0.0
+        self._next_run_at = 0.0
+        self._last_farm_ts = 0.0
+        self._last_farm_bot = ""
+        self._last_farm_coins = 0
+        self._watcher_resync = True
+        self._save_runtime_state()
+
+    def _normalize_runtime_state(self):
+        now = self._now_ts()
+        if not self._running:
+            return
+        if self._last_farm_ts and self._cooldown_until < self._last_farm_ts:
+            self._cooldown_until = self._last_farm_ts + BASE_COOLDOWN
+        if self._cooldown_until and not self._next_run_at:
+            self._next_run_at = self._cooldown_until
+        if self._next_run_at and self._cooldown_until and self._next_run_at < self._cooldown_until:
+            self._next_run_at = self._cooldown_until
+        if not self._start_ts:
+            self._start_ts = self._last_farm_ts or now
+        if self._cooldown_until and (now - self._cooldown_until) > BASE_COOLDOWN * 3:
+            self._cooldown_until = 0.0
+        if self._next_run_at and (now - self._next_run_at) > BASE_COOLDOWN * 3:
+            self._next_run_at = now
+        self._save_runtime_state()
 
     def _extra_delay(self) -> int:
         low = self.config["extra_delay_min"] * 60
@@ -758,7 +822,7 @@ class Iris(loader.Module):
                 self._sent_msgs.append((probe_bot, resp.id))
                 loads = _parse_all_loads(resp.text or resp.raw_text or "")
                 if loads:
-                    self._bot_loads_updated = time.time()
+                    self._bot_loads_updated = self._now_ts()
                     self._bot_loads = loads
                     self._active_bot = sorted(loads.items(), key=lambda item: item[1])[0][0]
                     self._save_load_cache()
@@ -773,7 +837,7 @@ class Iris(loader.Module):
                 logger.warning("Load fetch via %s failed: %s", probe_bot, e)
             finally:
                 await self._mute_bot(probe_bot, False)
-        self._bot_loads_updated = time.time()
+        self._bot_loads_updated = self._now_ts()
         self._add_log("⚠️ Load check failed for all Iris bots")
         return {}
 
@@ -783,7 +847,7 @@ class Iris(loader.Module):
         return sorted(self._bot_loads.items(), key=lambda item: item[1])[0]
 
     async def _get_best_bot(self) -> tuple[str, float]:
-        stale = (time.time() - self._bot_loads_updated) > self.config["load_refresh_minutes"] * 60
+        stale = (self._now_ts() - self._bot_loads_updated) > self.config["load_refresh_minutes"] * 60
         if not self._bot_loads or stale:
             fresh = await self._fetch_loads()
             if fresh:
@@ -812,9 +876,10 @@ class Iris(loader.Module):
                 logger.warning("load_refresh_loop: %s", e)
 
     def _plan_next_run(self, cooldown_seconds: int):
-        base = time.time() + max(0, cooldown_seconds)
+        base = self._now_ts() + max(0, cooldown_seconds)
         self._cooldown_until = base
         self._next_run_at = base + self._extra_delay()
+        self._save_runtime_state()
 
     async def _do_farm(self, bot: str) -> int:
         mine = []
@@ -839,17 +904,19 @@ class Iris(loader.Module):
                 self.db.set(self.strings["name"], "total_icoins", total)
                 self.db.set(self.strings["name"], "session_icoins", session)
                 self._session_count += 1
-                self._last_farm_ts = time.time()
+                self._last_farm_ts = self._now_ts()
                 self._last_farm_bot = bot
                 self._last_farm_coins = coins
                 self._plan_next_run(BASE_COOLDOWN)
                 self._add_log(f"✅ [{bot}] +{coins} i¢ | total {total} i¢ | iris {self._format_dt(self._cooldown_until)} | run {self._format_dt(self._next_run_at)}")
-                return max(1, int(self._next_run_at - time.time()))
+                self._save_runtime_state()
+                return max(1, int(self._next_run_at - self._now_ts()))
             if "НЕЗАЧЁТ" in upper:
                 seconds = _parse_cooldown_seconds(text) or BASE_COOLDOWN
                 self._plan_next_run(seconds)
                 self._add_log(f"❌ [{bot}] cooldown {self._format_td(seconds)} | iris {self._format_dt(self._cooldown_until)} | run {self._format_dt(self._next_run_at)}")
-                return max(1, int(self._next_run_at - time.time()))
+                self._save_runtime_state()
+                return max(1, int(self._next_run_at - self._now_ts()))
             self._add_log(f"❓ [{bot}] unknown response")
             return 10 * 60
         finally:
@@ -859,12 +926,17 @@ class Iris(loader.Module):
                 self._sent_msgs = [(b, mid) for b, mid in self._sent_msgs if not (b == bot and mid in ids)]
 
     async def _farm_loop(self):
-        try:
-            loads = await self._fetch_loads()
-        except Exception as e:
-            logger.warning("Initial loads failed: %s", e)
         while self._running:
             try:
+                wait_left = max(0, int(self._next_run_at - self._now_ts())) if self._next_run_at else 0
+                if wait_left:
+                    elapsed = 0
+                    while self._running and elapsed < wait_left:
+                        chunk = min(60, wait_left - elapsed)
+                        await asyncio.sleep(chunk)
+                        elapsed += chunk
+                    if not self._running:
+                        return
                 bot, load = await self._get_best_bot()
                 self._active_bot = bot
                 self._save_load_cache()
@@ -906,7 +978,7 @@ class Iris(loader.Module):
     def _schedule_text(self, ts: float) -> tuple[str, str]:
         if not ts:
             return self.strings["unknown"], self.strings["unknown"]
-        left = max(0, int(ts - time.time()))
+        left = max(0, int(ts - self._now_ts()))
         return self._format_td(left), self._format_dt(ts)
 
     def _clean_iris_text(self, text: str) -> str:
@@ -1301,6 +1373,7 @@ class Iris(loader.Module):
             self._session_count = 0
             self._cooldown_until = 0.0
             self._next_run_at = 0.0
+            self._save_runtime_state()
             await self._mute_all(False)
             await self._cleanup_all()
             self._add_log("⛔ Manual stop")
@@ -1310,13 +1383,17 @@ class Iris(loader.Module):
             await utils.answer(message, self.strings["farm_already"])
             return
         self._running = True
-        self._start_ts = time.time()
+        self._start_ts = self._now_ts()
         self._session_count = 0
+        self._cooldown_until = 0.0
+        self._next_run_at = 0.0
         self.db.set(self.strings["name"], "session_icoins", 0)
+        self._save_runtime_state()
         await self._mute_all(True)
         await utils.answer(message, self.strings["checking_load"])
         best_bot, best_load = await self._get_best_bot()
         self._active_bot = best_bot
+        self._save_load_cache()
         self._farm_task = asyncio.create_task(self._farm_loop())
         self._load_task = asyncio.create_task(self._load_refresh_loop())
         self._add_log(f"🚀 Started with {best_bot} ({best_load:.1f}%)")
@@ -1345,7 +1422,7 @@ class Iris(loader.Module):
         msg = await utils.answer(message, self.strings["loading_status"])
         cooldown_left, cooldown_at = self._schedule_text(self._cooldown_until)
         planned_left, planned_at = self._schedule_text(self._next_run_at)
-        uptime = self._format_td(time.time() - self._start_ts) if self._start_ts else self.strings["unknown"]
+        uptime = self._format_td(self._now_ts() - self._start_ts) if self._start_ts else self.strings["unknown"]
         state = self.strings["state_on"] if self._running else self.strings["state_off"]
         active_bot = self._active_bot or self.strings["unknown"]
         if active_bot == IRIS_BOTS[0] and self._bot_loads:
@@ -1533,10 +1610,12 @@ class Iris(loader.Module):
         self._last_farm_bot = ""
         self._last_farm_coins = 0
         self._session_count = 0
+        self._running = False
         self.db.set(self.strings["name"], "total_icoins", 0)
         self.db.set(self.strings["name"], "session_icoins", 0)
         self.db.set(self.strings["name"], "logs", [])
         self._save_load_cache()
+        self._save_runtime_state()
         await utils.answer(msg, self.strings["reset_done"])
 
     async def watcher(self, message: Message):
@@ -1552,16 +1631,18 @@ class Iris(loader.Module):
         text = message.raw_text or ""
         upper = text.upper()
         if "ЗАЧЁТ" in upper and "НЕЗАЧЁТ" not in upper:
-            new_cooldown = time.time() + BASE_COOLDOWN
+            new_cooldown = self._now_ts() + BASE_COOLDOWN
             if abs(new_cooldown - self._cooldown_until) > 60:
                 self._cooldown_until = new_cooldown
                 self._next_run_at = new_cooldown + self._extra_delay()
+                self._save_runtime_state()
                 self._add_log(f"🔁 Watcher synced success from {username}")
         elif "НЕЗАЧЁТ" in upper:
             seconds = _parse_cooldown_seconds(text)
             if seconds:
-                new_cooldown = time.time() + seconds
+                new_cooldown = self._now_ts() + seconds
                 if abs(new_cooldown - self._cooldown_until) > 60:
                     self._cooldown_until = new_cooldown
                     self._next_run_at = new_cooldown + self._extra_delay()
+                    self._save_runtime_state()
                     self._add_log(f"🔁 Watcher synced cooldown from {username}: {self._format_td(seconds)}")
