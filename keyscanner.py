@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 5)
+__version__ = (2, 5, 6)
 import base64
 import binascii
 import re
@@ -51,6 +51,10 @@ except ImportError:
     ProxyConnector = None
 
 BANNER_URL = "https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png"
+KEY_TOPIC_EMOJI_ID = 6005570495603282482
+KEY_TOPIC_FALLBACK_EMOJI = "🔑"
+KEYSCANNER_HEROKU_TOPIC_TITLE = f"{KEY_TOPIC_FALLBACK_EMOJI} KeyScanner Logs"
+
 PROVIDER_BANNERS = {
     "openai":      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/512px-OpenAI_Logo.svg.png",
     "anthropic":   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/512px-Anthropic_logo.svg.png",
@@ -633,8 +637,9 @@ class KeyScanner(loader.Module):
                 self._client,
                 self._db,
                 asset_channel,
-                "KeyScanner Logs",
+                KEYSCANNER_HEROKU_TOPIC_TITLE,
                 description="Automatic key catch logs.",
+                icon_emoji_id=KEY_TOPIC_EMOJI_ID,
             )
         except Exception:
             return chat_ref, None
@@ -645,7 +650,7 @@ class KeyScanner(loader.Module):
         thread_id = notif_topic.id
         target = self._log_target()
         target["chat_id"] = chat_ref
-        target["topic_title"] = "KeyScanner Logs"
+        target["topic_title"] = KEYSCANNER_HEROKU_TOPIC_TITLE
         target["thread_id"] = thread_id
         self._save()
 
@@ -2397,14 +2402,24 @@ class KeyScanner(loader.Module):
 
         if topic is None:
             try:
-                WATERMELON_EMOJI_ID = 5431815664017161984
-                create_result = await self.client(
-                    CreateForumTopicRequest(
-                        peer=entity,
-                        title=title,
-                        icon_emoji_id=WATERMELON_EMOJI_ID if self._settings.get("premium_emoji", True) and getattr(getattr(self.client, "heroku_me", None), "premium", False) else None,
+                icon_emoji_id = KEY_TOPIC_EMOJI_ID if self._settings.get("premium_emoji", True) else None
+                try:
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                            icon_emoji_id=icon_emoji_id,
+                        )
                     )
-                )
+                except Exception:
+                    if not icon_emoji_id:
+                        raise
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                        )
+                    )
                 thread_id = create_result.updates[0].id
 
                 intro_text = self.strings.get(
@@ -2434,19 +2449,17 @@ class KeyScanner(loader.Module):
                 return None
         else:
             forums_cache.setdefault(entity_key, {})[title] = getattr(topic, "id", cached_topic_id)
-            
-            WATERMELON_EMOJI_ID = 5431815664017161984
+
             if (
                 self._settings.get("premium_emoji", True)
-                and getattr(getattr(self.client, "heroku_me", None), "premium", False)
-                and getattr(topic, "icon_emoji_id", None) != WATERMELON_EMOJI_ID
+                and getattr(topic, "icon_emoji_id", None) != KEY_TOPIC_EMOJI_ID
             ):
                 try:
                     await self.client(
                         EditForumTopicRequest(
                             channel=entity,
                             topic_id=getattr(topic, "id", cached_topic_id),
-                            icon_emoji_id=WATERMELON_EMOJI_ID,
+                            icon_emoji_id=KEY_TOPIC_EMOJI_ID,
                         )
                     )
                 except Exception:
