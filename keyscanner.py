@@ -621,34 +621,22 @@ class KeyScanner(loader.Module):
             pass
 
     async def _bootstrap_heroku_logs(self):
-        """
-        Finds or creates the heroku forum topic for key logs.
-        Delegates to utils.asset_forum_topic — same helper used by Gemini and
-        other modules. It handles find-or-create, deleted/stale topics, and
-        Hikka-side caching internally, so we never need to re-implement that.
-        """
+        """Find or create the Heroku forum topic without posting helper defaults."""
         asset_channel = self._db.get("heroku.forums", "channel_id", 0)
         if not asset_channel:
             return None, None
 
         chat_ref = int(f"-100{asset_channel}")
 
-        try:
-            notif_topic = await utils.asset_forum_topic(
-                self._client,
-                self._db,
-                asset_channel,
-                KEYSCANNER_HEROKU_TOPIC_TITLE,
-                description=None,
-                icon_emoji_id=KEY_TOPIC_EMOJI_ID,
-            )
-        except Exception:
-            return chat_ref, None
-
+        notif_topic = await self._create_forum_topic(
+            chat_ref,
+            KEYSCANNER_HEROKU_TOPIC_TITLE,
+            send_intro=False,
+        )
         if notif_topic is None:
             return chat_ref, None
 
-        thread_id = notif_topic.id
+        thread_id = self._topic_thread_id_from_result(notif_topic)
         target = self._log_target()
         target["chat_id"] = chat_ref
         target["topic_title"] = KEYSCANNER_HEROKU_TOPIC_TITLE
@@ -2360,7 +2348,7 @@ class KeyScanner(loader.Module):
 
         return raw
 
-    async def _create_forum_topic(self, chat_ref, title: str):
+    async def _create_forum_topic(self, chat_ref, title: str, send_intro: bool = True):
         title = (title or "Logs").strip()[:128] or "Logs"
         if chat_ref is None:
             return None
@@ -2431,23 +2419,24 @@ class KeyScanner(loader.Module):
                     )
                 thread_id = create_result.updates[0].id
 
-                intro_text = self.strings.get(
-                    "heroku_topic_intro",
-                    KEYSCANNER_HEROKU_TOPIC_INTRO,
-                )
-                intro_msg = await self.client.send_message(
-                    entity=entity,
-                    message=intro_text,
-                    reply_to=thread_id,
-                    parse_mode="html",
-                )
-                try:
-                    await self.client.pin_message(entity, intro_msg, notify=False)
-                except Exception:
+                if send_intro:
+                    intro_text = self.strings.get(
+                        "heroku_topic_intro",
+                        KEYSCANNER_HEROKU_TOPIC_INTRO,
+                    )
+                    intro_msg = await self.client.send_message(
+                        entity=entity,
+                        message=intro_text,
+                        reply_to=thread_id,
+                        parse_mode="html",
+                    )
                     try:
-                        await self.client.pin_message(entity, getattr(intro_msg, "id", intro_msg), notify=False)
+                        await self.client.pin_message(entity, intro_msg, notify=False)
                     except Exception:
-                        pass
+                        try:
+                            await self.client.pin_message(entity, getattr(intro_msg, "id", intro_msg), notify=False)
+                        except Exception:
+                            pass
 
                 forums_cache.setdefault(entity_key, {})[title] = thread_id
                 topic_result = await self.client(
@@ -2519,25 +2508,50 @@ class KeyScanner(loader.Module):
             pass
         return {}
 
+    async def _pin_heroku_intro_message(self, bot, chat_ref, msg_id):
+        if not bot or not chat_ref or not msg_id:
+            return
+        try:
+            await bot.pin_chat_message(
+                chat_id=chat_ref,
+                message_id=msg_id,
+                disable_notification=True,
+            )
+            return
+        except Exception:
+            pass
+        try:
+            await self.client.pin_message(chat_ref, msg_id, notify=False)
+        except Exception:
+            pass
+
     async def _send_heroku_intro_from_bot(self, chat_ref, thread_id):
         if not chat_ref or not thread_id:
             return
-        sent_key = f"heroku_intro_bot_sent:{chat_ref}:{thread_id}"
-        if self.get(sent_key, False):
-            return
+        msg_key = f"heroku_intro_bot_msg_id:{chat_ref}:{thread_id}"
+        pin_key = f"heroku_intro_bot_pinned:{chat_ref}:{thread_id}"
         bot = getattr(getattr(self, "inline", None), "bot", None)
         if not bot:
             return
-        try:
-            await bot.send_message(
-                chat_ref,
-                KEYSCANNER_HEROKU_TOPIC_INTRO,
-                parse_mode="HTML",
-                message_thread_id=thread_id,
-            )
-            self.set(sent_key, True)
-        except Exception:
-            pass
+
+        msg_id = self.get(msg_key, None)
+        if not msg_id:
+            try:
+                intro_msg = await bot.send_message(
+                    chat_ref,
+                    KEYSCANNER_HEROKU_TOPIC_INTRO,
+                    parse_mode="HTML",
+                    message_thread_id=thread_id,
+                )
+                msg_id = getattr(intro_msg, "message_id", None) or getattr(intro_msg, "id", None)
+                if msg_id:
+                    self.set(msg_key, msg_id)
+            except Exception:
+                return
+
+        if not self.get(pin_key, False):
+            await self._pin_heroku_intro_message(bot, chat_ref, msg_id)
+            self.set(pin_key, True)
 
     async def _ensure_heroku_log_destination(self, create_if_missing: bool = True):
         try:
