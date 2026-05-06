@@ -13,7 +13,7 @@
 # requires: html
 # meta developer: @GoyModules
 # authors: @goymodules
-# Description: Iris-cm.
+# Description: Iris control.
 # meta banner: https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/iris.png
 
 import asyncio
@@ -32,7 +32,7 @@ from herokutl.tl.types import InputPeerNotifySettings
 from .. import loader, utils
 from herokutl.types import Message
 
-__version__ = (1, 0, 2)
+__version__ = (1, 0, 3)
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +99,11 @@ def _parse_all_loads(text: str) -> dict[str, float]:
 
 @loader.tds
 class Iris(loader.Module):
-    """Iris manager."""
+    """Iris control."""
 
     strings = {
         "name": "Iris",
-        "_cls_doc": "Premium Iris manager with smart autofarm, timezone-aware timers and custom UI.",
+        "_cls_doc": "Iris control.",
         "state_on": f"{E_OK} Enabled",
         "state_off": f"{E_ERR} Disabled",
         "unknown": "—",
@@ -151,7 +151,7 @@ class Iris(loader.Module):
         "bag_text": (
             f"{E_USER} Owner: <b>{{owner}}</b>\n"
             "🍬 Candies: <b>{candies}</b> | 🌕 Iris Gold: <b>{gold}</b>\n"
-            "☢️ i¢: <b>{icoins}</b> | ✨ Stars: <b>{stars}</b>"
+            "☢️ i¢: <b>{icoins}</b> | ✨ Stars: <b>{stars}</b>{bag_extra}"
         ),
         "bag_error": f"{E_ERR} <b>Could not get bag from {{bot}}:</b>\n<code>{{err}}</code>",
         "profile_title": f"{E_LIST} <b>Profile</b> ({{bot}})",
@@ -170,9 +170,11 @@ class Iris(loader.Module):
             f"{E_BAG} Balance\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}"
         ),
         "profile_universe": "Iris universe",
+        "tg_stars_line": "\n⭐️ TG Stars: <b>{value}</b>",
+        "donate_points_line": "\n🥯 Donate points: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>Super Chat Top</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Day Chat Top</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Could not parse chat top.</b>",
@@ -192,7 +194,7 @@ class Iris(loader.Module):
 
     strings_ru = {
         "name": "Iris",
-        "_cls_doc": "Премиум-менеджер Iris: автофарм, точные таймеры, кастомный вывод и таймзона UTC.",
+        "_cls_doc": "Управление Iris.",
         "state_on": f"{E_OK} Включён",
         "state_off": f"{E_ERR} Выключен",
         "unknown": "—",
@@ -240,7 +242,7 @@ class Iris(loader.Module):
         "bag_text": (
             f"{E_USER} Владелец: <b>{{owner}}</b>\n"
             "🍬 Ирисок: <b>{candies}</b> | 🌕 Ирис-голд: <b>{gold}</b>\n"
-            "☢️ i¢: <b>{icoins}</b> | ✨ Звёздочек: <b>{stars}</b>"
+            "☢️ i¢: <b>{icoins}</b> | ✨ Звёздочек: <b>{stars}</b>{bag_extra}"
         ),
         "bag_error": f"{E_ERR} <b>Не удалось получить мешок у {{bot}}:</b>\n<code>{{err}}</code>",
         "profile_title": f"{E_LIST} <b>Анкета</b> ({{bot}})",
@@ -259,9 +261,11 @@ class Iris(loader.Module):
             f"{E_BAG} Баланс\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}"
         ),
         "profile_universe": "Во вселенной Iris",
+        "tg_stars_line": "\n⭐️ Тг-звёзды: <b>{value}</b>",
+        "donate_points_line": "\n🥯 Очки доната: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>Супер Топ Бесед</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Топ Дня</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Не удалось разобрать топ бесед.</b>",
@@ -280,7 +284,7 @@ class Iris(loader.Module):
     }
 
     strings_uk = strings_ru | {
-        "_cls_doc": "Преміум-менеджер Iris: автофарм, точні таймери, кастомний вивід і зона UTC.",
+        "_cls_doc": "Керування Iris.",
         "state_on": f"{E_OK} Увімкнено",
         "state_off": f"{E_ERR} Вимкнено",
         "now": "зараз",
@@ -300,7 +304,7 @@ class Iris(loader.Module):
     }
 
     strings_de = strings_ru | {
-        "_cls_doc": "Premium-Iris-Manager mit Autofarm, genauen Timern, benutzerdefinierter Ausgabe und UTC-Zeitzone.",
+        "_cls_doc": "Iris-Steuerung.",
         "state_on": f"{E_OK} Aktiv",
         "state_off": f"{E_ERR} Inaktiv",
         "now": "jetzt",
@@ -320,7 +324,7 @@ class Iris(loader.Module):
     }
 
     strings_jp = strings_ru | {
-        "_cls_doc": "Iris用プレミアム管理モジュール。自動ファーム、正確なタイマー、カスタム表示、UTCタイムゾーン対応。",
+        "_cls_doc": "Iris管理。",
         "state_on": f"{E_OK} 有効",
         "state_off": f"{E_ERR} 無効",
         "now": "今",
@@ -340,7 +344,7 @@ class Iris(loader.Module):
     }
 
     strings_neofit = strings_ru | {
-        "_cls_doc": "Ирис модуль по красоте: автофарм, таймеры, мешок и анкета без мусора.",
+        "_cls_doc": "Управление Iris.",
         "state_on": f"{E_OK} Работает",
         "state_off": f"{E_ERR} Спит",
         "loading_status": f"{E_SYNC} <b>Собираю движ по Iris...</b>",
@@ -357,7 +361,7 @@ class Iris(loader.Module):
             f"{E_USER} Хозяин: <b>{{owner}}</b>\n"
             "🍬 Ириски: <b>{candies}</b> | 🌕 Голд: <b>{gold}</b>\n"
             "☢️ Коинов: <b>{icoins}</b> | ✨ Звёзд: <b>{stars}</b>\n"
-            "⭐️ TG Stars: <b>{tg_stars}</b>"
+            "⭐️ TG Stars: <b>{tg_stars}</b>{bag_extra}"
         ),
         "profile_title": f"{E_LIST} <b>Анкета</b> ({{bot}})",
         "profile_text": (
@@ -373,10 +377,12 @@ class Iris(loader.Module):
             f"{E_BAG} Баланс\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>\n\n"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}\n\n"
             "• твой профиль iris •"
         ),
         "profile_universe": "Во вселенной Iris",
+        "tg_stars_line": "\n⭐️ TG Stars: <b>{value}</b>",
+        "donate_points_line": "\n🥯 Донатки: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>Супер Топ</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Дневной Топ</b> ({{bot}})",
         "top_join_open": "Зайти",
@@ -384,7 +390,7 @@ class Iris(loader.Module):
         "top_card": "Карточка",
     }
     strings_tiktok = strings_ru | {
-        "_cls_doc": "skid iris: фарм, таймеры, мешок, анкета.",
+        "_cls_doc": "управление iris.",
         "state_on": f"{E_OK} вруб",
         "state_off": f"{E_ERR} выруб",
         "loading_status": f"{E_SYNC} <b>Лутаю стату...</b>",
@@ -408,7 +414,7 @@ class Iris(loader.Module):
             f"{E_USER} Хозяин лута: <b>{{owner}}</b>\n"
             "🍬 Ириски: <b>{candies}</b> | 🌕 Голда: <b>{gold}</b>\n"
             "☢️ Коины: <b>{icoins}</b> | ✨ Старсы: <b>{stars}</b>\n"
-            "⭐️ Тг-старсы: <b>{tg_stars}</b>"
+            "⭐️ Тг-старсы: <b>{tg_stars}</b>{bag_extra}"
         ),
         "profile_title": f"{E_LIST} <b>Профайл</b> ({{bot}})",
         "profile_text": (
@@ -424,9 +430,11 @@ class Iris(loader.Module):
             f"{E_BAG} Балик\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}"
         ),
         "profile_universe": "Во вселенной ириса",
+        "tg_stars_line": "\n⭐️ Тг-старсы: <b>{value}</b>",
+        "donate_points_line": "\n🥯 Донат поинты: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>Супер Топ</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Топ Дня</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Топ не распарсился.</b>",
@@ -435,7 +443,7 @@ class Iris(loader.Module):
         "top_card": "Карточка",
     }
     strings_leet = strings_ru | {
-        "_cls_doc": "Pr3m1um Ir15 m4n4g3r: 4ut0f4rm, pr3c153 t1m3r5, cu570m UI, UTC.",
+        "_cls_doc": "1r15 c0n7r0l.",
         "state_on": f"{E_OK} 0N",
         "state_off": f"{E_ERR} 0FF",
         "loading_status": f"{E_SYNC} <b>L04d1n6 5747u5...</b>",
@@ -452,7 +460,7 @@ class Iris(loader.Module):
             f"{E_USER} 0wn3r: <b>{{owner}}</b>\n"
             "🍬 C4nd135: <b>{candies}</b> | 🌕 60ld: <b>{gold}</b>\n"
             "☢️ 1¢: <b>{icoins}</b> | ✨ 574r5: <b>{stars}</b>\n"
-            "⭐️ 76 574r5: <b>{tg_stars}</b>"
+            "⭐️ 76 574r5: <b>{tg_stars}</b>{bag_extra}"
         ),
         "profile_title": f"{E_LIST} <b>Pr0f1l3</b> ({{bot}})",
         "profile_text": (
@@ -468,10 +476,12 @@ class Iris(loader.Module):
             f"{E_BAG} 84l4nc3\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>\n\n"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}\n\n"
             "• pr0f1l3 53c710n •"
         ),
         "profile_universe": "1r15 un1v3r53",
+        "tg_stars_line": "\n⭐️ 76 574r5: <b>{value}</b>",
+        "donate_points_line": "\n🥯 d0n473 p01n75: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>5up3r Ch47 70p</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>D4y Ch47 70p</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>C4n'7 p4r53 ch47 70p.</b>",
@@ -480,7 +490,7 @@ class Iris(loader.Module):
         "top_card": "C474l06 c4rd",
     }
     strings_uwu = strings_ru | {
-        "_cls_doc": "Iwis moduwe uwu: autofawm, cwockies, custom bag and pwofiwe uwu",
+        "_cls_doc": "Iwis contwow uwu.",
         "state_on": f"{E_OK} on uwu",
         "state_off": f"{E_ERR} off uwu",
         "loading_status": f"{E_SYNC} <b>Woading iwis status...</b>",
@@ -497,7 +507,7 @@ class Iris(loader.Module):
             f"{E_USER} Ownew: <b>{{owner}}</b>\n"
             "🍬 Candies: <b>{candies}</b> | 🌕 Gowd: <b>{gold}</b>\n"
             "☢️ i¢: <b>{icoins}</b> | ✨ Staws: <b>{stars}</b>\n"
-            "⭐️ TG staws: <b>{tg_stars}</b>"
+            "⭐️ TG staws: <b>{tg_stars}</b>{bag_extra}"
         ),
         "profile_title": f"{E_LIST} <b>Pwofiwe</b> ({{bot}})",
         "profile_text": (
@@ -513,10 +523,12 @@ class Iris(loader.Module):
             f"{E_BAG} Bawance\n"
             "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
             "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
-            "⭐️ <b>{tg_stars}</b>\n\n"
+            "⭐️ <b>{tg_stars}</b>{profile_extra}\n\n"
             "• pwofiwe section uwu •"
         ),
         "profile_universe": "Iwis univewse",
+        "tg_stars_line": "\n⭐️ TG staws: <b>{value}</b>",
+        "donate_points_line": "\n🥯 Donyate points: <b>{value}</b>",
         "super_top_title": f"{E_FIRE} <b>Supew Chat Top</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Day Chat Top</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Couldn't pawse chat top uwu.</b>",
@@ -1225,6 +1237,7 @@ class Iris(loader.Module):
             "icoins": "0",
             "gold": "0",
             "tg_stars": "0",
+            "donate_points": "",
         }
         who = re.search(r"👤\s*(?:Это|It'?s)\s+(.+?)\s+\((.+?)\)", source, re.IGNORECASE)
         if who:
@@ -1270,6 +1283,9 @@ class Iris(loader.Module):
         tg_stars = re.search(r"⭐️\s*([0-9 ]+)\s*(?:tg[- ]?зв[её]зд|tg[- ]?stars?)", source, re.IGNORECASE)
         if tg_stars:
             data["tg_stars"] = tg_stars.group(1).strip()
+        donate_points = re.search(r"🥯\s*([0-9 ]+)\s*оч(?:к(?:ов|а)?|ки)\s*доната", source, re.IGNORECASE)
+        if donate_points:
+            data["donate_points"] = donate_points.group(1).strip()
         return data
 
     def _render_bag(self, bot: str, text: str) -> str:
@@ -1280,7 +1296,17 @@ class Iris(loader.Module):
         icoins = re.search(r"☢️\s*([0-9 ]+)\s*i[¢c]", source)
         stars = re.search(r"✨\s*([0-9 ]+)", source)
         tg_stars = re.search(r"⭐️\s*([0-9 ]+)", source)
+        donate_points = re.search(r"🥯\s*([0-9 ]+)\s*оч(?:к(?:ов|а)?|ки)\s*доната", source, re.IGNORECASE)
         if owner and candies and gold and icoins and stars:
+            bag_extra = ""
+            if tg_stars:
+                bag_extra += self._get_string("tg_stars_line", "\n⭐️ Тг-звёзды: <b>{value}</b>").format(
+                    value=tg_stars.group(1).strip()
+                )
+            if donate_points:
+                bag_extra += self._get_string("donate_points_line", "\n🥯 Очки доната: <b>{value}</b>").format(
+                    value=donate_points.group(1).strip()
+                )
             return (
                 f"{self.strings['bag_title'].format(bot=bot)}\n\n"
                 + self.strings["bag_text"].format(
@@ -1290,6 +1316,7 @@ class Iris(loader.Module):
                     icoins=icoins.group(1).strip(),
                     stars=stars.group(1).strip(),
                     tg_stars=tg_stars.group(1).strip() if tg_stars else "0",
+                    bag_extra=bag_extra,
                 )
             )
         cleaned = self._clean_iris_text(source)
@@ -1300,9 +1327,15 @@ class Iris(loader.Module):
         if data["name"] == self.strings["unknown"] and data["handle"] == self.strings["unknown"]:
             cleaned = self._clean_iris_text(text)
             return f"{self.strings['profile_title'].format(bot=bot)}\n\n{cleaned or self.strings['profile_empty']}"
+        profile_extra = ""
+        if data.get("donate_points"):
+            profile_extra += self._get_string("donate_points_line", "\n🥯 Очки доната: <b>{value}</b>").format(
+                value=data["donate_points"]
+            )
         return self.strings["profile_text"].format(
             title=self.strings["profile_title"].format(bot=bot),
             universe_label=self._get_string("profile_universe", "Во вселенной Iris"),
+            profile_extra=profile_extra,
             **data,
         )
 
