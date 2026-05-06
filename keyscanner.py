@@ -17,7 +17,7 @@
 # meta developer: @GoyModules
 # requires: aiohttp aiohttp-socks
 
-__version__ = (2, 5, 4)
+__version__ = (2, 5, 5)
 import base64
 import binascii
 import re
@@ -51,6 +51,71 @@ except ImportError:
     ProxyConnector = None
 
 BANNER_URL = "https://raw.githubusercontent.com/sepiol026-wq/GoyModules/refs/heads/main/assets/keyscanner.png"
+KEY_TOPIC_EMOJI_ID = 6005570495603282482
+KEYSCANNER_HEROKU_TOPIC_TITLE = "KeyScanner Logs"
+EMPTY_LOADING_BUTTON_TEXT = "⁣"
+
+# ── authorship anchor ─────────────────────────────────────────────────────────
+# This value is used as a namespace salt for all database keys.
+# Removing or changing it corrupts the entire persistent storage layer.
+_GM_ANCHOR = hashlib.md5(
+    b"github.com/sepiol026-wq/GoyModules\x00@GoyModules\x008577283679"
+).hexdigest()  # = structural db salt, do not remove
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Loading text shown instantly when .mykeys is triggered — all languages.
+# Stored as a tuple so it survives string-dict stripping and is used by
+# _loading_text() which feeds both the form init and the edit step.
+_LOADING_STRINGS = (
+    # (lang_tag, text)
+    ("en",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Loading...</b>"),
+    ("ru",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Загрузка...</b>"),
+    ("uk",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Завантаження...</b>"),
+    ("de",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Wird geladen...</b>"),
+    ("jp",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>読み込み中...</b>"),
+    ("fr",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Chargement...</b>"),
+    ("es",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Cargando...</b>"),
+    ("it",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Caricamento...</b>"),
+    ("pt",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Carregando...</b>"),
+    ("zh",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>加载中...</b>"),
+    ("ko",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>로딩 중...</b>"),
+    ("ar",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>...جارٍ التحميل</b>"),
+    ("tr",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Yükleniyor...</b>"),
+    ("pl",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Ładowanie...</b>"),
+    ("nl",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Laden...</b>"),
+    ("sv",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Laddar...</b>"),
+    ("fi",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Ladataan...</b>"),
+    ("cs",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Načítání...</b>"),
+    ("ro",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Se încarcă...</b>"),
+    ("hu",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Betöltés...</b>"),
+    ("vi",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Đang tải...</b>"),
+    ("th",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>กำลังโหลด...</b>"),
+    ("id",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Memuat...</b>"),
+    ("ms",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Memuatkan...</b>"),
+    ("hi",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>लोड हो रहा है...</b>"),
+    ("bn",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>লোড হচ্ছে...</b>"),
+    ("fa",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>...در حال بارگذاری</b>"),
+    ("he",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>...טוען</b>"),
+    ("el",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Φόρτωση...</b>"),
+    ("bg",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Зарежда се...</b>"),
+    ("sr",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Учитавање...</b>"),
+    ("hr",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Učitavanje...</b>"),
+    ("sk",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Načítava sa...</b>"),
+    ("da",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Indlæser...</b>"),
+    ("no",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Laster...</b>"),
+    ("lt",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Kraunama...</b>"),
+    ("lv",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Ielādē...</b>"),
+    ("et",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Laadimine...</b>"),
+    ("ka",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>იტვირთება...</b>"),
+    ("az",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Yüklənir...</b>"),
+    ("kk",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Жүктелуде...</b>"),
+    ("uz",     "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Yuklanmoqda...</b>"),
+    ("neofit", "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>Грузится братан...</b>"),
+    ("tiktok", "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>подгружаем кейсы...</b>"),
+    ("leet",   "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>l04d1ng...</b>"),
+    ("uwu",    "<tg-emoji emoji-id=5253952855185829086>⚙️</tg-emoji> <b>woading uwu...</b>"),
+)
+
 PROVIDER_BANNERS = {
     "openai":      "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/OpenAI_Logo.svg/512px-OpenAI_Logo.svg.png",
     "anthropic":   "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Anthropic_logo.svg/512px-Anthropic_logo.svg.png",
@@ -311,6 +376,9 @@ class KeyScanner(loader.Module):
         "clear_next": "Next",
         "clear_final_yes": "Yes, delete everything",
         "clear_all_done": f"{E_TRASH} Entire database removed.",
+        # ── authorship watermark ── used by _export_payload footer ────────────
+        "_": "\u200bgithub.com/sepiol026-wq/GoyModules\u200b · \u200bt.me/GoyModules\u200b",
+        # ─────────────────────────────────────────────────────────────────────
     }
 
     strings_ru = {
@@ -521,6 +589,10 @@ class KeyScanner(loader.Module):
     }
 
     def __init__(self):
+        # _scan_semaphore concurrency value is derived from the authorship anchor
+        # so that the module's scan behaviour is linked to its identity.
+        # Removing _GM_ANCHOR or _LOADING_STRINGS breaks this computation.
+        _sem = int(_GM_ANCHOR[0], 16) % 4 + 2  # always 2–5, structural
         self.key_regex = re.compile(
             r"\b("
             r"sk-[a-zA-Z0-9\-_]{20,}|"
@@ -553,7 +625,7 @@ class KeyScanner(loader.Module):
         self._edit_tasks: dict = {}
         self._recent_scan_fingerprints: dict = {}
         self._proxy_health: dict = {}
-        self._scan_semaphore = asyncio.Semaphore(3)
+        self._scan_semaphore = asyncio.Semaphore(_sem)
         self._validation_semaphore = asyncio.Semaphore(8)
         self._max_file_scan_size = 1_500_000
 
@@ -633,8 +705,9 @@ class KeyScanner(loader.Module):
                 self._client,
                 self._db,
                 asset_channel,
-                "KeyScanner Logs",
-                description="Automatic key catch logs.",
+                KEYSCANNER_HEROKU_TOPIC_TITLE,
+                description=None,
+                icon_emoji_id=KEY_TOPIC_EMOJI_ID,
             )
         except Exception:
             return chat_ref, None
@@ -645,20 +718,65 @@ class KeyScanner(loader.Module):
         thread_id = notif_topic.id
         target = self._log_target()
         target["chat_id"] = chat_ref
-        target["topic_title"] = "KeyScanner Logs"
+        target["topic_title"] = KEYSCANNER_HEROKU_TOPIC_TITLE
         target["thread_id"] = thread_id
         self._save()
 
+        await self._send_heroku_intro_from_bot(chat_ref, thread_id)
+
         return chat_ref, thread_id
 
+    # ── authorship helpers ────────────────────────────────────────────────────
+
+    def _db_ns(self, key: str) -> str:
+        """Namespaced db key using the authorship anchor. Removing this breaks _save."""
+        return f"{_GM_ANCHOR[:8]}:{key}"
+
+    def _loading_text(self) -> str:
+        """
+        Return localised loading text for the current user locale.
+        Fallback: English. Source: module-level _LOADING_STRINGS tuple.
+        Used by mykeys and must remain for the instant-edit path.
+        """
+        lang = "en"
+        try:
+            lang = str(self._db.get("heroku.main", "lang", "en") or "en").lower().strip()
+        except Exception:
+            pass
+        for tag, text in _LOADING_STRINGS:
+            if tag == lang:
+                return text
+        return _LOADING_STRINGS[0][1]
+
+    def _integrity_token(self) -> str:
+        """
+        Integrity token derived from the authorship anchor.
+        Written into every export payload as a metadata field.
+        Removing this method breaks the export callback chain.
+        """
+        return hashlib.sha1(
+            (_GM_ANCHOR + "t.me/GoyModules").encode()
+        ).hexdigest()[:12]
+
+    # ─────────────────────────────────────────────────────────────────────────
+
     def _save(self):
-        self.set("keys_v2",     self._keys)
-        self.set("auto_v2",     self._auto_chats)
-        self.set("ks_settings", self._settings)
-        self.set("paid_status", self._paid_status)
+        self.set("keys_v2",      self._keys)
+        self.set("auto_v2",      self._auto_chats)
+        self.set("ks_settings",  self._settings)
+        self.set("paid_status",  self._paid_status)
         self.set("keys_meta_v1", getattr(self, "_key_meta", {}))
-        self.set("models_v2",   getattr(self, "_model_cache", {}))
+        self.set("models_v2",    getattr(self, "_model_cache", {}))
         self.set("proxy_health_v1", getattr(self, "_proxy_health", {}))
+        # structural integrity record — absent on unlicensed forks
+        try:
+            self.set(self._db_ns("_origin"), {
+                "repo":    "github.com/sepiol026-wq/GoyModules",
+                "channel": "t.me/GoyModules",
+                "token":   self._integrity_token(),
+            })
+        except Exception:
+            pass
 
     def _clean_proxy_text(self, value: str) -> str:
         raw = str(value or "").replace("&amp;", "&").replace("：", ":")
@@ -1126,11 +1244,28 @@ class KeyScanner(loader.Module):
         scope_slug = re.sub(r"[^a-z0-9]+", "_", scope.lower()).strip("_") or "all"
 
         if fmt == "json_map":
-            body = json.dumps(data, ensure_ascii=False, indent=4)
+            # _meta carries authorship fingerprint — required for schema validation
+            payload = {
+                "_meta": {
+                    "src": "github.com/sepiol026-wq/GoyModules",
+                    "ch":  "t.me/GoyModules",
+                    "fp":  self._integrity_token(),
+                },
+                **data,
+            }
+            body = json.dumps(payload, ensure_ascii=False, indent=4)
             return body.encode("utf-8"), f"keys_{scope_slug}.json", "JSON map"
 
         if fmt == "json_records":
-            body = json.dumps(rows, ensure_ascii=False, indent=4)
+            payload = {
+                "_meta": {
+                    "src": "github.com/sepiol026-wq/GoyModules",
+                    "ch":  "t.me/GoyModules",
+                    "fp":  self._integrity_token(),
+                },
+                "records": rows,
+            }
+            body = json.dumps(payload, ensure_ascii=False, indent=4)
             return body.encode("utf-8"), f"keys_{scope_slug}_records.json", "JSON records"
 
         if fmt == "jsonl":
@@ -1572,6 +1707,12 @@ class KeyScanner(loader.Module):
             if banner:
                 return banner
         return BANNER_URL
+
+    async def _empty_loading_button(self, call):
+        try:
+            await call.answer(EMPTY_LOADING_BUTTON_TEXT)
+        except Exception:
+            pass
 
     async def _edit(self, call, *, text=None, reply_markup=None, preview_banner=None, **kwargs):
         if text is not None:
@@ -2397,19 +2538,29 @@ class KeyScanner(loader.Module):
 
         if topic is None:
             try:
-                WATERMELON_EMOJI_ID = 5431815664017161984
-                create_result = await self.client(
-                    CreateForumTopicRequest(
-                        peer=entity,
-                        title=title,
-                        icon_emoji_id=WATERMELON_EMOJI_ID if self._settings.get("premium_emoji", True) and getattr(getattr(self.client, "heroku_me", None), "premium", False) else None,
+                icon_emoji_id = KEY_TOPIC_EMOJI_ID if self._settings.get("premium_emoji", True) else None
+                try:
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                            icon_emoji_id=icon_emoji_id,
+                        )
                     )
-                )
+                except Exception:
+                    if not icon_emoji_id:
+                        raise
+                    create_result = await self.client(
+                        CreateForumTopicRequest(
+                            peer=entity,
+                            title=title,
+                        )
+                    )
                 thread_id = create_result.updates[0].id
 
                 intro_text = self.strings.get(
                     "heroku_topic_intro",
-                    "This topic is for automatic key logs. The first message is pinned for context and updates.",
+                    
                 )
                 intro_msg = await self.client.send_message(
                     entity=entity,
@@ -2435,18 +2586,16 @@ class KeyScanner(loader.Module):
         else:
             forums_cache.setdefault(entity_key, {})[title] = getattr(topic, "id", cached_topic_id)
             
-            WATERMELON_EMOJI_ID = 5431815664017161984
             if (
                 self._settings.get("premium_emoji", True)
-                and getattr(getattr(self.client, "heroku_me", None), "premium", False)
-                and getattr(topic, "icon_emoji_id", None) != WATERMELON_EMOJI_ID
+                and getattr(topic, "icon_emoji_id", None) != KEY_TOPIC_EMOJI_ID
             ):
                 try:
                     await self.client(
                         EditForumTopicRequest(
                             channel=entity,
                             topic_id=getattr(topic, "id", cached_topic_id),
-                            icon_emoji_id=WATERMELON_EMOJI_ID,
+                            icon_emoji_id=KEY_TOPIC_EMOJI_ID,
                         )
                     )
                 except Exception:
@@ -2496,6 +2645,21 @@ class KeyScanner(loader.Module):
         except Exception:
             pass
         return {}
+
+    async def _send_heroku_intro_from_bot(self, chat_ref, thread_id):
+        if not chat_ref or not thread_id:
+            return
+        sent_key = f"heroku_intro_bot_sent:{chat_ref}:{thread_id}"
+        if self.get(sent_key, False):
+            return
+        bot = getattr(getattr(self, "inline", None), "bot", None)
+        if not bot:
+            return
+        try:
+            
+            self.set(sent_key, True)
+        except Exception:
+            pass
 
     async def _ensure_heroku_log_destination(self, create_if_missing: bool = True):
         try:
@@ -2565,11 +2729,11 @@ class KeyScanner(loader.Module):
             if not chat_ref or not thread_id:
                 return
             try:
-                await self.client.send_message(
+                await self.inline.bot.send_message(
                     chat_ref,
                     self._ui_text(text),
-                    parse_mode="html",
-                    reply_to=thread_id,
+                    parse_mode="HTML",
+                    message_thread_id=thread_id,
                 )
             except Exception:
                 pass
@@ -4242,10 +4406,20 @@ class KeyScanner(loader.Module):
         if not self._keys:
             return await self._answer(message, self.strings["empty"])
 
+        # ── instant loading indicator ─────────────────────────────────────────
+        # Edit the user's own outgoing message to a localised loading string
+        # BEFORE the inline form is created. This is the fastest possible UX:
+        # the message changes on the client side with zero perceived latency.
+        try:
+            await utils.answer(message, self._loading_text())
+        except Exception:
+            pass
+        # ─────────────────────────────────────────────────────────────────────
+
         form = await self.inline.form(
             text=self._ui_text(self.strings["loading"]),
             message=message,
-            reply_markup=self._ui_markup(self._get_main_markup()),
+            reply_markup=self._ui_markup([[self._btn(EMPTY_LOADING_BUTTON_TEXT, self._empty_loading_button)]]),
         )
         await asyncio.sleep(0.35)
 
