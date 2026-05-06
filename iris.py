@@ -32,7 +32,7 @@ from herokutl.tl.types import InputPeerNotifySettings
 from .. import loader, utils
 from herokutl.types import Message
 
-__version__ = (1, 0, 1)
+__version__ = (1, 0, 2)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +157,22 @@ class Iris(loader.Module):
         "profile_title": f"{E_LIST} <b>Profile</b> ({{bot}})",
         "profile_error": f"{E_ERR} <b>Could not get profile from {{bot}}:</b>\n<code>{{err}}</code>",
         "profile_empty": f"{E_ERR} <b>Bot returned an empty profile.</b>",
+        "profile_text": (
+            "{title}\n\n"
+            f"{E_USER} It's <b>{{name}}</b> ({{status}})\n"
+            "🆔 <b>{handle}</b>\n\n"
+            "⏱ {universe_label}: <b>{since_date}</b> ({since_span})\n"
+            "👨 Gender: <b>{gender}</b>\n"
+            "📆 Birthday: <b>{birth}</b>\n"
+            "🗺 City: <b>{city}</b>\n"
+            "📊 Activity: <b>{day}</b> | <b>{week}</b> | <b>{month}</b> | <b>{total}</b>\n"
+            "✨ Rank: <b>{rank}</b>\n\n"
+            f"{E_BAG} Balance\n"
+            "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
+            "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
+            "⭐️ <b>{tg_stars}</b>"
+        ),
+        "profile_universe": "Iris universe",
         "super_top_title": f"{E_FIRE} <b>Super Chat Top</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Day Chat Top</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Could not parse chat top.</b>",
@@ -230,6 +246,22 @@ class Iris(loader.Module):
         "profile_title": f"{E_LIST} <b>Анкета</b> ({{bot}})",
         "profile_error": f"{E_ERR} <b>Не удалось получить анкету у {{bot}}:</b>\n<code>{{err}}</code>",
         "profile_empty": f"{E_ERR} <b>Бот вернул пустую анкету.</b>",
+        "profile_text": (
+            "{title}\n\n"
+            f"{E_USER} Это <b>{{name}}</b> ({{status}})\n"
+            "🆔 <b>{handle}</b>\n\n"
+            "⏱ {universe_label}: <b>{since_date}</b> ({since_span})\n"
+            "👨 Пол: <b>{gender}</b>\n"
+            "📆 Дата рождения: <b>{birth}</b>\n"
+            "🗺 Город: <b>{city}</b>\n"
+            "📊 Активность: <b>{day}</b> | <b>{week}</b> | <b>{month}</b> | <b>{total}</b>\n"
+            "✨ Звёздность: <b>{rank}</b>\n\n"
+            f"{E_BAG} Баланс\n"
+            "🍬 <b>{candies}</b> | ✨ <b>{stars}</b>\n"
+            "☢️ <b>{icoins}</b> | 🌕 <b>{gold}</b>\n"
+            "⭐️ <b>{tg_stars}</b>"
+        ),
+        "profile_universe": "Во вселенной Iris",
         "super_top_title": f"{E_FIRE} <b>Супер Топ Бесед</b> ({{bot}})",
         "day_top_title": f"{E_FIRE} <b>Топ Дня</b> ({{bot}})",
         "top_empty": f"{E_ERR} <b>Не удалось разобрать топ бесед.</b>",
@@ -628,6 +660,12 @@ class Iris(loader.Module):
             if secs and not hours:
                 parts.append(f"{secs}сек")
         return " ".join(parts) if parts else self.strings["now"]
+
+    def _get_string(self, key: str, default: str | None = None) -> str:
+        try:
+            return self.strings[key]
+        except Exception:
+            return default if default is not None else key
 
     def _add_log(self, text: str):
         stamp = self._now_local().strftime("%d.%m %H:%M")
@@ -1264,7 +1302,7 @@ class Iris(loader.Module):
             return f"{self.strings['profile_title'].format(bot=bot)}\n\n{cleaned or self.strings['profile_empty']}"
         return self.strings["profile_text"].format(
             title=self.strings["profile_title"].format(bot=bot),
-            universe_label=self.strings.get("profile_universe", "Во вселенной Iris"),
+            universe_label=self._get_string("profile_universe", "Во вселенной Iris"),
             **data,
         )
 
